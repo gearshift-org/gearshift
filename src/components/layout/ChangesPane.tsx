@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Columns2, Rows3 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -30,21 +30,17 @@ export function ChangesPane({ cwd }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!cwd) {
-      setFiles([])
-      setPatch("")
+  const refreshChanges = useCallback(
+    async (nextCwd: string, options?: { showLoading?: boolean }) => {
+      if (options?.showLoading) setLoading(true)
       setError(null)
-      return
-    }
 
-    let cancelled = false
-    setLoading(true)
-    setError(null)
+      try {
+        const [status, diff] = await Promise.all([
+          window.git.status(nextCwd),
+          window.git.diffAll(nextCwd),
+        ])
 
-    Promise.all([window.git.status(cwd), window.git.diffAll(cwd)])
-      .then(([status, diff]) => {
-        if (cancelled) return
         if (!status.ok) {
           setError(status.error ?? "Failed to load Git status")
           setFiles([])
@@ -63,18 +59,68 @@ export function ChangesPane({ cwd }: Props) {
             [diff.unstagedPatch, diff.stagedPatch].filter(Boolean).join("\n"),
           )
         }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (options?.showLoading) setLoading(false)
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!cwd) {
+      setFiles([])
+      setPatch("")
+      setError(null)
+      return
+    }
+
+    let cancelled = false
+    refreshChanges(cwd, { showLoading: true }).finally(() => {
+      if (cancelled) return
+    })
 
     return () => {
       cancelled = true
     }
-  }, [cwd])
+  }, [cwd, refreshChanges])
+
+  useEffect(() => {
+    if (!cwd) return
+    let watchId: string | null = null
+    let refreshTimer: number | null = null
+
+    const clearRefreshTimer = () => {
+      if (refreshTimer === null) return
+      window.clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+
+    const scheduleRefresh = () => {
+      clearRefreshTimer()
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null
+        void refreshChanges(cwd)
+      }, 250)
+    }
+
+    const offChanged = window.fsApi.onChanged((event) => {
+      if (event.watchId !== watchId) return
+      scheduleRefresh()
+    })
+
+    window.fsApi.watchProject(cwd).then((result) => {
+      if (!result.ok || !result.watchId) return
+      watchId = result.watchId
+    })
+
+    return () => {
+      clearRefreshTimer()
+      offChanged()
+      if (watchId) window.fsApi.unwatchProject(watchId)
+    }
+  }, [cwd, refreshChanges])
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">

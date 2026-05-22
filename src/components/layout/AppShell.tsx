@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { TitleBar } from "./TitleBar"
 import { TerminalTabBar } from "./TerminalTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
-import { formatAutoTitle } from "./terminalName"
 import type { Project } from "./types"
 import {
   loadActiveProjectId,
@@ -202,16 +201,13 @@ export function AppShell() {
   }
 
   const setTerminalTitle = (terminalId: string, title: string) => {
-    const autoTitle = formatAutoTitle(title)
-    if (!autoTitle) return
-
     setProjects((prev) => {
       const next = prev.map((p) =>
         p.terminals.some((t) => t.id === terminalId)
           ? {
               ...p,
               terminals: p.terminals.map((t) =>
-                t.id === terminalId ? { ...t, name: autoTitle, autoTitle } : t,
+                t.id === terminalId ? { ...t, autoTitle: title } : t,
               ),
             }
           : p,

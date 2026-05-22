@@ -18,6 +18,7 @@ type Props = {
   onAdd: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
+  onCloseToRight?: (id: string) => void
   onRename?: (id: string, name: string) => void
 }
 
@@ -28,6 +29,7 @@ export function TerminalTabBar({
   onAdd,
   onClose,
   onCloseAll,
+  onCloseToRight,
   onRename,
 }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -55,9 +57,10 @@ export function TerminalTabBar({
 
   return (
     <div className="flex h-10 items-stretch border-b border-border bg-background">
-      {terminals.map((t) => {
+      {terminals.map((t, i) => {
         const isActive = t.id === activeId
         const isRenaming = t.id === renamingId
+        const hasTabsToRight = i < terminals.length - 1
         return (
           <ContextMenu key={t.id}>
             <ContextMenuTrigger
@@ -105,13 +108,19 @@ export function TerminalTabBar({
                 </span>
               )}
             </ContextMenuTrigger>
-            <ContextMenuContent className="w-40">
+            <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
               <ContextMenuItem onClick={() => startRename(t)}>
                 Rename
               </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onClose?.(t.id)}>
                 Close
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => onCloseToRight?.(t.id)}
+                disabled={!hasTabsToRight}
+              >
+                Close to the Right
               </ContextMenuItem>
               <ContextMenuItem onClick={() => onCloseAll?.()}>
                 Close All Tabs

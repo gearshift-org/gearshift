@@ -162,6 +162,24 @@ export function AppShell() {
     })
   }
 
+  const closeProjectsToRight = (id: string) => {
+    setProjects((prev) => {
+      const idx = prev.findIndex((p) => p.id === id)
+      if (idx < 0) return prev
+      const toClose = prev.slice(idx + 1)
+      if (toClose.length === 0) return prev
+      for (const p of toClose) {
+        for (const t of p.terminals) {
+          if (!t.pendingStart) window.term.kill(t.id)
+        }
+      }
+      const closedIds = new Set(toClose.map((p) => p.id))
+      const next = prev.filter((p) => !closedIds.has(p.id))
+      if (closedIds.has(activeProjectId)) setActiveProjectId(id)
+      return next
+    })
+  }
+
   const closeOtherProjects = (keepId: string) => {
     setProjects((prev) => {
       for (const p of prev) {
@@ -303,6 +321,28 @@ export function AppShell() {
     )
   }
 
+  const closeTerminalsToRight = (id: string) => {
+    if (!activeProject) return
+    const idx = activeProject.terminals.findIndex((t) => t.id === id)
+    if (idx < 0) return
+    const toClose = activeProject.terminals.slice(idx + 1)
+    if (toClose.length === 0) return
+    for (const t of toClose) {
+      if (!t.pendingStart) window.term.kill(t.id)
+    }
+    const closedIds = new Set(toClose.map((t) => t.id))
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        const terminals = p.terminals.filter((t) => !closedIds.has(t.id))
+        const activeTerminalId = closedIds.has(p.activeTerminalId)
+          ? terminals[terminals.length - 1]?.id ?? ""
+          : p.activeTerminalId
+        return { ...p, terminals, activeTerminalId }
+      }),
+    )
+  }
+
   const closeAllTerminals = () => {
     if (!activeProject) return
     for (const t of activeProject.terminals) {
@@ -354,6 +394,7 @@ export function AppShell() {
         onPickRecent={pickRecent}
         onCloseProject={closeProject}
         onCloseOtherProjects={closeOtherProjects}
+        onCloseProjectsToRight={closeProjectsToRight}
       />
       <TerminalTabBar
         terminals={activeProject?.terminals ?? []}
@@ -362,6 +403,7 @@ export function AppShell() {
         onAdd={addTerminal}
         onClose={closeTerminal}
         onCloseAll={closeAllTerminals}
+        onCloseToRight={closeTerminalsToRight}
         onRename={renameTerminal}
       />
       <WorkspaceSplit

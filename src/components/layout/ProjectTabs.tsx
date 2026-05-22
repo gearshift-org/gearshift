@@ -20,6 +20,7 @@ type Props = {
   onPickRecent: (recent: RecentProject) => void
   onClose?: (id: string) => void
   onCloseOthers?: (id: string) => void
+  onCloseToRight?: (id: string) => void
 }
 
 export function ProjectTabs({
@@ -31,12 +32,14 @@ export function ProjectTabs({
   onPickRecent,
   onClose,
   onCloseOthers,
+  onCloseToRight,
 }: Props) {
   return (
     <div className="flex h-full items-stretch [-webkit-app-region:no-drag]">
-      {projects.map((p) => {
+      {projects.map((p, i) => {
         const isActive = p.id === activeId
         const canClose = !!onClose && projects.length > 1
+        const hasTabsToRight = i < projects.length - 1
         return (
           <ContextMenu key={p.id}>
             <ContextMenuTrigger
@@ -68,12 +71,18 @@ export function ProjectTabs({
                 </span>
               )}
             </ContextMenuTrigger>
-            <ContextMenuContent className="w-44">
+            <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
               <ContextMenuItem
                 onClick={() => onClose?.(p.id)}
                 disabled={!canClose}
               >
                 Close
+              </ContextMenuItem>
+              <ContextMenuItem
+                onClick={() => onCloseToRight?.(p.id)}
+                disabled={!hasTabsToRight}
+              >
+                Close to the Right
               </ContextMenuItem>
               <ContextMenuItem
                 onClick={() => onCloseOthers?.(p.id)}

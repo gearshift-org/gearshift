@@ -12,6 +12,7 @@ type Props = {
   onPickRecent: (recent: RecentProject) => void
   onCloseProject: (id: string) => void
   onCloseOtherProjects?: (id: string) => void
+  onCloseProjectsToRight?: (id: string) => void
 }
 
 export function TitleBar({
@@ -23,6 +24,7 @@ export function TitleBar({
   onPickRecent,
   onCloseProject,
   onCloseOtherProjects,
+  onCloseProjectsToRight,
 }: Props) {
   return (
     <div className="flex h-10 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
@@ -36,6 +38,7 @@ export function TitleBar({
         onPickRecent={onPickRecent}
         onClose={onCloseProject}
         onCloseOthers={onCloseOtherProjects}
+        onCloseToRight={onCloseProjectsToRight}
       />
       <div className="flex-1" />
       <ThemeToggle />

@@ -51,7 +51,20 @@ export function WorkspaceSplit({
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize={50} minSize={25}>
-        <ChangesPane />
+        <div className="relative h-full">
+          {projects.map((p) => (
+            <div
+              key={p.id}
+              className={cn(
+                "absolute inset-0",
+                p.id !== activeProjectId && "invisible pointer-events-none",
+              )}
+            >
+              <ChangesPane cwd={p.path} />
+            </div>
+          ))}
+          {!activeProject && <ChangesPane cwd={null} />}
+        </div>
       </ResizablePanel>
     </ResizablePanelGroup>
   )

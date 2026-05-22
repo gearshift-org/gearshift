@@ -34,12 +34,6 @@ const LIGHT_THEME = {
   selectionInactiveBackground: "#3b82f630",
 }
 
-function resolveIsDark(theme: "dark" | "light" | "system") {
-  if (theme === "dark") return true
-  if (theme === "light") return false
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-}
-
 const WRAPPER_BG = "[--xterm-bg:#ffffff] dark:[--xterm-bg:#0a0a0a]"
 
 function shellQuote(s: string) {
@@ -71,8 +65,8 @@ export function TerminalView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
-  const { theme } = useTheme()
-  const isDark = resolveIsDark(theme)
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
   const onTitleChangeRef = useRef(onTitleChange)
   onTitleChangeRef.current = onTitleChange
 

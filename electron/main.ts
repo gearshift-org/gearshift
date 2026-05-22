@@ -2,10 +2,14 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
+import fs from "node:fs/promises"
 import * as pty from "node-pty"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+const execFileP = promisify(execFile)
 
 const ptys = new Map<string, pty.IPty>()
 
@@ -83,6 +87,90 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+async function runGit(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await execFileP("git", args, {
+    cwd,
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  return stdout
+}
+
+async function runGitAllowExit1(cwd: string, args: string[]): Promise<string> {
+  try {
+    return await runGit(cwd, args)
+  } catch (err) {
+    const e = err as { code?: number; stdout?: string }
+    if (e.code === 1 && typeof e.stdout === "string") return e.stdout
+    throw err
+  }
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child)
+  return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel))
+}
+
+function parseGitStatus(raw: string) {
+  const staged: Array<{ path: string; status: string }> = []
+  const unstaged: Array<{ path: string; status: string }> = []
+  const entries = raw.split("\0").filter(Boolean)
+
+  for (const entry of entries) {
+    if (entry.length < 3) continue
+    const x = entry[0]
+    const y = entry[1]
+    const filePath = entry.slice(3)
+
+    if (x === "?" && y === "?") {
+      unstaged.push({ path: filePath, status: "A" })
+      continue
+    }
+    if (x !== " " && x !== "?") staged.push({ path: filePath, status: x })
+    if (y !== " " && y !== "?") unstaged.push({ path: filePath, status: y })
+  }
+
+  return { staged, unstaged }
+}
+
+function isProbablyBinaryBuffer(buf: Buffer): boolean {
+  const head = buf.subarray(0, Math.min(buf.length, 8192))
+  for (let i = 0; i < head.length; i++) {
+    if (head[i] === 0) return true
+  }
+  return false
+}
+
+async function buildUntrackedPatch(cwd: string, files: string[]) {
+  const patches = await Promise.all(
+    files.map(async (filePath) => {
+      try {
+        const full = path.resolve(cwd, filePath)
+        if (!isPathInside(cwd, full)) return ""
+        const buf = await fs.readFile(full)
+        if (isProbablyBinaryBuffer(buf)) return ""
+        const raw = await runGitAllowExit1(cwd, [
+          "diff",
+          "--no-color",
+          "--text",
+          "--no-index",
+          "--",
+          "/dev/null",
+          filePath,
+        ])
+        return raw
+          .replace(
+            /^diff --git a\/dev\/null b\/.*$/m,
+            `diff --git a/${filePath} b/${filePath}`,
+          )
+          .replace(/^--- a\/dev\/null$/m, "--- /dev/null")
+      } catch {
+        return ""
+      }
+    }),
+  )
+  return patches.filter(Boolean).join("\n")
+}
+
 app.whenReady().then(() => {
   buildMenu()
 
@@ -102,6 +190,47 @@ app.whenReady().then(() => {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  ipcMain.handle("git:status", async (_event, cwd: string) => {
+    if (!cwd) return { ok: false, error: "no-cwd", staged: [], unstaged: [] }
+    try {
+      const raw = await runGit(cwd, ["status", "--porcelain=v1", "-z"])
+      return { ok: true, ...parseGitStatus(raw) }
+    } catch (err) {
+      return {
+        ok: false,
+        error: (err as Error).message,
+        staged: [],
+        unstaged: [],
+      }
+    }
+  })
+
+  ipcMain.handle("git:diffAll", async (_event, cwd: string) => {
+    if (!cwd) {
+      return { ok: false, error: "no-cwd", unstagedPatch: "", stagedPatch: "" }
+    }
+    try {
+      const [unstagedRaw, stagedPatch, statusRaw] = await Promise.all([
+        runGit(cwd, ["diff", "--no-color", "--text"]),
+        runGit(cwd, ["diff", "--no-color", "--text", "--cached"]),
+        runGit(cwd, ["status", "--porcelain=v1", "-z"]),
+      ])
+      const untracked = parseGitStatus(statusRaw).unstaged
+        .filter((file) => file.status === "A")
+        .map((file) => file.path)
+      const untrackedPatch = await buildUntrackedPatch(cwd, untracked)
+      const unstagedPatch = [unstagedRaw, untrackedPatch].filter(Boolean).join("\n")
+      return { ok: true, unstagedPatch, stagedPatch }
+    } catch (err) {
+      return {
+        ok: false,
+        error: (err as Error).message,
+        unstagedPatch: "",
+        stagedPatch: "",
+      }
+    }
   })
 
   ipcMain.handle(

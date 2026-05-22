@@ -50,6 +50,28 @@ const appApi = {
   },
 }
 
+type GitFileRaw = {
+  path: string
+  status: string
+}
+
+const gitApi = {
+  status: (cwd: string) =>
+    ipcRenderer.invoke("git:status", cwd) as Promise<{
+      ok: boolean
+      error?: string
+      staged: GitFileRaw[]
+      unstaged: GitFileRaw[]
+    }>,
+  diffAll: (cwd: string) =>
+    ipcRenderer.invoke("git:diffAll", cwd) as Promise<{
+      ok: boolean
+      error?: string
+      unstagedPatch: string
+      stagedPatch: string
+    }>,
+}
+
 const electronUtils = {
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
 }
@@ -59,9 +81,11 @@ contextBridge.exposeInMainWorld("term", termApi)
 contextBridge.exposeInMainWorld("clipboardApi", clipboardApi)
 contextBridge.exposeInMainWorld("electronUtils", electronUtils)
 contextBridge.exposeInMainWorld("appApi", appApi)
+contextBridge.exposeInMainWorld("git", gitApi)
 
 export type DialogApi = typeof dialogApi
 export type TermApi = typeof termApi
 export type ClipboardApi = typeof clipboardApi
 export type ElectronUtils = typeof electronUtils
 export type AppApi = typeof appApi
+export type GitApi = typeof gitApi

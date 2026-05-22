@@ -128,3 +128,55 @@
     @apply font-sans;
     }
 }
+
+.diff-viewer-scroll {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: var(--card);
+}
+
+.diff-viewer-content {
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.diff-viewer-file {
+  position: relative;
+  overflow: visible;
+}
+
+.diff-viewer-plugin-stats {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  font-family: "SF Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 11px;
+}
+
+.diff-viewer-add {
+  color: #4caf50;
+}
+
+.diff-viewer-del {
+  color: #e5484d;
+}
+
+.diff-viewer-file-inner {
+  display: block;
+  width: 100%;
+}
+
+.diff-viewer-empty,
+.diff-viewer-error {
+  padding: 16px 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diff-viewer-error {
+  color: #e5484d;
+}

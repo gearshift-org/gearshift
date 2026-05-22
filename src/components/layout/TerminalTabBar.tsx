@@ -56,7 +56,7 @@ export function TerminalTabBar({
   }
 
   return (
-    <div className="flex h-10 items-stretch border-b border-border bg-background">
+    <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background">
       {terminals.map((t, i) => {
         const isActive = t.id === activeId
         const isRenaming = t.id === renamingId
@@ -65,7 +65,7 @@ export function TerminalTabBar({
           <ContextMenu key={t.id}>
             <ContextMenuTrigger
               className={cn(
-                "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs leading-none transition-colors",
+                "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
                 isActive
                   ? "bg-accent font-medium text-foreground"
                   : "text-muted-foreground hover:bg-accent/40",

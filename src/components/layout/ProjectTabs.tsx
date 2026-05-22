@@ -45,7 +45,7 @@ export function ProjectTabs({
             <ContextMenuTrigger
               onClick={() => onSelect(p.id)}
               className={cn(
-                "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs leading-none transition-colors",
+                "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
                 isActive
                   ? "bg-accent font-medium text-foreground"
                   : "text-muted-foreground hover:bg-accent/40",

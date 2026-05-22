@@ -1,8 +1,16 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu } from "electron"
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  shell,
+} from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
 import * as pty from "node-pty"
@@ -239,6 +247,41 @@ app.whenReady().then(() => {
   ipcMain.handle("clipboard:hasImage", () => {
     try {
       return !clipboard.readImage().isEmpty()
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle("shell:openInVSCode", async (_event, targetPath: string) => {
+    if (!targetPath) return false
+    // Match the original Gearshift app: on macOS prefer `/usr/bin/open -a`
+    // (launchd hand-off, instant) over the `code` CLI (boots Node).
+    if (process.platform === "darwin") {
+      try {
+        await execFileP("/usr/bin/open", [
+          "-a",
+          "Visual Studio Code",
+          targetPath,
+        ])
+        return true
+      } catch {
+        // fall through
+      }
+    }
+    // Other platforms / fallback: try the `code` CLI from PATH.
+    try {
+      const child = spawn("code", [targetPath], {
+        detached: true,
+        stdio: "ignore",
+      })
+      child.unref()
+      return true
+    } catch {
+      // last-ditch URL handler
+    }
+    try {
+      await shell.openExternal(`vscode://file/${encodeURI(targetPath)}`)
+      return true
     } catch {
       return false
     }

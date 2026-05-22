@@ -5,6 +5,11 @@ const dialogApi = {
     ipcRenderer.invoke("dialog:openProject") as Promise<string | null>,
 }
 
+const shellApi = {
+  openInVSCode: (path: string) =>
+    ipcRenderer.invoke("shell:openInVSCode", path) as Promise<boolean>,
+}
+
 const termApi = {
   create: (opts: { cwd: string; cols?: number; rows?: number }) =>
     ipcRenderer.invoke("term:create", opts) as Promise<{ id: string }>,
@@ -98,6 +103,7 @@ const electronUtils = {
 }
 
 contextBridge.exposeInMainWorld("dialogApi", dialogApi)
+contextBridge.exposeInMainWorld("shellApi", shellApi)
 contextBridge.exposeInMainWorld("term", termApi)
 contextBridge.exposeInMainWorld("clipboardApi", clipboardApi)
 contextBridge.exposeInMainWorld("electronUtils", electronUtils)
@@ -106,6 +112,7 @@ contextBridge.exposeInMainWorld("git", gitApi)
 contextBridge.exposeInMainWorld("fsApi", fsApi)
 
 export type DialogApi = typeof dialogApi
+export type ShellApi = typeof shellApi
 export type TermApi = typeof termApi
 export type ClipboardApi = typeof clipboardApi
 export type ElectronUtils = typeof electronUtils

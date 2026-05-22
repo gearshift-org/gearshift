@@ -280,6 +280,12 @@ export function AppShell() {
     })
   }
 
+  const openProjectInVSCode = (id: string) => {
+    const target = projects.find((p) => p.id === id)
+    if (!target) return
+    void window.shellApi.openInVSCode(target.path)
+  }
+
   const closeOtherProjects = (keepId: string) => {
     setProjects((prev) => {
       for (const p of prev) {
@@ -511,6 +517,7 @@ export function AppShell() {
         onCloseProject={closeProject}
         onCloseOtherProjects={closeOtherProjects}
         onCloseProjectsToRight={closeProjectsToRight}
+        onOpenProjectInVSCode={openProjectInVSCode}
       />
       <TerminalTabBar
         terminals={activeProject?.terminals ?? []}
@@ -521,6 +528,11 @@ export function AppShell() {
         onCloseAll={closeAllTerminals}
         onCloseToRight={closeTerminalsToRight}
         onRename={renameTerminal}
+        onOpenInVSCode={
+          activeProject
+            ? () => void window.shellApi.openInVSCode(activeProject.path)
+            : undefined
+        }
       />
       <WorkspaceSplit
         projects={projects}

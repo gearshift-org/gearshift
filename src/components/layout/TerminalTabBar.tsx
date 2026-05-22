@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Plus, X } from "lucide-react"
+import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
 import { displayName } from "./terminalName"
 import type { TerminalTab } from "./types"
@@ -27,6 +28,7 @@ type Props = {
   onCloseAll?: () => void
   onCloseToRight?: (id: string) => void
   onRename?: (id: string, name: string) => void
+  onOpenInVSCode?: () => void
 }
 
 export function TerminalTabBar({
@@ -38,6 +40,7 @@ export function TerminalTabBar({
   onCloseAll,
   onCloseToRight,
   onRename,
+  onOpenInVSCode,
 }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
@@ -137,6 +140,15 @@ export function TerminalTabBar({
               <ContextMenuItem onClick={() => onCloseAll?.()}>
                 Close All Tabs
               </ContextMenuItem>
+              {onOpenInVSCode && (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => onOpenInVSCode()}>
+                    <VSCodeIcon className="size-3.5" />
+                    Open in VSCode
+                  </ContextMenuItem>
+                </>
+              )}
             </ContextMenuContent>
           </ContextMenu>
         )

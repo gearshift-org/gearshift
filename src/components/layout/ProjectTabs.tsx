@@ -1,4 +1,5 @@
 import { X } from "lucide-react"
+import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
 import {
   ContextMenu,
@@ -28,6 +29,7 @@ type Props = {
   onClose?: (id: string) => void
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
+  onOpenInVSCode?: (id: string) => void
 }
 
 export function ProjectTabs({
@@ -40,6 +42,7 @@ export function ProjectTabs({
   onClose,
   onCloseOthers,
   onCloseToRight,
+  onOpenInVSCode,
 }: Props) {
   return (
     <div className="flex h-full items-stretch [-webkit-app-region:no-drag]">
@@ -104,6 +107,15 @@ export function ProjectTabs({
               </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={onAdd}>New Project</ContextMenuItem>
+              {onOpenInVSCode && (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => onOpenInVSCode(p.id)}>
+                    <VSCodeIcon className="size-3.5" />
+                    Open in VSCode
+                  </ContextMenuItem>
+                </>
+              )}
             </ContextMenuContent>
           </ContextMenu>
         )

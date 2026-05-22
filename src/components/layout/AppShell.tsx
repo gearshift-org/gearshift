@@ -286,6 +286,35 @@ export function AppShell() {
     void window.shellApi.openInVSCode(target.path)
   }
 
+  const reorderProjects = (fromId: string, toId: string) => {
+    if (fromId === toId) return
+    setProjects((prev) => {
+      const from = prev.findIndex((p) => p.id === fromId)
+      const to = prev.findIndex((p) => p.id === toId)
+      if (from < 0 || to < 0) return prev
+      const next = prev.slice()
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  const reorderTerminals = (fromId: string, toId: string) => {
+    if (fromId === toId || !activeProject) return
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        const from = p.terminals.findIndex((t) => t.id === fromId)
+        const to = p.terminals.findIndex((t) => t.id === toId)
+        if (from < 0 || to < 0) return p
+        const terminals = p.terminals.slice()
+        const [moved] = terminals.splice(from, 1)
+        terminals.splice(to, 0, moved)
+        return { ...p, terminals }
+      }),
+    )
+  }
+
   const closeOtherProjects = (keepId: string) => {
     setProjects((prev) => {
       for (const p of prev) {
@@ -518,6 +547,7 @@ export function AppShell() {
         onCloseOtherProjects={closeOtherProjects}
         onCloseProjectsToRight={closeProjectsToRight}
         onOpenProjectInVSCode={openProjectInVSCode}
+        onReorderProjects={reorderProjects}
       />
       <TerminalTabBar
         terminals={activeProject?.terminals ?? []}
@@ -528,6 +558,7 @@ export function AppShell() {
         onCloseAll={closeAllTerminals}
         onCloseToRight={closeTerminalsToRight}
         onRename={renameTerminal}
+        onReorder={reorderTerminals}
         onOpenInVSCode={
           activeProject
             ? () => void window.shellApi.openInVSCode(activeProject.path)

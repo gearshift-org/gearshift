@@ -14,6 +14,7 @@ type Props = {
   onCloseOtherProjects?: (id: string) => void
   onCloseProjectsToRight?: (id: string) => void
   onOpenProjectInVSCode?: (id: string) => void
+  onReorderProjects?: (fromId: string, toId: string) => void
 }
 
 export function TitleBar({
@@ -27,9 +28,10 @@ export function TitleBar({
   onCloseOtherProjects,
   onCloseProjectsToRight,
   onOpenProjectInVSCode,
+  onReorderProjects,
 }: Props) {
   return (
-    <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
+    <div className="box-content flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
       <div className="w-[88px] shrink-0" />
       <ProjectTabs
         projects={projects}
@@ -42,6 +44,7 @@ export function TitleBar({
         onCloseOthers={onCloseOtherProjects}
         onCloseToRight={onCloseProjectsToRight}
         onOpenInVSCode={onOpenProjectInVSCode}
+        onReorder={onReorderProjects}
       />
       <div className="flex-1" />
       <ThemeToggle />

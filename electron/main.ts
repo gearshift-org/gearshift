@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
+import fsSync from "node:fs"
 import * as pty from "node-pty"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -12,6 +13,10 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const execFileP = promisify(execFile)
 
 const ptys = new Map<string, pty.IPty>()
+const projectWatchers = new Map<
+  string,
+  { cwd: string; watcher: fsSync.FSWatcher; paths: Set<string>; timer?: NodeJS.Timeout }
+>()
 
 function defaultShell(): string {
   if (process.platform === "win32") return process.env.COMSPEC || "powershell.exe"
@@ -110,6 +115,27 @@ function isPathInside(parent: string, child: string): boolean {
   return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel))
 }
 
+function flushProjectWatch(watchId: string) {
+  const entry = projectWatchers.get(watchId)
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!entry || !win || win.webContents.isDestroyed()) return
+  const paths = Array.from(entry.paths)
+  entry.paths.clear()
+  win.webContents.send("fs:changed", {
+    watchId,
+    cwd: entry.cwd,
+    paths: paths.length > 0 ? paths : undefined,
+  })
+}
+
+function queueProjectWatchEvent(watchId: string, filePath?: string | Buffer | null) {
+  const entry = projectWatchers.get(watchId)
+  if (!entry) return
+  if (filePath) entry.paths.add(String(filePath))
+  if (entry.timer) clearTimeout(entry.timer)
+  entry.timer = setTimeout(() => flushProjectWatch(watchId), 150)
+}
+
 function parseGitStatus(raw: string) {
   const staged: Array<{ path: string; status: string }> = []
   const unstaged: Array<{ path: string; status: string }> = []
@@ -190,6 +216,39 @@ app.whenReady().then(() => {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  ipcMain.handle("fs:watchProject", async (_event, cwd: string) => {
+    if (!cwd) return { ok: false, error: "no-cwd" }
+    try {
+      const watchId = randomUUID()
+      const watcher = fsSync.watch(
+        cwd,
+        { recursive: true },
+        (_eventType, filePath) => {
+          queueProjectWatchEvent(watchId, filePath)
+        },
+      )
+      watcher.on("error", () => {
+        projectWatchers.delete(watchId)
+      })
+      projectWatchers.set(watchId, {
+        cwd,
+        watcher,
+        paths: new Set(),
+      })
+      return { ok: true, watchId }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.on("fs:unwatchProject", (_event, watchId: string) => {
+    const entry = projectWatchers.get(watchId)
+    if (!entry) return
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.watcher.close()
+    projectWatchers.delete(watchId)
   })
 
   ipcMain.handle("git:status", async (_event, cwd: string) => {

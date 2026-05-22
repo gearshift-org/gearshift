@@ -42,11 +42,13 @@ export function ProjectTabs({
                   onClose(p.id)
                 }}
                 className={cn(
-                  "ml-auto grid size-4 place-items-center rounded-sm opacity-0 transition-opacity hover:bg-accent/60 group-hover:opacity-100",
-                  isActive && "opacity-60",
+                  "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:text-foreground group-hover:opacity-100",
+                  isActive
+                    ? "opacity-60 hover:bg-foreground/15"
+                    : "hover:bg-accent/60",
                 )}
               >
-                <X className="size-3" />
+                <X className="size-3.5" />
               </span>
             )}
           </button>
@@ -55,9 +57,11 @@ export function ProjectTabs({
       <button
         onClick={onAdd}
         aria-label="Add project"
-        className="grid h-full w-10 place-items-center border-r border-border/60 text-muted-foreground hover:bg-background/60"
+        className="group/add grid h-full w-10 place-items-center text-muted-foreground"
       >
-        <Plus className="size-3.5" />
+        <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-accent/60 group-hover/add:text-foreground">
+          <Plus className="size-3.5" />
+        </span>
       </button>
     </div>
   )

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { TitleBar } from "./TitleBar"
 import { TerminalTabBar } from "./TerminalTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
@@ -131,32 +131,60 @@ export function AppShell() {
     )
   }
 
-  const startTerminal = async (tabId: string) => {
-    if (!activeProject) return
-    const tab = activeProject.terminals.find((t) => t.id === tabId)
-    if (!tab || !tab.pendingStart) return
-    const { id: newId } = await window.term.create({ cwd: activeProject.path })
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== activeProject.id) return p
-        return {
-          ...p,
-          terminals: p.terminals.map((t) =>
-            t.id === tabId ? { ...t, id: newId, pendingStart: false } : t,
-          ),
-          activeTerminalId:
-            p.activeTerminalId === tabId ? newId : p.activeTerminalId,
-        }
-      }),
+  const startingTerminalsRef = useRef(new Set<string>())
+
+  const startTerminal = useCallback(
+    async (projectId: string, tabId: string) => {
+      const project = projects.find((p) => p.id === projectId)
+      const tab = project?.terminals.find((t) => t.id === tabId)
+      if (!project || !tab?.pendingStart) return
+
+      const startKey = `${projectId}:${tabId}`
+      if (startingTerminalsRef.current.has(startKey)) return
+      startingTerminalsRef.current.add(startKey)
+
+      try {
+        const { id: newId } = await window.term.create({ cwd: project.path })
+        setProjects((prev) =>
+          prev.map((p) => {
+            if (p.id !== projectId) return p
+            return {
+              ...p,
+              terminals: p.terminals.map((t) =>
+                t.id === tabId ? { ...t, id: newId, pendingStart: false } : t,
+              ),
+              activeTerminalId:
+                p.activeTerminalId === tabId ? newId : p.activeTerminalId,
+            }
+          }),
+        )
+      } finally {
+        startingTerminalsRef.current.delete(startKey)
+      }
+    },
+    [projects],
+  )
+
+  useEffect(() => {
+    if (!activeProject?.activeTerminalId) return
+    const activeTab = activeProject.terminals.find(
+      (t) => t.id === activeProject.activeTerminalId,
     )
-  }
+    if (activeTab?.pendingStart) {
+      void startTerminal(activeProject.id, activeTab.id)
+    }
+  }, [activeProject, startTerminal])
 
   const selectTerminal = (id: string) => {
+    const selected = activeProject?.terminals.find((t) => t.id === id)
     setProjects((prev) =>
       prev.map((p) =>
         p.id === activeProjectId ? { ...p, activeTerminalId: id } : p,
       ),
     )
+    if (selected?.pendingStart) {
+      void startTerminal(activeProjectId, id)
+    }
   }
 
   const setTerminalTitle = (terminalId: string, title: string) => {
@@ -225,18 +253,17 @@ export function AppShell() {
   }
 
   // Stable refs so the window-level keydown listener always has the latest handlers.
-  const addTerminalRef = useRef(addTerminal)
-  addTerminalRef.current = addTerminal
-  const closeActiveTerminalRef = useRef(() => {
-    const ap = projects.find((p) => p.id === activeProjectId)
-    if (!ap?.activeTerminalId) return
-    closeTerminal(ap.activeTerminalId)
+  const addTerminalRef = useRef<() => void>(() => undefined)
+  const closeActiveTerminalRef = useRef<() => void>(() => undefined)
+
+  useEffect(() => {
+    addTerminalRef.current = addTerminal
+    closeActiveTerminalRef.current = () => {
+      const ap = projects.find((p) => p.id === activeProjectId)
+      if (!ap?.activeTerminalId) return
+      closeTerminal(ap.activeTerminalId)
+    }
   })
-  closeActiveTerminalRef.current = () => {
-    const ap = projects.find((p) => p.id === activeProjectId)
-    if (!ap?.activeTerminalId) return
-    closeTerminal(ap.activeTerminalId)
-  }
 
   useEffect(() => {
     const offNew = window.appApi.onNewTerminal(() => addTerminalRef.current())
@@ -271,7 +298,10 @@ export function AppShell() {
         projects={projects}
         activeProjectId={activeProjectId}
         onTerminalTitleChange={setTerminalTitle}
-        onStartTerminal={startTerminal}
+        onStartTerminal={(tabId) => {
+          if (!activeProject) return
+          void startTerminal(activeProject.id, tabId)
+        }}
       />
     </div>
   )

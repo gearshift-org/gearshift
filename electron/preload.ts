@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 const dialogApi = {
   openProject: () =>
@@ -50,6 +50,27 @@ const appApi = {
   },
 }
 
+const fsApi = {
+  watchProject: (cwd: string) =>
+    ipcRenderer.invoke("fs:watchProject", cwd) as Promise<{
+      ok: boolean
+      error?: string
+      watchId?: string
+    }>,
+  unwatchProject: (watchId: string) =>
+    ipcRenderer.send("fs:unwatchProject", watchId),
+  onChanged: (
+    cb: (event: { watchId: string; cwd: string; paths?: string[] }) => void,
+  ) => {
+    const listener = (
+      _e: unknown,
+      event: { watchId: string; cwd: string; paths?: string[] },
+    ) => cb(event)
+    ipcRenderer.on("fs:changed", listener)
+    return () => ipcRenderer.removeListener("fs:changed", listener)
+  },
+}
+
 type GitFileRaw = {
   path: string
   status: string
@@ -82,6 +103,7 @@ contextBridge.exposeInMainWorld("clipboardApi", clipboardApi)
 contextBridge.exposeInMainWorld("electronUtils", electronUtils)
 contextBridge.exposeInMainWorld("appApi", appApi)
 contextBridge.exposeInMainWorld("git", gitApi)
+contextBridge.exposeInMainWorld("fsApi", fsApi)
 
 export type DialogApi = typeof dialogApi
 export type TermApi = typeof termApi
@@ -89,3 +111,4 @@ export type ClipboardApi = typeof clipboardApi
 export type ElectronUtils = typeof electronUtils
 export type AppApi = typeof appApi
 export type GitApi = typeof gitApi
+export type FsApi = typeof fsApi

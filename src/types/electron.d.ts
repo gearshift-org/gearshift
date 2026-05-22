@@ -3,6 +3,7 @@ import type {
   ClipboardApi,
   DialogApi,
   ElectronUtils,
+  FsApi,
   GitApi,
   TermApi,
 } from "../../electron/preload"
@@ -15,6 +16,7 @@ declare global {
     electronUtils: ElectronUtils
     appApi: AppApi
     git: GitApi
+    fsApi: FsApi
   }
 }
 

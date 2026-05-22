@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -8,24 +9,45 @@ import { ChangesPane } from "./ChangesPane"
 import type { Project } from "./types"
 
 type Props = {
-  project: Project | undefined
+  projects: Project[]
+  activeProjectId: string
   onTerminalTitleChange?: (terminalId: string, title: string) => void
   onStartTerminal?: (tabId: string) => void
 }
 
 export function WorkspaceSplit({
-  project,
+  projects,
+  activeProjectId,
   onTerminalTitleChange,
   onStartTerminal,
 }: Props) {
+  const activeProject = projects.find((p) => p.id === activeProjectId)
   return (
     <ResizablePanelGroup orientation="horizontal" className="flex-1">
       <ResizablePanel defaultSize={50} minSize={25}>
-        <TerminalPane
-          project={project}
-          onTitleChange={onTerminalTitleChange}
-          onStartTerminal={onStartTerminal}
-        />
+        <div className="relative h-full">
+          {projects.map((p) => (
+            <div
+              key={p.id}
+              className={cn(
+                "absolute inset-0",
+                p.id !== activeProjectId && "invisible pointer-events-none",
+              )}
+            >
+              <TerminalPane
+                project={p}
+                isActive={p.id === activeProjectId}
+                onTitleChange={onTerminalTitleChange}
+                onStartTerminal={onStartTerminal}
+              />
+            </div>
+          ))}
+          {!activeProject && (
+            <div className="grid h-full place-items-center text-xs text-muted-foreground">
+              No project open
+            </div>
+          )}
+        </div>
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize={50} minSize={25}>

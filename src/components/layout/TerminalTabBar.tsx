@@ -54,7 +54,7 @@ export function TerminalTabBar({
   }
 
   return (
-    <div className="flex h-10 items-stretch border-b border-border bg-card">
+    <div className="flex h-10 items-stretch border-b border-border bg-background">
       {terminals.map((t) => {
         const isActive = t.id === activeId
         const isRenaming = t.id === renamingId
@@ -64,8 +64,8 @@ export function TerminalTabBar({
               className={cn(
                 "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs leading-none transition-colors",
                 isActive
-                  ? "bg-background text-foreground"
-                  : "bg-card text-muted-foreground hover:bg-background/60",
+                  ? "bg-accent font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-accent/40",
               )}
               onClick={() => onSelect(t.id)}
               onDoubleClick={() => startRename(t)}

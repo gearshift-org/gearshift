@@ -194,7 +194,7 @@ export function TerminalView({
       }
     }
     safeFit()
-    term.focus()
+    if (isActive) term.focus()
 
     const offData = window.term.onData(sessionId, (chunk) => term.write(chunk))
     const offExit = window.term.onExit(sessionId, () => {

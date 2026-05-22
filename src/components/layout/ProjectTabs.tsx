@@ -28,8 +28,8 @@ export function ProjectTabs({
             className={cn(
               "group relative flex h-full min-w-[160px] items-center gap-2 border-r border-border/60 px-3 text-xs leading-none transition-colors",
               isActive
-                ? "bg-background text-foreground"
-                : "bg-card text-muted-foreground hover:bg-background/60",
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent/40",
             )}
           >
             <span className="truncate">{p.name}</span>

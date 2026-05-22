@@ -18,7 +18,7 @@ export function TitleBar({
   onCloseProject,
 }: Props) {
   return (
-    <div className="flex h-10 items-stretch border-b border-border bg-card [-webkit-app-region:drag]">
+    <div className="flex h-10 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
       <div className="w-[88px] shrink-0" />
       <ProjectTabs
         projects={projects}

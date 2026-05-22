@@ -268,7 +268,8 @@ export function AppShell() {
         onRename={renameTerminal}
       />
       <WorkspaceSplit
-        project={activeProject}
+        projects={projects}
+        activeProjectId={activeProjectId}
         onTerminalTitleChange={setTerminalTitle}
         onStartTerminal={startTerminal}
       />

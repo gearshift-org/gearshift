@@ -5,12 +5,14 @@ import type { Project, TerminalTab } from "./types"
 
 type Props = {
   project: Project | undefined
+  isActive?: boolean
   onTitleChange?: (terminalId: string, title: string) => void
   onStartTerminal?: (tabId: string) => void
 }
 
 export function TerminalPane({
   project,
+  isActive = true,
   onTitleChange,
   onStartTerminal,
 }: Props) {
@@ -29,9 +31,8 @@ export function TerminalPane({
             key={t.id}
             className={cn(
               "absolute inset-0",
-              t.id === project.activeTerminalId
-                ? "visible"
-                : "invisible pointer-events-none",
+              t.id !== project.activeTerminalId &&
+                "invisible pointer-events-none",
             )}
           >
             {t.pendingStart ? (
@@ -39,7 +40,7 @@ export function TerminalPane({
             ) : (
               <TerminalView
                 sessionId={t.id}
-                isActive={t.id === project.activeTerminalId}
+                isActive={isActive && t.id === project.activeTerminalId}
                 onTitleChange={(title) => onTitleChange?.(t.id, title)}
               />
             )}

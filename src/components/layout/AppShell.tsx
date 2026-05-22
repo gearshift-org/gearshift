@@ -3,7 +3,12 @@ import { TitleBar } from "./TitleBar"
 import { TerminalTabBar } from "./TerminalTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import type { Project } from "./types"
-import { loadProjects, saveProjects } from "@/lib/projects"
+import {
+  loadActiveProjectId,
+  loadProjects,
+  saveActiveProjectId,
+  saveProjects,
+} from "@/lib/projects"
 
 function makeId() {
   return crypto.randomUUID()
@@ -28,9 +33,15 @@ export function AppShell() {
       activeTerminalId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
     })),
   )
-  const [activeProjectId, setActiveProjectId] = useState<string>(
-    () => projects[0]?.id ?? "",
-  )
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    const stored = loadActiveProjectId()
+    if (stored && projects.some((p) => p.id === stored)) return stored
+    return projects[0]?.id ?? ""
+  })
+
+  useEffect(() => {
+    saveActiveProjectId(activeProjectId)
+  }, [activeProjectId])
 
   // Persist project list + tabs (id/name/customName/activeTabId) whenever it changes.
   useEffect(() => {

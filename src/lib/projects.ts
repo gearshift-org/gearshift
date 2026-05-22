@@ -13,6 +13,7 @@ export type StoredProject = {
 }
 
 const KEY = "gearshift.projects"
+const ACTIVE_KEY = "gearshift.activeProjectId"
 
 export function loadProjects(): StoredProject[] {
   try {
@@ -45,4 +46,17 @@ export function loadProjects(): StoredProject[] {
 
 export function saveProjects(projects: StoredProject[]): void {
   localStorage.setItem(KEY, JSON.stringify(projects))
+}
+
+export function loadActiveProjectId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function saveActiveProjectId(id: string): void {
+  if (id) localStorage.setItem(ACTIVE_KEY, id)
+  else localStorage.removeItem(ACTIVE_KEY)
 }

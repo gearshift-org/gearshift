@@ -7,9 +7,16 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { AddProjectMenu } from "./AddProjectMenu"
 import type { RecentProject } from "@/lib/projects"
 import type { Project } from "./types"
+
+const BUTTON_TOOLTIP_DELAY = 800
 
 type Props = {
   projects: Project[]
@@ -53,22 +60,27 @@ export function ProjectTabs({
             >
               <span className="truncate">{p.name}</span>
               {canClose && (
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClose?.(p.id)
-                  }}
-                  className={cn(
-                    "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:text-foreground group-hover:opacity-100",
-                    isActive
-                      ? "opacity-60 hover:bg-foreground/15"
-                      : "hover:bg-accent/60",
-                  )}
-                >
-                  <X className="size-3.5" />
-                </span>
+                <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onClose?.(p.id)
+                        }}
+                        className={cn(
+                          "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
+                          isActive && "opacity-60",
+                        )}
+                      >
+                        <X className="size-3.5" />
+                      </span>
+                    }
+                  />
+                  <TooltipContent>Close project</TooltipContent>
+                </Tooltip>
               )}
             </ContextMenuTrigger>
             <ContextMenuContent className="min-w-[200px] whitespace-nowrap">

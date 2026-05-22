@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useNavigate, useParams } from "@tanstack/react-router"
 import { TitleBar } from "./TitleBar"
 import { TerminalTabBar } from "./TerminalTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import type { Project } from "./types"
 import {
-  loadActiveProjectId,
   loadProjects,
   loadRecentProjects,
   pushRecentProject,
@@ -36,6 +36,14 @@ function serializeProjects(projects: Project[]) {
 }
 
 export function AppShell() {
+  const navigate = useNavigate()
+  const params = useParams({ strict: false }) as {
+    projectId?: string
+    terminalId?: string
+  }
+  const routeProjectId = params.projectId ?? null
+  const routeTerminalId = params.terminalId ?? null
+
   const [projects, setProjects] = useState<Project[]>(() =>
     loadProjects().map((p) => ({
       id: p.id,
@@ -50,22 +58,97 @@ export function AppShell() {
       activeTerminalId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
     })),
   )
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
-    const stored = loadActiveProjectId()
-    if (stored && projects.some((p) => p.id === stored)) return stored
-    return projects[0]?.id ?? ""
-  })
 
   const [recents, setRecents] = useState<RecentProject[]>(() =>
     loadRecentProjects(),
   )
 
+  // Resolve current project from the route (with fallback to first project).
+  const activeProjectId =
+    (routeProjectId && projects.some((p) => p.id === routeProjectId)
+      ? routeProjectId
+      : projects[0]?.id) ?? ""
+  const activeProject = projects.find((p) => p.id === activeProjectId)
+
+  // Resolve current terminal: route → project's last-active → first.
+  const activeTerminalId = (() => {
+    if (!activeProject) return ""
+    if (
+      routeTerminalId &&
+      activeProject.terminals.some((t) => t.id === routeTerminalId)
+    ) {
+      return routeTerminalId
+    }
+    if (
+      activeProject.activeTerminalId &&
+      activeProject.terminals.some(
+        (t) => t.id === activeProject.activeTerminalId,
+      )
+    ) {
+      return activeProject.activeTerminalId
+    }
+    return activeProject.terminals[0]?.id ?? ""
+  })()
+
+  const navigateToProject = useCallback(
+    (id: string | null, terminalId?: string) => {
+      if (!id) {
+        void navigate({ to: "/" })
+        return
+      }
+      if (terminalId) {
+        void navigate({
+          to: "/projects/$projectId/terminals/$terminalId",
+          params: { projectId: id, terminalId },
+        })
+      } else {
+        void navigate({
+          to: "/projects/$projectId",
+          params: { projectId: id },
+        })
+      }
+    },
+    [navigate],
+  )
+
+  const navigateToTerminal = useCallback(
+    (terminalId: string) => {
+      if (!activeProjectId || !terminalId) return
+      void navigate({
+        to: "/projects/$projectId/terminals/$terminalId",
+        params: { projectId: activeProjectId, terminalId },
+      })
+    },
+    [navigate, activeProjectId],
+  )
+
+  // Persist last-active project id from the route.
   useEffect(() => {
     saveActiveProjectId(activeProjectId)
   }, [activeProjectId])
 
-  // Seed recents with currently-open projects on first mount so they show up
-  // again after being closed.
+  // Sync project's stored activeTerminalId with whatever the route shows so
+  // future project switches restore the last terminal the user was on.
+  useEffect(() => {
+    if (!activeProjectId || !activeTerminalId) return
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === activeProjectId && p.activeTerminalId !== activeTerminalId
+          ? { ...p, activeTerminalId }
+          : p,
+      ),
+    )
+  }, [activeProjectId, activeTerminalId])
+
+  // If the URL points at a missing project (e.g. after closing one) redirect
+  // to whatever is active now.
+  useEffect(() => {
+    if (routeProjectId && !projects.some((p) => p.id === routeProjectId)) {
+      navigateToProject(activeProjectId || null)
+    }
+  }, [routeProjectId, projects, activeProjectId, navigateToProject])
+
+  // Seed recents with currently-open projects on first mount.
   useEffect(() => {
     let next = recents
     for (const p of projects) {
@@ -74,7 +157,6 @@ export function AppShell() {
       }
     }
     if (next !== recents) setRecents(next)
-    // Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -83,10 +165,7 @@ export function AppShell() {
     saveProjects(serializeProjects(projects))
   }, [projects])
 
-  const activeProject = projects.find((p) => p.id === activeProjectId)
-
-  // Auto-spawn one terminal only when a project has no tabs at all
-  // (i.e. newly added projects, not restored ones).
+  // Auto-spawn one terminal only when an active project has no tabs at all.
   useEffect(() => {
     if (!activeProject) return
     if (activeProject.terminals.length > 0) return
@@ -108,16 +187,21 @@ export function AppShell() {
             : p,
         ),
       )
+      void navigate({
+        to: "/projects/$projectId/terminals/$terminalId",
+        params: { projectId: activeProject.id, terminalId: id },
+        replace: true,
+      })
     })()
     return () => {
       cancelled = true
     }
-  }, [activeProject])
+  }, [activeProject, navigate])
 
   const openProjectByPath = (path: string, name?: string) => {
     const existing = projects.find((p) => p.path === path)
     if (existing) {
-      setActiveProjectId(existing.id)
+      navigateToProject(existing.id, existing.activeTerminalId || undefined)
       return
     }
     const id = makeId()
@@ -132,7 +216,7 @@ export function AppShell() {
         activeTerminalId: "",
       },
     ])
-    setActiveProjectId(id)
+    navigateToProject(id)
     setRecents(pushRecentProject({ name: resolvedName, path }))
   }
 
@@ -146,6 +230,11 @@ export function AppShell() {
     openProjectByPath(recent.path, recent.name)
   }
 
+  const selectProject = (id: string) => {
+    const p = projects.find((x) => x.id === id)
+    navigateToProject(id, p?.activeTerminalId || undefined)
+  }
+
   const closeProject = (id: string) => {
     setProjects((prev) => {
       const target = prev.find((p) => p.id === id)
@@ -156,7 +245,15 @@ export function AppShell() {
       }
       const next = prev.filter((p) => p.id !== id)
       if (id === activeProjectId) {
-        setActiveProjectId(next[0]?.id ?? "")
+        const nextActive = next[0]
+        if (nextActive) {
+          navigateToProject(
+            nextActive.id,
+            nextActive.activeTerminalId || undefined,
+          )
+        } else {
+          navigateToProject(null)
+        }
       }
       return next
     })
@@ -175,7 +272,10 @@ export function AppShell() {
       }
       const closedIds = new Set(toClose.map((p) => p.id))
       const next = prev.filter((p) => !closedIds.has(p.id))
-      if (closedIds.has(activeProjectId)) setActiveProjectId(id)
+      if (closedIds.has(activeProjectId)) {
+        const keep = next.find((p) => p.id === id)
+        navigateToProject(id, keep?.activeTerminalId || undefined)
+      }
       return next
     })
   }
@@ -189,7 +289,8 @@ export function AppShell() {
         }
       }
       const next = prev.filter((p) => p.id === keepId)
-      setActiveProjectId(keepId)
+      const keep = next[0]
+      navigateToProject(keepId, keep?.activeTerminalId || undefined)
       return next
     })
   }
@@ -210,6 +311,7 @@ export function AppShell() {
         }
       }),
     )
+    navigateToTerminal(id)
   }
 
   const startingTerminalsRef = useRef(new Set<string>())
@@ -239,33 +341,37 @@ export function AppShell() {
             }
           }),
         )
+        // If the URL pointed at the placeholder, update it to the real id.
+        if (
+          routeProjectId === projectId &&
+          routeTerminalId === tabId &&
+          tabId !== newId
+        ) {
+          void navigate({
+            to: "/projects/$projectId/terminals/$terminalId",
+            params: { projectId, terminalId: newId },
+            replace: true,
+          })
+        }
       } finally {
         startingTerminalsRef.current.delete(startKey)
       }
     },
-    [projects],
+    [projects, navigate, routeProjectId, routeTerminalId],
   )
 
   useEffect(() => {
-    if (!activeProject?.activeTerminalId) return
+    if (!activeProject || !activeTerminalId) return
     const activeTab = activeProject.terminals.find(
-      (t) => t.id === activeProject.activeTerminalId,
+      (t) => t.id === activeTerminalId,
     )
     if (activeTab?.pendingStart) {
       void startTerminal(activeProject.id, activeTab.id)
     }
-  }, [activeProject, startTerminal])
+  }, [activeProject, activeTerminalId, startTerminal])
 
   const selectTerminal = (id: string) => {
-    const selected = activeProject?.terminals.find((t) => t.id === id)
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === activeProjectId ? { ...p, activeTerminalId: id } : p,
-      ),
-    )
-    if (selected?.pendingStart) {
-      void startTerminal(activeProjectId, id)
-    }
+    navigateToTerminal(id)
   }
 
   const setTerminalTitle = (terminalId: string, title: string) => {
@@ -310,15 +416,24 @@ export function AppShell() {
         if (p.id !== activeProjectId) return p
         const closingIdx = p.terminals.findIndex((t) => t.id === id)
         const terminals = p.terminals.filter((t) => t.id !== id)
-        let activeTerminalId = p.activeTerminalId
+        let nextActive = p.activeTerminalId
         if (p.activeTerminalId === id) {
-          // Prefer the tab to the left; fall back to the new tab now at this index.
           const nextIdx = Math.max(0, closingIdx - 1)
-          activeTerminalId = terminals[nextIdx]?.id ?? ""
+          nextActive = terminals[nextIdx]?.id ?? ""
         }
-        return { ...p, terminals, activeTerminalId }
+        return { ...p, terminals, activeTerminalId: nextActive }
       }),
     )
+    if (id === activeTerminalId) {
+      const closingIdx =
+        activeProject?.terminals.findIndex((t) => t.id === id) ?? -1
+      const remaining =
+        activeProject?.terminals.filter((t) => t.id !== id) ?? []
+      const nextIdx = Math.max(0, closingIdx - 1)
+      const next = remaining[nextIdx]?.id
+      if (next) navigateToTerminal(next)
+      else if (activeProjectId) navigateToProject(activeProjectId)
+    }
   }
 
   const closeTerminalsToRight = (id: string) => {
@@ -335,12 +450,13 @@ export function AppShell() {
       prev.map((p) => {
         if (p.id !== activeProjectId) return p
         const terminals = p.terminals.filter((t) => !closedIds.has(t.id))
-        const activeTerminalId = closedIds.has(p.activeTerminalId)
+        const nextActive = closedIds.has(p.activeTerminalId)
           ? terminals[terminals.length - 1]?.id ?? ""
           : p.activeTerminalId
-        return { ...p, terminals, activeTerminalId }
+        return { ...p, terminals, activeTerminalId: nextActive }
       }),
     )
+    if (closedIds.has(activeTerminalId)) navigateToTerminal(id)
   }
 
   const closeAllTerminals = () => {
@@ -355,6 +471,7 @@ export function AppShell() {
           : p,
       ),
     )
+    navigateToProject(activeProjectId)
   }
 
   // Stable refs so the window-level keydown listener always has the latest handlers.
@@ -364,9 +481,8 @@ export function AppShell() {
   useEffect(() => {
     addTerminalRef.current = addTerminal
     closeActiveTerminalRef.current = () => {
-      const ap = projects.find((p) => p.id === activeProjectId)
-      if (!ap?.activeTerminalId) return
-      closeTerminal(ap.activeTerminalId)
+      if (!activeTerminalId) return
+      closeTerminal(activeTerminalId)
     }
   })
 
@@ -389,7 +505,7 @@ export function AppShell() {
         recents={recents.filter(
           (r) => !projects.some((p) => p.path === r.path),
         )}
-        onSelectProject={setActiveProjectId}
+        onSelectProject={selectProject}
         onAddProject={addProject}
         onPickRecent={pickRecent}
         onCloseProject={closeProject}
@@ -398,7 +514,7 @@ export function AppShell() {
       />
       <TerminalTabBar
         terminals={activeProject?.terminals ?? []}
-        activeId={activeProject?.activeTerminalId ?? ""}
+        activeId={activeTerminalId}
         onSelect={selectTerminal}
         onAdd={addTerminal}
         onClose={closeTerminal}

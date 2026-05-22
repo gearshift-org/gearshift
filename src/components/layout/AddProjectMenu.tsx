@@ -8,7 +8,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { RecentProject } from "@/lib/projects"
+
+const BUTTON_TOOLTIP_DELAY = 800
 
 type Props = {
   recents: RecentProject[]
@@ -33,14 +40,21 @@ export function AddProjectMenu({
 }: Props) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="Add project"
-        className="group/add grid h-full w-10 place-items-center text-muted-foreground outline-none"
-      >
-        <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-accent/60 group-hover/add:text-foreground">
-          <Plus className="size-3.5" />
-        </span>
-      </DropdownMenuTrigger>
+      <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              aria-label="Add project"
+              className="group/add grid h-full w-10 place-items-center text-muted-foreground outline-none"
+            >
+              <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">
+                <Plus className="size-3.5" />
+              </span>
+            </DropdownMenuTrigger>
+          }
+        />
+        <TooltipContent>Open project</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="start" className="min-w-[260px]">
         {recents.length > 0 && (
           <>

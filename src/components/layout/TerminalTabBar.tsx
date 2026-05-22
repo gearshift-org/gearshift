@@ -10,6 +10,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
+const BUTTON_TOOLTIP_DELAY = 800
 
 type Props = {
   terminals: TerminalTab[]
@@ -90,22 +97,27 @@ export function TerminalTabBar({
                 <span className="truncate">{displayName(t)}</span>
               )}
               {onClose && terminals.length > 1 && !isRenaming && (
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClose(t.id)
-                  }}
-                  className={cn(
-                    "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:text-foreground group-hover:opacity-100",
-                    isActive
-                      ? "opacity-60 hover:bg-foreground/15"
-                      : "hover:bg-accent/60",
-                  )}
-                >
-                  <X className="size-3.5" />
-                </span>
+                <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onClose(t.id)
+                        }}
+                        className={cn(
+                          "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
+                          isActive && "opacity-60",
+                        )}
+                      >
+                        <X className="size-3.5" />
+                      </span>
+                    }
+                  />
+                  <TooltipContent>Close terminal</TooltipContent>
+                </Tooltip>
               )}
             </ContextMenuTrigger>
             <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
@@ -129,15 +141,22 @@ export function TerminalTabBar({
           </ContextMenu>
         )
       })}
-      <button
-        onClick={onAdd}
-        aria-label="Add terminal"
-        className="group/add grid h-full w-10 place-items-center text-muted-foreground"
-      >
-        <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-accent/60 group-hover/add:text-foreground">
-          <Plus className="size-3.5" />
-        </span>
-      </button>
+      <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+        <TooltipTrigger
+          render={
+            <button
+              onClick={onAdd}
+              aria-label="Add terminal"
+              className="group/add grid h-full w-10 place-items-center text-muted-foreground"
+            >
+              <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">
+                <Plus className="size-3.5" />
+              </span>
+            </button>
+          }
+        />
+        <TooltipContent>New terminal</TooltipContent>
+      </Tooltip>
     </div>
   )
 }

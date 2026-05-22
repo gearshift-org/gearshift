@@ -133,8 +133,15 @@
   position: relative;
   height: 100%;
   min-height: 0;
+  margin: 0;
+  padding: 0;
   overflow: auto;
   background: var(--card);
+}
+
+.diff-viewer-scroll > * {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }
 
 .diff-viewer-content {
@@ -146,6 +153,44 @@
 .diff-viewer-file {
   position: relative;
   overflow: visible;
+}
+
+.diff-viewer-file-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  font-family: "SF Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+}
+
+.diff-viewer-file-header:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.diff-viewer-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+}
+
+.diff-viewer-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diff-viewer-plugin-stats {

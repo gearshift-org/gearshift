@@ -1,37 +1,35 @@
-import React, { memo, useMemo } from "react"
-import { FileDiff, Virtualizer } from "@pierre/diffs/react"
 import {
-  DEFAULT_VIRTUAL_FILE_METRICS,
-  parsePatchFiles,
-} from "@pierre/diffs"
-import type { FileDiffMetadata, VirtualFileMetrics } from "@pierre/diffs"
+  forwardRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
+import { ChevronDown, ChevronRight } from "lucide-react"
+import {
+  CodeView,
+  type CodeViewHandle,
+  type CodeViewItem,
+} from "@pierre/diffs/react"
+import { parsePatchFiles } from "@pierre/diffs"
+import type { FileDiffMetadata } from "@pierre/diffs"
 
 type Props = {
   patch: string
   themeType: "light" | "dark"
   viewMode: "unified" | "split"
+  onCollapsedStateChange?: (state: {
+    collapsed: number
+    total: number
+  }) => void
 }
 
-class FileDiffErrorBoundary extends React.Component<
-  { filePath: string; children: React.ReactNode },
-  { error: Error | null }
-> {
-  state = { error: null as Error | null }
-
-  static getDerivedStateFromError(error: Error) {
-    return { error }
-  }
-
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="diff-viewer-error">
-          Could not render diff for {this.props.filePath}
-        </div>
-      )
-    }
-    return this.props.children
-  }
+export type DiffViewerHandle = {
+  scrollToFile: (path: string) => void
+  collapseAll: () => void
+  expandAll: () => void
 }
 
 function countHunkChanges(file: FileDiffMetadata) {
@@ -44,93 +42,172 @@ function countHunkChanges(file: FileDiffMetadata) {
   return { additions, deletions }
 }
 
-function metricsForFile(
-  file: FileDiffMetadata,
-  viewMode: "unified" | "split",
-): VirtualFileMetrics {
-  return {
-    ...DEFAULT_VIRTUAL_FILE_METRICS,
-    hunkLineCount:
-      viewMode === "split" ? file.splitLineCount : file.unifiedLineCount,
-  }
-}
-
 const DIFFS_UNSAFE_CSS = `
 :host {
   display: block;
+  margin: 0;
+  padding: 0;
   background: var(--card);
   color: var(--foreground);
   font-family: "SF Mono", "SFMono-Regular", Menlo, monospace;
   font-size: 12px;
 }
 * { box-sizing: border-box; }
+[data-diffs-header] {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+}
+[data-code] {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
 `
 
-function DiffViewerComponent({ patch, themeType, viewMode }: Props) {
-  const files = useMemo(() => {
-    if (!patch.trim()) return []
-    try {
-      return parsePatchFiles(patch).flatMap((parsed) => parsed.files)
-    } catch {
-      return []
-    }
-  }, [patch])
+const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
+  function DiffViewerComponent(
+    { patch, themeType, viewMode, onCollapsedStateChange },
+    ref,
+  ) {
+    const files = useMemo(() => {
+      if (!patch.trim()) return []
+      try {
+        return parsePatchFiles(patch).flatMap((parsed) => parsed.files)
+      } catch {
+        return []
+      }
+    }, [patch])
 
-  const diffOptions = useMemo(
-    () => ({
-      diffStyle: viewMode,
-      overflow: "scroll" as const,
-      stickyHeader: true,
-      theme: { dark: "github-dark", light: "github-light" },
-      themeType,
-      hunkSeparators: "line-info" as const,
-      lineDiffType: "word-alt" as const,
-      tokenizeMaxLineLength: 1000,
-      unsafeCSS: DIFFS_UNSAFE_CSS,
-    }),
-    [themeType, viewMode],
-  )
+    const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+    const toggleCollapsed = (id: string) =>
+      setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
 
-  if (!patch.trim()) {
-    return <div className="diff-viewer-empty">No diff to show</div>
-  }
+    useEffect(() => {
+      if (!onCollapsedStateChange) return
+      let count = 0
+      files.forEach((file, index) => {
+        if (collapsed[`${file.name}-${index}`]) count++
+      })
+      onCollapsedStateChange({ collapsed: count, total: files.length })
+    }, [collapsed, files, onCollapsedStateChange])
 
-  if (files.length === 0) {
-    return <div className="diff-viewer-empty">No renderable diff</div>
-  }
+    const handleRef = useRef<CodeViewHandle | null>(null)
 
-  return (
-    <Virtualizer
-      className="diff-viewer-scroll"
-      contentClassName="diff-viewer-content"
-    >
-        {files.map((file, index) => {
-          const { additions, deletions } = countHunkChanges(file)
-          return (
-            <div key={`${file.name}-${index}`} className="diff-viewer-file">
-              <FileDiffErrorBoundary filePath={file.name}>
-                <FileDiff
-                  fileDiff={file}
-                  options={diffOptions}
-                  metrics={metricsForFile(file, viewMode)}
-                  className="diff-viewer-file-inner"
-                  renderHeaderMetadata={() => (
-                    <span className="diff-viewer-plugin-stats">
-                      {additions > 0 && (
-                        <span className="diff-viewer-add">+{additions}</span>
-                      )}
-                      {deletions > 0 && (
-                        <span className="diff-viewer-del">-{deletions}</span>
-                      )}
-                    </span>
-                  )}
-                />
-              </FileDiffErrorBoundary>
-            </div>
+    // Map file path → first matching item id so external callers can
+    // jump to "src/foo.ts" without knowing the internal index suffix.
+    const pathToId = useMemo(() => {
+      const m = new Map<string, string>()
+      files.forEach((file, index) => {
+        const id = `${file.name}-${index}`
+        if (!m.has(file.name)) m.set(file.name, id)
+      })
+      return m
+    }, [files])
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToFile(path: string) {
+          const id = pathToId.get(path)
+          if (!id) return
+          setCollapsed((prev) =>
+            prev[id] ? { ...prev, [id]: false } : prev,
           )
-        })}
-    </Virtualizer>
-  )
-}
+          handleRef.current?.scrollTo({ type: "item", id, align: "start" })
+        },
+        collapseAll() {
+          const next: Record<string, boolean> = {}
+          files.forEach((file, index) => {
+            next[`${file.name}-${index}`] = true
+          })
+          setCollapsed(next)
+        },
+        expandAll() {
+          setCollapsed({})
+        },
+      }),
+      [files, pathToId],
+    )
+
+    const items = useMemo<CodeViewItem[]>(
+      () =>
+        files.map((file, index) => {
+          const id = `${file.name}-${index}`
+          const isCollapsed = !!collapsed[id]
+          return {
+            id,
+            type: "diff",
+            fileDiff: file,
+            collapsed: isCollapsed,
+            version: isCollapsed ? 1 : 0,
+          }
+        }),
+      [files, collapsed],
+    )
+
+    const options = useMemo(
+      () => ({
+        diffStyle: viewMode,
+        overflow: "scroll" as const,
+        stickyHeaders: true,
+        theme: { dark: "github-dark", light: "github-light" },
+        themeType,
+        hunkSeparators: "line-info" as const,
+        lineDiffType: "word-alt" as const,
+        tokenizeMaxLineLength: 1000,
+        unsafeCSS: DIFFS_UNSAFE_CSS,
+        layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
+        itemMetrics: { diffHeaderHeight: 32, spacing: 0 },
+      }),
+      [themeType, viewMode],
+    )
+
+    if (!patch.trim()) {
+      return <div className="diff-viewer-empty">No diff to show</div>
+    }
+
+    if (files.length === 0) {
+      return <div className="diff-viewer-empty">No renderable diff</div>
+    }
+
+    return (
+      <CodeView
+        ref={handleRef}
+        className="diff-viewer-scroll"
+        items={items}
+        options={options}
+        renderCustomHeader={(item) => {
+          if (item.type !== "diff") return null
+          const { additions, deletions } = countHunkChanges(item.fileDiff)
+          const isCollapsed = !!item.collapsed
+          return (
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(item.id)}
+              aria-expanded={!isCollapsed}
+              className="diff-viewer-file-header"
+            >
+              {isCollapsed ? (
+                <ChevronRight className="diff-viewer-chevron" />
+              ) : (
+                <ChevronDown className="diff-viewer-chevron" />
+              )}
+              <span className="diff-viewer-file-name">{item.fileDiff.name}</span>
+              <span className="diff-viewer-plugin-stats">
+                {additions > 0 && (
+                  <span className="diff-viewer-add">+{additions}</span>
+                )}
+                {deletions > 0 && (
+                  <span className="diff-viewer-del">-{deletions}</span>
+                )}
+              </span>
+            </button>
+          )
+        }}
+      />
+    )
+  },
+)
 
 export const DiffViewer = memo(DiffViewerComponent)

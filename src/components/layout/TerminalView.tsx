@@ -1,7 +1,10 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
+import { SearchAddon } from "@xterm/addon-search"
 import { useTheme } from "@/components/theme-provider"
+import { cn } from "@/lib/utils"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,6 +35,15 @@ const LIGHT_THEME = {
   selectionBackground: "#3b82f655",
   selectionForeground: "#171717",
   selectionInactiveBackground: "#3b82f630",
+}
+
+const SEARCH_DECORATIONS = {
+  matchBackground: "#a8a8a833",
+  matchBorder: "#a8a8a866",
+  matchOverviewRuler: "#a8a8a8",
+  activeMatchBackground: "#facc15aa",
+  activeMatchBorder: "#facc15",
+  activeMatchColorOverviewRuler: "#facc15",
 }
 
 const WRAPPER_BG = "[--xterm-bg:#ffffff] dark:[--xterm-bg:#0a0a0a]"
@@ -65,10 +77,33 @@ export function TerminalView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const searchRef = useRef<SearchAddon | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
   const onTitleChangeRef = useRef(onTitleChange)
   onTitleChangeRef.current = onTitleChange
+
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState({
+    resultIndex: -1,
+    resultCount: 0,
+  })
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true)
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }, [])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    searchRef.current?.clearDecorations()
+    termRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     const container = containerRef.current
@@ -84,9 +119,19 @@ export function TerminalView({
       allowProposedApi: true,
     })
     const fit = new FitAddon()
+    const search = new SearchAddon()
     term.loadAddon(fit)
+    term.loadAddon(search)
     term.open(container)
     termRef.current = term
+    searchRef.current = search
+
+    const resultsSub = search.onDidChangeResults((e) => {
+      setSearchResults({
+        resultIndex: e.resultIndex,
+        resultCount: e.resultCount,
+      })
+    })
 
     // Clipboard + macOS-style readline navigation. xterm otherwise either
     // swallows these or sends raw ^C/^V/etc. to the PTY.
@@ -104,6 +149,13 @@ export function TerminalView({
       const alt = e.altKey
       const ctrl = e.ctrlKey
       const shift = e.shiftKey
+
+      // Cmd+F — open search overlay.
+      if ((meta || ctrl) && !alt && !shift && key === "f") {
+        e.preventDefault()
+        openSearch()
+        return false
+      }
 
       // Clipboard / selection (Cmd or Ctrl).
       if ((meta || ctrl) && !alt) {
@@ -242,10 +294,13 @@ export function TerminalView({
       offExit()
       inputSub.dispose()
       titleSub.dispose()
+      resultsSub.dispose()
+      search.dispose()
       term.dispose()
       termRef.current = null
+      searchRef.current = null
     }
-  }, [sessionId])
+  }, [sessionId, openSearch])
 
   const themeObj = isDark ? DARK_THEME : LIGHT_THEME
   useEffect(() => {
@@ -255,8 +310,32 @@ export function TerminalView({
   }, [themeObj])
 
   useEffect(() => {
-    if (isActive) termRef.current?.focus()
-  }, [isActive])
+    if (isActive && !searchOpen) termRef.current?.focus()
+  }, [isActive, searchOpen])
+
+  const runSearch = useCallback(
+    (q: string, direction: "next" | "prev" = "next") => {
+      const search = searchRef.current
+      if (!search) return
+      if (!q) {
+        search.clearDecorations()
+        setSearchResults({ resultIndex: -1, resultCount: 0 })
+        return
+      }
+      const opts = { decorations: SEARCH_DECORATIONS }
+      if (direction === "next") search.findNext(q, opts)
+      else search.findPrevious(q, opts)
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!searchOpen) return
+    runSearch(searchQuery, "next")
+  }, [searchQuery, searchOpen, runSearch])
+
+  const findNext = () => runSearch(searchQuery, "next")
+  const findPrev = () => runSearch(searchQuery, "prev")
 
   const copySelection = async () => {
     const term = termRef.current
@@ -285,12 +364,78 @@ export function TerminalView({
     term.focus()
   }
 
+  const matchLabel =
+    searchResults.resultCount === 0
+      ? searchQuery
+        ? "0/0"
+        : ""
+      : `${searchResults.resultIndex + 1}/${searchResults.resultCount}`
+
   return (
     <ContextMenu>
       <ContextMenuTrigger
-        className={`${WRAPPER_BG} block h-full w-full bg-[var(--xterm-bg)] px-3 py-3`}
+        className={`${WRAPPER_BG} relative block h-full w-full bg-[var(--xterm-bg)] px-3 py-3`}
       >
         <div ref={containerRef} className="h-full w-full" />
+        {searchOpen && (
+          <div
+            className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-border bg-popover/95 px-1.5 py-1 text-xs shadow-md backdrop-blur"
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
+          >
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault()
+                  closeSearch()
+                } else if (e.key === "Enter") {
+                  e.preventDefault()
+                  if (e.shiftKey) findPrev()
+                  else findNext()
+                }
+              }}
+              placeholder="Find"
+              className="h-6 w-40 bg-transparent px-1.5 text-xs outline-none placeholder:text-muted-foreground"
+            />
+            <span
+              className={cn(
+                "min-w-[2.5rem] px-1 text-right tabular-nums",
+                searchResults.resultCount === 0 && searchQuery
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            >
+              {matchLabel}
+            </span>
+            <button
+              type="button"
+              onClick={findPrev}
+              aria-label="Previous match"
+              className="grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              <ChevronUp className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={findNext}
+              aria-label="Next match"
+              className="grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={closeSearch}
+              aria-label="Close search"
+              className="grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
         <ContextMenuItem onClick={copySelection}>
@@ -309,6 +454,11 @@ export function TerminalView({
         <ContextMenuItem onClick={clear}>
           Clear
           <ContextMenuShortcut>⌘K</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={openSearch}>
+          Find
+          <ContextMenuShortcut>⌘F</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

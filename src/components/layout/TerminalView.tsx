@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { SearchAddon } from "@xterm/addon-search"
+import { WebglAddon } from "@xterm/addon-webgl"
 import { useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 import {
@@ -125,6 +126,20 @@ export function TerminalView({
     term.open(container)
     termRef.current = term
     searchRef.current = search
+
+    // WebGL renderer for crisp glyphs (matches Ghostty / VS Code quality).
+    // Falls back to default DOM renderer if WebGL is unavailable.
+    let webgl: WebglAddon | null = null
+    try {
+      webgl = new WebglAddon()
+      webgl.onContextLoss(() => {
+        webgl?.dispose()
+        webgl = null
+      })
+      term.loadAddon(webgl)
+    } catch {
+      // ignore
+    }
 
     const resultsSub = search.onDidChangeResults((e) => {
       setSearchResults({
@@ -296,6 +311,7 @@ export function TerminalView({
       titleSub.dispose()
       resultsSub.dispose()
       search.dispose()
+      webgl?.dispose()
       term.dispose()
       termRef.current = null
       searchRef.current = null

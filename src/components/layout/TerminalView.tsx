@@ -198,8 +198,6 @@ export function TerminalView({
     const inputSub = term.onData((d) => window.term.write(sessionId, d))
     const titleSub = term.onTitleChange((t) => {
       const trimmed = t.trim()
-      // Skip the default "user@host:path" titles shells set on every prompt.
-      if (/^[^@\s]+@[^:\s]+:/.test(trimmed)) return
       onTitleChangeRef.current?.(trimmed)
     })
 

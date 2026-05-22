@@ -60,7 +60,7 @@ export function WorkspaceSplit({
                 p.id !== activeProjectId && "invisible pointer-events-none",
               )}
             >
-              <ChangesPane cwd={p.path} />
+              <ChangesPane cwd={p.path} isActive={p.id === activeProjectId} />
             </div>
           ))}
           {!activeProject && <ChangesPane cwd={null} />}

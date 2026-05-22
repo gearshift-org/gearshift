@@ -13,7 +13,9 @@ export default defineConfig({
         entry: "electron/main.ts",
         vite: {
           build: {
-            rollupOptions: { external: ["node-pty", "electron"] },
+            rollupOptions: {
+              external: ["node-pty", "electron", "@parcel/watcher"],
+            },
           },
         },
       },

@@ -5,8 +5,10 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
-import fsSync from "node:fs"
 import * as pty from "node-pty"
+import parcelWatcher from "@parcel/watcher"
+
+type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
@@ -15,8 +17,42 @@ const execFileP = promisify(execFile)
 const ptys = new Map<string, pty.IPty>()
 const projectWatchers = new Map<
   string,
-  { cwd: string; watcher: fsSync.FSWatcher; paths: Set<string>; timer?: NodeJS.Timeout }
+  {
+    cwd: string
+    subscription: ParcelSubscription
+    paths: Set<string>
+    timer?: NodeJS.Timeout
+  }
 >()
+
+const WATCHER_IGNORE_BASE = [
+  "**/.git/**",
+  "**/.DS_Store",
+]
+
+function gitignoreToGlobs(line: string): string[] {
+  let p = line.trim()
+  if (!p || p.startsWith("#") || p.startsWith("!")) return []
+  // strip trailing slash; we'll match both file and dir contents below
+  const dirOnly = p.endsWith("/")
+  if (dirOnly) p = p.slice(0, -1)
+  // anchored to repo root
+  if (p.startsWith("/")) {
+    p = p.slice(1)
+    return dirOnly ? [`${p}/**`] : [p, `${p}/**`]
+  }
+  // unanchored — match anywhere in tree
+  return dirOnly ? [`**/${p}/**`] : [`**/${p}`, `**/${p}/**`]
+}
+
+async function readGitignoreGlobs(cwd: string): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(path.join(cwd, ".gitignore"), "utf8")
+    return raw.split(/\r?\n/).flatMap(gitignoreToGlobs)
+  } catch {
+    return []
+  }
+}
 
 function defaultShell(): string {
   if (process.platform === "win32") return process.env.COMSPEC || "powershell.exe"
@@ -222,19 +258,19 @@ app.whenReady().then(() => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {
       const watchId = randomUUID()
-      const watcher = fsSync.watch(
+      const gitignoreGlobs = await readGitignoreGlobs(cwd)
+      const ignore = [...WATCHER_IGNORE_BASE, ...gitignoreGlobs]
+      const subscription = await parcelWatcher.subscribe(
         cwd,
-        { recursive: true },
-        (_eventType, filePath) => {
-          queueProjectWatchEvent(watchId, filePath)
+        (err, events) => {
+          if (err) return
+          for (const ev of events) queueProjectWatchEvent(watchId, ev.path)
         },
+        { ignore },
       )
-      watcher.on("error", () => {
-        projectWatchers.delete(watchId)
-      })
       projectWatchers.set(watchId, {
         cwd,
-        watcher,
+        subscription,
         paths: new Set(),
       })
       return { ok: true, watchId }
@@ -243,12 +279,16 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.on("fs:unwatchProject", (_event, watchId: string) => {
+  ipcMain.on("fs:unwatchProject", async (_event, watchId: string) => {
     const entry = projectWatchers.get(watchId)
     if (!entry) return
     if (entry.timer) clearTimeout(entry.timer)
-    entry.watcher.close()
     projectWatchers.delete(watchId)
+    try {
+      await entry.subscription.unsubscribe()
+    } catch {
+      // ignore
+    }
   })
 
   ipcMain.handle("git:status", async (_event, cwd: string) => {

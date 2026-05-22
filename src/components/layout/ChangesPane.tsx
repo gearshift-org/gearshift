@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Columns2, Rows3 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -8,6 +8,11 @@ import { DiffViewer } from "./DiffViewer"
 
 type Status = "M" | "A" | "D" | "R" | "C" | "U" | string
 type GitFile = { path: string; status: Status; staged?: boolean }
+
+const REFRESH_DEBOUNCE_MS = 350
+const POLL_INTERVAL_MS = 4000
+const POLL_INTERVAL_LARGE_MS = 10000
+const LARGE_CHANGESET_THRESHOLD = 300
 
 const STATUS_STYLES: Record<Status, string> = {
   M: "text-amber-500",
@@ -20,9 +25,10 @@ const STATUS_STYLES: Record<Status, string> = {
 
 type Props = {
   cwd: string | null
+  isActive?: boolean
 }
 
-export function ChangesPane({ cwd }: Props) {
+export function ChangesPane({ cwd, isActive = true }: Props) {
   const { resolvedTheme } = useTheme()
   const [files, setFiles] = useState<GitFile[]>([])
   const [patch, setPatch] = useState("")
@@ -75,6 +81,7 @@ export function ChangesPane({ cwd }: Props) {
       setError(null)
       return
     }
+    if (!isActive) return
 
     let cancelled = false
     refreshChanges(cwd, { showLoading: true }).finally(() => {
@@ -84,10 +91,34 @@ export function ChangesPane({ cwd }: Props) {
     return () => {
       cancelled = true
     }
+  }, [cwd, isActive, refreshChanges])
+
+  // Shared in-flight guard so the watcher and the polling backstop never
+  // stack concurrent `git status` + `git diffAll` calls against each other.
+  const inFlightRef = useRef(false)
+  const pendingRef = useRef(false)
+
+  const runRefresh = useCallback(async () => {
+    if (!cwd) return
+    if (inFlightRef.current) {
+      pendingRef.current = true
+      return
+    }
+    inFlightRef.current = true
+    try {
+      await refreshChanges(cwd)
+    } finally {
+      inFlightRef.current = false
+      if (pendingRef.current) {
+        pendingRef.current = false
+        void runRefresh()
+      }
+    }
   }, [cwd, refreshChanges])
 
+  // Watcher → debounced refresh.
   useEffect(() => {
-    if (!cwd) return
+    if (!cwd || !isActive) return
     let watchId: string | null = null
     let refreshTimer: number | null = null
 
@@ -101,8 +132,8 @@ export function ChangesPane({ cwd }: Props) {
       clearRefreshTimer()
       refreshTimer = window.setTimeout(() => {
         refreshTimer = null
-        void refreshChanges(cwd)
-      }, 250)
+        void runRefresh()
+      }, REFRESH_DEBOUNCE_MS)
     }
 
     const offChanged = window.fsApi.onChanged((event) => {
@@ -120,7 +151,19 @@ export function ChangesPane({ cwd }: Props) {
       offChanged()
       if (watchId) window.fsApi.unwatchProject(watchId)
     }
-  }, [cwd, refreshChanges])
+  }, [cwd, isActive, runRefresh])
+
+  // Polling backstop. Slower cadence when the changeset is large so big
+  // refactors don't thrash. Mirrors v1's adaptive interval.
+  const largeChangeSet = files.length > LARGE_CHANGESET_THRESHOLD
+  useEffect(() => {
+    if (!cwd || !isActive) return
+    const id = window.setInterval(
+      () => void runRefresh(),
+      largeChangeSet ? POLL_INTERVAL_LARGE_MS : POLL_INTERVAL_MS,
+    )
+    return () => window.clearInterval(id)
+  }, [cwd, isActive, runRefresh, largeChangeSet])
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">

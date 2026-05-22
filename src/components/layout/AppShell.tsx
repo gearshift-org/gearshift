@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { TitleBar } from "./TitleBar"
 import { TerminalTabBar } from "./TerminalTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
+import { formatAutoTitle } from "./terminalName"
 import type { Project } from "./types"
 import {
   loadActiveProjectId,
@@ -16,6 +17,20 @@ function makeId() {
 
 function basename(p: string) {
   return p.replace(/\/+$/, "").split("/").pop() || p
+}
+
+function serializeProjects(projects: Project[]) {
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    path: p.path,
+    activeTabId: p.activeTerminalId,
+    tabs: p.terminals.map((t) => ({
+      id: t.id,
+      name: t.name,
+      ...(t.customName ? { customName: t.customName } : {}),
+    })),
+  }))
 }
 
 export function AppShell() {
@@ -43,21 +58,9 @@ export function AppShell() {
     saveActiveProjectId(activeProjectId)
   }, [activeProjectId])
 
-  // Persist project list + tabs (id/name/customName/activeTabId) whenever it changes.
+  // Persist project list + tabs whenever it changes.
   useEffect(() => {
-    saveProjects(
-      projects.map((p) => ({
-        id: p.id,
-        name: p.name,
-        path: p.path,
-        activeTabId: p.activeTerminalId,
-        tabs: p.terminals.map((t) => ({
-          id: t.id,
-          name: t.name,
-          ...(t.customName ? { customName: t.customName } : {}),
-        })),
-      })),
-    )
+    saveProjects(serializeProjects(projects))
   }, [projects])
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -199,18 +202,23 @@ export function AppShell() {
   }
 
   const setTerminalTitle = (terminalId: string, title: string) => {
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === activeProjectId
+    const autoTitle = formatAutoTitle(title)
+    if (!autoTitle) return
+
+    setProjects((prev) => {
+      const next = prev.map((p) =>
+        p.terminals.some((t) => t.id === terminalId)
           ? {
               ...p,
               terminals: p.terminals.map((t) =>
-                t.id === terminalId ? { ...t, autoTitle: title } : t,
+                t.id === terminalId ? { ...t, name: autoTitle, autoTitle } : t,
               ),
             }
           : p,
-      ),
-    )
+      )
+      saveProjects(serializeProjects(next))
+      return next
+    })
   }
 
   const renameTerminal = (terminalId: string, name: string) => {

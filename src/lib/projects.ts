@@ -31,12 +31,20 @@ export function loadProjects(): StoredProject[] {
       .map((p) => ({
         ...p,
         tabs: Array.isArray(p.tabs)
-          ? p.tabs.filter(
-              (t: unknown): t is StoredTab =>
-                !!t &&
-                typeof (t as StoredTab).id === "string" &&
-                typeof (t as StoredTab).name === "string",
-            )
+          ? p.tabs
+              .filter(
+                (t: unknown): t is StoredTab =>
+                  !!t &&
+                  typeof (t as StoredTab).id === "string" &&
+                  typeof (t as StoredTab).name === "string",
+              )
+              .map((t) => ({
+                id: t.id,
+                name: t.name,
+                ...(typeof t.customName === "string"
+                  ? { customName: t.customName }
+                  : {}),
+              }))
           : [],
       }))
   } catch {

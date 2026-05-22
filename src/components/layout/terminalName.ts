@@ -3,7 +3,7 @@ import type { TerminalTab } from "./types"
 const SHELL_TITLE_RE = /^[^@:\s]+@[^:]+:(.+)$/
 const PATH_LIKE_TITLE_RE = /^(~|\.{1,2}|\/)|\//
 
-function formatAutoTitle(title: string | undefined): string | undefined {
+export function formatAutoTitle(title: string | undefined): string | undefined {
   const trimmed = title?.trim()
   if (!trimmed) return undefined
 

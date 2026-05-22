@@ -1,33 +1,83 @@
-import { ScrollArea } from "@/components/ui/scroll-area"
-import type { TerminalTab } from "./types"
+import { cn } from "@/lib/utils"
+import { TerminalView } from "./TerminalView"
+import { displayName } from "./terminalName"
+import type { Project, TerminalTab } from "./types"
 
 type Props = {
-  terminal: TerminalTab | undefined
+  project: Project | undefined
+  onTitleChange?: (terminalId: string, title: string) => void
+  onStartTerminal?: (tabId: string) => void
 }
 
-const MOCK_LINES = [
-  "$ git status",
-  "On branch main",
-  "Your branch is up to date with 'origin/main'.",
-  "",
-  "Changes not staged for commit:",
-  "  modified:   src/App.tsx",
-  "  modified:   electron/main.ts",
-  "",
-]
+export function TerminalPane({
+  project,
+  onTitleChange,
+  onStartTerminal,
+}: Props) {
+  const activeTab = project?.terminals.find(
+    (t) => t.id === project.activeTerminalId,
+  )
 
-export function TerminalPane({ terminal }: Props) {
   return (
     <div className="flex h-full flex-col bg-card">
       <div className="flex h-10 items-center border-b border-border px-4 text-xs text-muted-foreground">
-        {terminal?.name ?? "No terminal"}
+        {activeTab ? displayName(activeTab) : project ? "No terminal" : "No project"}
       </div>
-      <ScrollArea className="flex-1">
-        <pre className="px-4 py-3 font-mono text-xs leading-relaxed text-foreground/90">
-          {MOCK_LINES.join("\n")}
-          <span className="inline-block h-3.5 w-2 translate-y-0.5 animate-pulse bg-foreground/70" />
-        </pre>
-      </ScrollArea>
+      <div className="relative flex-1">
+        {project?.terminals.map((t) => (
+          <div
+            key={t.id}
+            className={cn(
+              "absolute inset-0",
+              t.id === project.activeTerminalId
+                ? "visible"
+                : "invisible pointer-events-none",
+            )}
+          >
+            {t.pendingStart ? (
+              <PendingPane tab={t} onStart={() => onStartTerminal?.(t.id)} />
+            ) : (
+              <TerminalView
+                sessionId={t.id}
+                isActive={t.id === project.activeTerminalId}
+                onTitleChange={(title) => onTitleChange?.(t.id, title)}
+              />
+            )}
+          </div>
+        ))}
+        {project && project.terminals.length === 0 && (
+          <div className="grid h-full place-items-center text-xs text-muted-foreground">
+            No terminals — click + to open one
+          </div>
+        )}
+        {!project && (
+          <div className="grid h-full place-items-center text-xs text-muted-foreground">
+            No project open
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PendingPane({
+  tab,
+  onStart,
+}: {
+  tab: TerminalTab
+  onStart: () => void
+}) {
+  return (
+    <div className="grid h-full place-items-center bg-card">
+      <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
+        <span>"{displayName(tab)}" is not running.</span>
+        <button
+          onClick={onStart}
+          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40"
+        >
+          Start terminal
+        </button>
+      </div>
     </div>
   )
 }

@@ -340,11 +340,15 @@ app.whenReady().then(() => {
     ) => {
       const id = randomUUID()
       const proc = pty.spawn(defaultShell(), [], {
-        name: "xterm-color",
+        name: "xterm-256color",
         cwd: opts.cwd,
         cols: opts.cols ?? 80,
         rows: opts.rows ?? 24,
-        env: process.env as Record<string, string>,
+        env: {
+          ...(process.env as Record<string, string>),
+          TERM: "xterm-256color",
+          COLORTERM: "truecolor",
+        },
       })
       ptys.set(id, proc)
 

@@ -22,7 +22,7 @@ export function TerminalPane({
 
   return (
     <div className="flex h-full flex-col bg-card">
-      <div className="flex h-10 items-center border-b border-border px-4 text-xs text-muted-foreground">
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 text-xs text-muted-foreground">
         {activeTab ? displayName(activeTab) : project ? "No terminal" : "No project"}
       </div>
       <div className="relative flex-1">

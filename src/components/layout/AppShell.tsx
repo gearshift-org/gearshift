@@ -6,8 +6,11 @@ import type { Project } from "./types"
 import {
   loadActiveProjectId,
   loadProjects,
+  loadRecentProjects,
+  pushRecentProject,
   saveActiveProjectId,
   saveProjects,
+  type RecentProject,
 } from "@/lib/projects"
 
 function makeId() {
@@ -53,9 +56,27 @@ export function AppShell() {
     return projects[0]?.id ?? ""
   })
 
+  const [recents, setRecents] = useState<RecentProject[]>(() =>
+    loadRecentProjects(),
+  )
+
   useEffect(() => {
     saveActiveProjectId(activeProjectId)
   }, [activeProjectId])
+
+  // Seed recents with currently-open projects on first mount so they show up
+  // again after being closed.
+  useEffect(() => {
+    let next = recents
+    for (const p of projects) {
+      if (!next.some((r) => r.path === p.path)) {
+        next = pushRecentProject({ name: p.name, path: p.path })
+      }
+    }
+    if (next !== recents) setRecents(next)
+    // Run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Persist project list + tabs whenever it changes.
   useEffect(() => {
@@ -93,21 +114,36 @@ export function AppShell() {
     }
   }, [activeProject])
 
-  const addProject = async () => {
-    const path = await window.dialogApi.openProject()
-    if (!path) return
+  const openProjectByPath = (path: string, name?: string) => {
+    const existing = projects.find((p) => p.path === path)
+    if (existing) {
+      setActiveProjectId(existing.id)
+      return
+    }
     const id = makeId()
+    const resolvedName = name || basename(path)
     setProjects((prev) => [
       ...prev,
       {
         id,
-        name: basename(path),
+        name: resolvedName,
         path,
         terminals: [],
         activeTerminalId: "",
       },
     ])
     setActiveProjectId(id)
+    setRecents(pushRecentProject({ name: resolvedName, path }))
+  }
+
+  const addProject = async () => {
+    const path = await window.dialogApi.openProject()
+    if (!path) return
+    openProjectByPath(path)
+  }
+
+  const pickRecent = (recent: RecentProject) => {
+    openProjectByPath(recent.path, recent.name)
   }
 
   const closeProject = (id: string) => {
@@ -122,6 +158,20 @@ export function AppShell() {
       if (id === activeProjectId) {
         setActiveProjectId(next[0]?.id ?? "")
       }
+      return next
+    })
+  }
+
+  const closeOtherProjects = (keepId: string) => {
+    setProjects((prev) => {
+      for (const p of prev) {
+        if (p.id === keepId) continue
+        for (const t of p.terminals) {
+          if (!t.pendingStart) window.term.kill(t.id)
+        }
+      }
+      const next = prev.filter((p) => p.id === keepId)
+      setActiveProjectId(keepId)
       return next
     })
   }
@@ -296,9 +346,14 @@ export function AppShell() {
       <TitleBar
         projects={projects}
         activeProjectId={activeProjectId}
+        recents={recents.filter(
+          (r) => !projects.some((p) => p.path === r.path),
+        )}
         onSelectProject={setActiveProjectId}
         onAddProject={addProject}
+        onPickRecent={pickRecent}
         onCloseProject={closeProject}
+        onCloseOtherProjects={closeOtherProjects}
       />
       <TerminalTabBar
         terminals={activeProject?.terminals ?? []}

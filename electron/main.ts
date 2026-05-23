@@ -403,7 +403,12 @@ app.whenReady().then(() => {
   ipcMain.handle("git:status", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd", staged: [], unstaged: [] }
     try {
-      const raw = await runGit(cwd, ["status", "--porcelain=v1", "-z"])
+      const raw = await runGit(cwd, [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+      ])
       return { ok: true, ...parseGitStatus(raw) }
     } catch (err) {
       return {
@@ -700,7 +705,12 @@ app.whenReady().then(() => {
       const [unstagedRaw, stagedPatch, statusRaw] = await Promise.all([
         runGit(cwd, ["diff", "--no-color", "--text"]),
         runGit(cwd, ["diff", "--no-color", "--text", "--cached"]),
-        runGit(cwd, ["status", "--porcelain=v1", "-z"]),
+        runGit(cwd, [
+          "status",
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+        ]),
       ])
       const untracked = parseGitStatus(statusRaw).unstaged
         .filter((file) => file.status === "A")

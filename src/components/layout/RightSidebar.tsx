@@ -533,6 +533,7 @@ export function RightSidebar({
                     actionLabel="Unstage"
                     onAction={() => unstagePath(c.path)}
                     onOpen={() => onOpenDiff(c.path, true)}
+                    onOpenFile={() => onOpenFile(c.path)}
                     busy={busy}
                   />
                 ))}
@@ -560,6 +561,7 @@ export function RightSidebar({
                     secondaryActionLabel="Discard changes"
                     onSecondaryAction={() => discardPath(c.path)}
                     onOpen={() => onOpenDiff(c.path, false)}
+                    onOpenFile={() => onOpenFile(c.path)}
                     busy={busy}
                   />
                 ))}
@@ -662,6 +664,7 @@ function FileRow({
   secondaryActionLabel,
   onSecondaryAction,
   onOpen,
+  onOpenFile,
   busy,
 }: {
   file: GitFile
@@ -672,6 +675,7 @@ function FileRow({
   secondaryActionLabel?: string
   onSecondaryAction?: () => void
   onOpen: () => void
+  onOpenFile: () => void
   busy: boolean
 }) {
   return (
@@ -739,6 +743,7 @@ function FileRow({
         }
       />
       <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+        <ContextMenuItem onClick={onOpenFile}>Open File</ContextMenuItem>
         <ContextMenuItem onClick={onOpen}>Open Diff</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem disabled={busy} onClick={onAction}>

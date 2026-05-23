@@ -165,6 +165,71 @@
   display: none;
 }
 
+.terminal-fit-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-fit-host > .xterm {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--xterm-bg);
+}
+
+.terminal-fit-host .xterm,
+.terminal-fit-host .xterm-screen,
+.terminal-fit-host .xterm-viewport,
+.terminal-fit-host .xterm-scrollable-element {
+  background-color: var(--xterm-bg) !important;
+}
+
+.terminal-fit-host .xterm-viewport {
+  background-color: var(--xterm-bg) !important;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+
+.terminal-fit-host .xterm-viewport::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+.terminal-fit-host .xterm-scrollable-element .scrollbar,
+.terminal-fit-host .xterm-scrollable-element .slider,
+.terminal-fit-host .monaco-scrollable-element .scrollbar,
+.terminal-fit-host .monaco-scrollable-element .slider,
+.terminal-fit-host .xterm-decoration-overview-ruler {
+  display: none !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.terminal-fit-host .xterm-scrollable-element {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
+}
+
+.terminal-fit-host .xterm-scrollable-element::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+.terminal-fit-host .xterm-scrollable-element::-webkit-scrollbar-track,
+.terminal-fit-host .xterm-scrollable-element::-webkit-scrollbar-thumb {
+  background: transparent !important;
+  border: 0 !important;
+}
+
 .diff-viewer-file {
   position: relative;
   overflow: visible;

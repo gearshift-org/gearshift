@@ -111,6 +111,7 @@ export function TerminalView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const webglRef = useRef<WebglAddon | null>(null)
   const searchRef = useRef<SearchAddon | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { resolvedTheme } = useTheme()
@@ -149,6 +150,9 @@ export function TerminalView({
       fontFamily:
         'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
       scrollback: 5000,
+      // We hide xterm's native scrollbar and keep the background stable during
+      // resize, so avoid reserving the default 14px scrollbar gutter.
+      overviewRuler: { width: 1 },
       theme: isDark ? DARK_THEME : LIGHT_THEME,
       allowProposedApi: true,
     })
@@ -160,26 +164,49 @@ export function TerminalView({
     termRef.current = term
     searchRef.current = search
 
-    // WebGL renderer for crisp glyphs (matches Ghostty / VS Code quality).
-    // Falls back to default DOM renderer if WebGL is unavailable.
-    let webgl: WebglAddon | null = null
-    try {
-      webgl = new WebglAddon()
-      webgl.onContextLoss(() => {
-        webgl?.dispose()
-        webgl = null
-      })
-      term.loadAddon(webgl)
-    } catch {
-      // ignore
-    }
-
     const resultsSub = search.onDidChangeResults((e) => {
       setSearchResults({
         resultIndex: e.resultIndex,
         resultCount: e.resultCount,
       })
     })
+
+    // Use the legacy ESC+Enter newline sequence by default because Claude Code,
+    // Codex, and OpenCode already understand it. If a TUI probes/enables
+    // modified keyboard modes (like pi), switch Enter to an explicit modified
+    // Enter sequence instead.
+    let modifiedEnterSequence = "\x1b\r"
+    const kittyKeyboardQuerySub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "u" },
+      () => {
+        modifiedEnterSequence = "\x1b[13;2u"
+        return true
+      },
+    )
+    const kittyKeyboardPushSub = term.parser.registerCsiHandler(
+      { prefix: ">", final: "u" },
+      () => {
+        modifiedEnterSequence = "\x1b[13;2u"
+        return true
+      },
+    )
+    const kittyKeyboardPopSub = term.parser.registerCsiHandler(
+      { prefix: "<", final: "u" },
+      () => {
+        modifiedEnterSequence = "\x1b\r"
+        return true
+      },
+    )
+    const modifyOtherKeysSub = term.parser.registerCsiHandler(
+      { prefix: ">", final: "m" },
+      (params) => {
+        const first = Array.isArray(params[0]) ? params[0][0] : params[0]
+        const second = Array.isArray(params[1]) ? params[1][0] : params[1]
+        if (first !== 4) return false
+        modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
+        return true
+      },
+    )
 
     // Clipboard + macOS-style readline navigation. xterm otherwise either
     // swallows these or sends raw ^C/^V/etc. to the PTY.
@@ -276,11 +303,11 @@ export function TerminalView({
       }
 
       // ⇧⏎ / ⌘⇧⏎ — insert newline in TUI prompts (Claude Code, Codex,
-      // OpenCode). Terminals send CR (\r) on Enter; ESC+CR is the conventional
-      // "alt+enter" sequence these CLIs treat as a literal newline.
+      // OpenCode, pi). Terminals send CR (\r) on Enter, so send the active
+      // modified-Enter sequence instead of a normal Enter.
       if (key === "enter" && shift && !ctrl && !alt) {
         e.preventDefault()
-        window.term.write(sessionId, "\x1b\r")
+        window.term.write(sessionId, modifiedEnterSequence)
         return false
       }
 
@@ -374,13 +401,37 @@ export function TerminalView({
       inputSub.dispose()
       titleSub.dispose()
       resultsSub.dispose()
+      kittyKeyboardQuerySub.dispose()
+      kittyKeyboardPushSub.dispose()
+      kittyKeyboardPopSub.dispose()
+      modifyOtherKeysSub.dispose()
       search.dispose()
-      webgl?.dispose()
+      webglRef.current?.dispose()
+      webglRef.current = null
       term.dispose()
       termRef.current = null
       searchRef.current = null
     }
   }, [sessionId, openSearch])
+
+  // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens,
+  // matching the original GearShift pattern, so xterm has stable cell metrics.
+  useEffect(() => {
+    const term = termRef.current
+    if (!term || webglRef.current) return
+
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => {
+        webgl.dispose()
+        if (webglRef.current === webgl) webglRef.current = null
+      })
+      term.loadAddon(webgl)
+      webglRef.current = webgl
+    } catch {
+      // WebGL unavailable; xterm keeps using the default renderer.
+    }
+  }, [])
 
   const themeObj = isDark ? DARK_THEME : LIGHT_THEME
   useEffect(() => {
@@ -456,7 +507,7 @@ export function TerminalView({
       <ContextMenuTrigger
         className={`${WRAPPER_BG} relative block h-full w-full bg-[var(--xterm-bg)] px-3 py-3`}
       >
-        <div ref={containerRef} className="h-full w-full" />
+        <div ref={containerRef} className="terminal-fit-host" />
         {searchOpen && (
           <div
             className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-border bg-popover/95 px-1.5 py-1 text-xs shadow-md backdrop-blur"

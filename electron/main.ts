@@ -276,19 +276,25 @@ async function readState(): Promise<Record<string, string>> {
 
 let stateWriteTimer: NodeJS.Timeout | undefined
 let pendingState: Record<string, string> | null = null
+let stateWriteInFlight = false
 async function flushState() {
   stateWriteTimer = undefined
+  if (stateWriteInFlight) return
   const data = pendingState
   if (!data) return
   pendingState = null
+  stateWriteInFlight = true
   const file = stateFilePath()
-  const tmp = `${file}.tmp`
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
   try {
     await fs.mkdir(path.dirname(file), { recursive: true })
     await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8")
     await fs.rename(tmp, file)
   } catch (err) {
     console.error("state write failed", err)
+  } finally {
+    stateWriteInFlight = false
+    if (pendingState) void flushState()
   }
 }
 

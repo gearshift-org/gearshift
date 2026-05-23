@@ -868,7 +868,7 @@ export function AppShell() {
         e.preventDefault()
         setSidebarOpen((v) => !v)
       }
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+      if (mod && !e.shiftKey && !e.altKey && e.key === "/") {
         e.preventDefault()
         setPaletteOpen((v) => !v)
       }

@@ -53,6 +53,9 @@ const STATUS_STYLES: Record<Status, string> = {
 type Props = {
   cwd: string | null
   isActive?: boolean
+  activeTab?: "changes" | "files"
+  onActiveTabChange?: (tab: "changes" | "files") => void
+  activeFilePath?: string
   onOpenDiff: (path: string, staged: boolean) => void
   onOpenFile: (path: string) => void
 }
@@ -60,10 +63,14 @@ type Props = {
 export function RightSidebar({
   cwd,
   isActive = true,
+  activeTab,
+  onActiveTabChange,
+  activeFilePath,
   onOpenDiff,
   onOpenFile,
 }: Props) {
-  const [tab, setTab] = useState<"changes" | "files">("changes")
+  const [internalTab, setInternalTab] = useState<"changes" | "files">("changes")
+  const tab = activeTab ?? internalTab
   const [files, setFiles] = useState<GitFile[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -353,7 +360,11 @@ export function RightSidebar({
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
       <Tabs
         value={tab}
-        onValueChange={(v) => setTab(v as "changes" | "files")}
+        onValueChange={(v) => {
+          const next = v as "changes" | "files"
+          setInternalTab(next)
+          onActiveTabChange?.(next)
+        }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
@@ -575,7 +586,11 @@ export function RightSidebar({
           className="min-h-0 flex-1 overflow-hidden"
         >
           {cwd ? (
-            <FilesTree cwd={cwd} onOpenFile={onOpenFile} />
+            <FilesTree
+              cwd={cwd}
+              activePath={activeFilePath}
+              onOpenFile={onOpenFile}
+            />
           ) : (
             <div className="px-4 py-3 text-xs text-muted-foreground">
               No project open

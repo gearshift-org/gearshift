@@ -30,6 +30,9 @@ type Props = {
   onFocusPane?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
+  rightSidebarTab?: "changes" | "files"
+  onRightSidebarTabChange?: (tab: "changes" | "files") => void
+  activeTreeFilePath?: string
 }
 
 export function WorkspaceSplit({
@@ -44,6 +47,9 @@ export function WorkspaceSplit({
   onFocusPane,
   onOpenDiffTab,
   onOpenFileTab,
+  rightSidebarTab,
+  onRightSidebarTabChange,
+  activeTreeFilePath,
 }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -156,6 +162,9 @@ export function WorkspaceSplit({
             <RightSidebar
               cwd={p.path}
               isActive={p.id === activeProjectId}
+              activeTab={rightSidebarTab}
+              onActiveTabChange={onRightSidebarTabChange}
+              activeFilePath={activeTreeFilePath}
               onOpenDiff={onOpenDiffTab}
               onOpenFile={onOpenFileTab}
             />
@@ -164,6 +173,9 @@ export function WorkspaceSplit({
         {!activeProject && (
           <RightSidebar
             cwd={null}
+            activeTab={rightSidebarTab}
+            onActiveTabChange={onRightSidebarTabChange}
+            activeFilePath={activeTreeFilePath}
             onOpenDiff={onOpenDiffTab}
             onOpenFile={onOpenFileTab}
           />

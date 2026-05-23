@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, File, Folder } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -14,6 +14,7 @@ type NodeProps = {
   /** Indent level. */
   depth: number
   onOpenFile: (relPath: string) => void
+  activePath?: string
   /** Bumped to invalidate readDir caches across the tree. */
   invalidation: number
 }
@@ -28,11 +29,14 @@ function FolderNode({
   relPath,
   depth,
   onOpenFile,
+  activePath,
   invalidation,
 }: NodeProps) {
   const [open, setOpen] = useState(depth === 0)
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const isActiveAncestor =
+    !!activePath && (depth === 0 || activePath.startsWith(`${relPath}/`))
 
   const load = useCallback(() => {
     setLoading(true)
@@ -49,6 +53,10 @@ function FolderNode({
       setLoading(false)
     })
   }, [absPath])
+
+  useEffect(() => {
+    if (isActiveAncestor) setOpen(true)
+  }, [isActiveAncestor])
 
   useEffect(() => {
     if (open && entries === null) load()
@@ -102,21 +110,20 @@ function FolderNode({
                   relPath={childRel}
                   depth={depth + 1}
                   onOpenFile={onOpenFile}
+                  activePath={activePath}
                   invalidation={invalidation}
                 />
               )
             }
             return (
-              <button
+              <FileNode
                 key={childAbs}
-                type="button"
-                onClick={() => onOpenFile(childRel)}
-                className="flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
-                style={{ paddingLeft: (depth + 1) * 12 + 12 }}
-              >
-                <File className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{e.name}</span>
-              </button>
+                name={e.name}
+                relPath={childRel}
+                active={childRel === activePath}
+                depth={depth}
+                onOpenFile={onOpenFile}
+              />
             )
           })}
         </div>
@@ -125,12 +132,50 @@ function FolderNode({
   )
 }
 
+function FileNode({
+  name,
+  relPath,
+  active,
+  depth,
+  onOpenFile,
+}: {
+  name: string
+  relPath: string
+  active: boolean
+  depth: number
+  onOpenFile: (relPath: string) => void
+}) {
+  const ref = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!active) return
+    ref.current?.scrollIntoView({ block: "nearest" })
+  }, [active])
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={() => onOpenFile(relPath)}
+      className={cn(
+        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+        active && "bg-accent text-accent-foreground",
+      )}
+      style={{ paddingLeft: (depth + 1) * 12 + 12 }}
+    >
+      <File className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="truncate">{name}</span>
+    </button>
+  )
+}
+
 type Props = {
   cwd: string
+  activePath?: string
   onOpenFile: (relPath: string) => void
 }
 
-export function FilesTree({ cwd, onOpenFile }: Props) {
+export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   // Bump on fs:changed to invalidate cached entries across nodes.
   const [invalidation, setInvalidation] = useState(0)
 
@@ -163,6 +208,7 @@ export function FilesTree({ cwd, onOpenFile }: Props) {
         relPath=""
         depth={0}
         onOpenFile={onOpenFile}
+        activePath={activePath}
         invalidation={invalidation}
       />
     </ScrollArea>

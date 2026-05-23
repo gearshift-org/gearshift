@@ -144,6 +144,10 @@ export function AppShell() {
     saveSidebarOpen(sidebarOpen)
   }, [sidebarOpen])
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [rightSidebarTab, setRightSidebarTab] = useState<"changes" | "files">(
+    "changes",
+  )
+  const [activeTreeFilePath, setActiveTreeFilePath] = useState("")
 
   const activeProjectId =
     (routeProjectId && projects.some((p) => p.id === routeProjectId)
@@ -587,6 +591,7 @@ export function AppShell() {
   const openFileTab = useCallback(
     (path: string) => {
       if (!activeProject) return
+      setActiveTreeFilePath(path)
       setPaletteRecents(pushRecentPaletteFile(activeProject.path, path))
       const exact = activeProject.tabs.find(
         (t) => t.kind === "file" && t.path === path,
@@ -718,6 +723,16 @@ export function AppShell() {
   }, [activeProject, activeTabId, startTerminalPane])
 
   const selectTab = (id: string) => navigateToTab(id)
+
+  const openFileFromCommandPalette = useCallback(
+    (path: string) => {
+      setSidebarOpen(true)
+      setRightSidebarTab("files")
+      setActiveTreeFilePath(path)
+      openFileTab(path)
+    },
+    [openFileTab],
+  )
 
   const commandPaletteRecents = useMemo<PaletteRecents>(() => {
     const projectsRecent = activeProjectPath
@@ -931,7 +946,7 @@ export function AppShell() {
         paletteRecents={commandPaletteRecents}
         onSelectProject={selectProject}
         onSelectTab={selectTab}
-        onOpenFile={openFileTab}
+        onOpenFile={openFileFromCommandPalette}
       />
       <TitleBar
         projects={projects}
@@ -964,6 +979,9 @@ export function AppShell() {
           onFocusPane={setActivePane}
           onOpenDiffTab={openDiffTab}
           onOpenFileTab={openFileTab}
+          rightSidebarTab={rightSidebarTab}
+          onRightSidebarTabChange={setRightSidebarTab}
+          activeTreeFilePath={activeTreeFilePath}
           workspaceTabs={
             <WorkspaceTabBar
               tabs={activeProject.tabs}

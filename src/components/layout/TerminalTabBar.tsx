@@ -109,7 +109,7 @@ function TerminalTabItem({
         ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}
         style={style}
         className={cn(
-          "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
+          "group relative flex h-full min-w-[140px] shrink-0 cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
           isActive
             ? "bg-accent text-foreground"
             : "text-muted-foreground hover:bg-accent/40",
@@ -244,53 +244,55 @@ export function TerminalTabBar({
   }
 
   return (
-    <div className="box-border flex h-[34px] shrink-0 items-stretch border-b border-border bg-background">
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <SortableContext
-          items={terminals.map((t) => t.id)}
-          strategy={horizontalListSortingStrategy}
-        >
-          {terminals.map((t, i) => (
-            <TerminalTabItem
-              key={t.id}
-              terminal={t}
-              isActive={t.id === activeId}
-              hasTabsToRight={i < terminals.length - 1}
-              canShowClose={!!onClose && terminals.length > 1}
-              total={terminals.length}
-              renamingId={renamingId}
-              draft={draft}
-              inputRef={inputRef}
-              onSelect={onSelect}
-              onStartRename={startRename}
-              onDraftChange={setDraft}
-              onCommit={commit}
-              onCancelRename={() => setRenamingId(null)}
-              onClose={onClose}
-              onCloseAll={onCloseAll}
-              onCloseOthers={onCloseOthers}
-              onCloseToRight={onCloseToRight}
-              onOpenInVSCode={onOpenInVSCode}
-            />
-          ))}
-        </SortableContext>
-      </DndContext>
-      <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
-        <TooltipTrigger
-          render={
-            <button
-              onClick={onAdd}
-              aria-label="Add terminal"
-              className="group/add grid h-full w-10 place-items-center text-muted-foreground"
-            >
-              <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">
-                <Plus className="size-3.5" />
-              </span>
-            </button>
-          }
-        />
-        <TooltipContent>New terminal</TooltipContent>
-      </Tooltip>
+    <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background">
+      <div className="terminal-tabs-scroll flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden">
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={terminals.map((t) => t.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            {terminals.map((t, i) => (
+              <TerminalTabItem
+                key={t.id}
+                terminal={t}
+                isActive={t.id === activeId}
+                hasTabsToRight={i < terminals.length - 1}
+                canShowClose={!!onClose && terminals.length > 1}
+                total={terminals.length}
+                renamingId={renamingId}
+                draft={draft}
+                inputRef={inputRef}
+                onSelect={onSelect}
+                onStartRename={startRename}
+                onDraftChange={setDraft}
+                onCommit={commit}
+                onCancelRename={() => setRenamingId(null)}
+                onClose={onClose}
+                onCloseAll={onCloseAll}
+                onCloseOthers={onCloseOthers}
+                onCloseToRight={onCloseToRight}
+                onOpenInVSCode={onOpenInVSCode}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+        <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+          <TooltipTrigger
+            render={
+              <button
+                onClick={onAdd}
+                aria-label="Add terminal"
+                className="group/add sticky right-0 grid h-full w-10 shrink-0 place-items-center bg-background text-muted-foreground"
+              >
+                <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">
+                  <Plus className="size-3.5" />
+                </span>
+              </button>
+            }
+          />
+          <TooltipContent>New terminal</TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   )
 }

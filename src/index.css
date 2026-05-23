@@ -3,6 +3,14 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -148,6 +156,13 @@
   display: flex;
   flex-direction: column;
   overflow: visible;
+}
+
+.terminal-tabs-scroll {
+  scrollbar-width: none;
+}
+.terminal-tabs-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .diff-viewer-file {

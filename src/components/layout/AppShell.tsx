@@ -571,23 +571,6 @@ export function AppShell() {
         onOpenProjectInVSCode={openProjectInVSCode}
         onReorderProjects={reorderProjects}
       />
-      <TerminalTabBar
-        terminals={activeProject?.terminals ?? []}
-        activeId={activeTerminalId}
-        onSelect={selectTerminal}
-        onAdd={addTerminal}
-        onClose={closeTerminal}
-        onCloseAll={closeAllTerminals}
-        onCloseOthers={closeOtherTerminals}
-        onCloseToRight={closeTerminalsToRight}
-        onRename={renameTerminal}
-        onReorder={reorderTerminals}
-        onOpenInVSCode={
-          activeProject
-            ? () => void window.shellApi.openInVSCode(activeProject.path)
-            : undefined
-        }
-      />
       <WorkspaceSplit
         projects={projects}
         activeProjectId={activeProjectId}
@@ -596,6 +579,25 @@ export function AppShell() {
           if (!activeProject) return
           void startTerminal(activeProject.id, tabId)
         }}
+        terminalTabs={
+          <TerminalTabBar
+            terminals={activeProject?.terminals ?? []}
+            activeId={activeTerminalId}
+            onSelect={selectTerminal}
+            onAdd={addTerminal}
+            onClose={closeTerminal}
+            onCloseAll={closeAllTerminals}
+            onCloseOthers={closeOtherTerminals}
+            onCloseToRight={closeTerminalsToRight}
+            onRename={renameTerminal}
+            onReorder={reorderTerminals}
+            onOpenInVSCode={
+              activeProject
+                ? () => void window.shellApi.openInVSCode(activeProject.path)
+                : undefined
+            }
+          />
+        }
       />
     </div>
   )

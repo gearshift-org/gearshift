@@ -31,7 +31,7 @@ export function TitleBar({
   onReorderProjects,
 }: Props) {
   return (
-    <div className="box-border flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
+    <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
       <div className="w-[88px] shrink-0" />
       <ProjectTabs
         projects={projects}

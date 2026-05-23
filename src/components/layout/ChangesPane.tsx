@@ -194,12 +194,18 @@ export function ChangesPane({ cwd, isActive = true }: Props) {
         onValueChange={(v) => setActiveTab(v as "changes" | "diff")}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
-          <TabsList className="h-7">
-            <TabsTrigger value="changes" className="text-xs">
+        <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
+          <TabsList variant="line" className="h-full gap-4 bg-transparent p-0">
+            <TabsTrigger
+              value="changes"
+              className="!h-full !border-0 text-xs after:!bottom-[-1px] after:!h-px"
+            >
               Changes
             </TabsTrigger>
-            <TabsTrigger value="diff" className="text-xs">
+            <TabsTrigger
+              value="diff"
+              className="!h-full !border-0 text-xs after:!bottom-[-1px] after:!h-px"
+            >
               Diff
             </TabsTrigger>
           </TabsList>

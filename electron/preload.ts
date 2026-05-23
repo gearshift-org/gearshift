@@ -137,6 +137,18 @@ const gitApi = {
       ok: boolean
       error?: string
     }>,
+  pull: (cwd: string) =>
+    ipcRenderer.invoke("git:pull", cwd) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  aheadBehind: (cwd: string) =>
+    ipcRenderer.invoke("git:aheadBehind", cwd) as Promise<{
+      ok: boolean
+      ahead: number
+      behind: number
+      hasUpstream: boolean
+    }>,
   discard: (cwd: string, paths: string[]) =>
     ipcRenderer.invoke("git:discard", cwd, paths) as Promise<{
       ok: boolean

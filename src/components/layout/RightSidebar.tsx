@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, Loader2, Minus, Plus, Undo2 } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Loader2,
+  Minus,
+  Plus,
+  RefreshCw,
+  Undo2,
+} from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -60,7 +69,12 @@ export function RightSidebar({
   const [error, setError] = useState<string | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
   const [busy, setBusy] = useState(false)
-  const [committing, setCommitting] = useState<null | "commit" | "push">(null)
+  const [committing, setCommitting] = useState<
+    null | "commit" | "push" | "sync"
+  >(null)
+  const [ahead, setAhead] = useState(0)
+  const [behind, setBehind] = useState(0)
+  const [hasUpstream, setHasUpstream] = useState(false)
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
@@ -70,7 +84,10 @@ export function RightSidebar({
       if (options?.showLoading) setLoading(true)
       setError(null)
       try {
-        const status = await window.git.status(nextCwd)
+        const [status, ab] = await Promise.all([
+          window.git.status(nextCwd),
+          window.git.aheadBehind(nextCwd),
+        ])
         if (!status.ok) {
           setError(status.error ?? "Failed to load Git status")
           setFiles([])
@@ -79,6 +96,11 @@ export function RightSidebar({
             ...status.unstaged.map((f) => ({ ...f, staged: false })),
             ...status.staged.map((f) => ({ ...f, staged: true })),
           ])
+        }
+        if (ab.ok) {
+          setAhead(ab.ahead)
+          setBehind(ab.behind)
+          setHasUpstream(ab.hasUpstream)
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -285,6 +307,38 @@ export function RightSidebar({
 
   const canCommit = stagedFiles.length > 0 && commitMessage.trim().length > 0
 
+  const sync = useCallback(async () => {
+    if (!cwd || busy) return
+    setBusy(true)
+    setCommitting("sync")
+    setError(null)
+    try {
+      if (behind > 0) {
+        const pullRes = await window.git.pull(cwd)
+        if (!pullRes.ok) {
+          setError(pullRes.error ?? "Pull failed")
+          return
+        }
+      }
+      if (ahead > 0) {
+        const pushRes = await window.git.push(cwd)
+        if (!pushRes.ok) {
+          setError(pushRes.error ?? "Push failed")
+          return
+        }
+      }
+      await runRefresh()
+    } finally {
+      setBusy(false)
+      setCommitting(null)
+    }
+  }, [cwd, busy, ahead, behind, runRefresh])
+
+  // Show the Sync button only when nothing is staged and the branch is out of
+  // sync with its upstream.
+  const showSync =
+    stagedFiles.length === 0 && hasUpstream && (ahead > 0 || behind > 0)
+
   const largeChangeSet = files.length > LARGE_CHANGESET_THRESHOLD
   useEffect(() => {
     if (!cwd || !isActive) return
@@ -347,67 +401,101 @@ export function RightSidebar({
                 }}
                 className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               />
-              <div className="flex items-stretch">
+              {showSync ? (
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!canCommit || busy}
-                  onClick={() => void commit()}
-                  className="flex-1 rounded-r-none"
+                  disabled={busy}
+                  onClick={() => void sync()}
+                  className="w-full"
                 >
-                  {committing === "commit" ? (
+                  {committing === "sync" ? (
                     <>
                       <Loader2 className="size-3.5 animate-spin" />
-                      Committing…
-                    </>
-                  ) : committing === "push" ? (
-                    <>
-                      <Loader2 className="size-3.5 animate-spin" />
-                      Pushing…
+                      Syncing…
                     </>
                   ) : (
-                    "Commit"
+                    <>
+                      <RefreshCw className="size-3.5" />
+                      <span>Sync Changes</span>
+                      {ahead > 0 && (
+                        <span className="inline-flex items-center gap-0.5">
+                          {ahead}
+                          <ArrowUp className="size-3" />
+                        </span>
+                      )}
+                      {behind > 0 && (
+                        <span className="inline-flex items-center gap-0.5">
+                          {behind}
+                          <ArrowDown className="size-3" />
+                        </span>
+                      )}
+                    </>
                   )}
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        variant="default"
-                        size="sm"
-                        disabled={busy}
-                        aria-label="More commit options"
-                        className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+              ) : (
+                <div className="flex items-stretch">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={!canCommit || busy}
+                    onClick={() => void commit()}
+                    className="flex-1 rounded-r-none"
+                  >
+                    {committing === "commit" ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Committing…
+                      </>
+                    ) : committing === "push" ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Pushing…
+                      </>
+                    ) : (
+                      "Commit"
+                    )}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={busy}
+                          aria-label="More commit options"
+                          className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+                        >
+                          <ChevronDown className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end" className="min-w-[180px]">
+                      <DropdownMenuItem
+                        disabled={!canCommit || busy}
+                        onClick={() => void commit({ push: true })}
                       >
-                        <ChevronDown className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end" className="min-w-[180px]">
-                    <DropdownMenuItem
-                      disabled={!canCommit || busy}
-                      onClick={() => void commit({ push: true })}
-                    >
-                      Commit &amp; Push
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={busy}
-                      onClick={() => {
-                        if (!cwd) return
-                        setBusy(true)
-                        setCommitting("push")
-                        window.git.push(cwd).then((res) => {
-                          if (!res.ok) setError(res.error ?? "Push failed")
-                          setBusy(false)
-                          setCommitting(null)
-                        })
-                      }}
-                    >
-                      Push
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                        Commit &amp; Push
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={busy}
+                        onClick={() => {
+                          if (!cwd) return
+                          setBusy(true)
+                          setCommitting("push")
+                          window.git.push(cwd).then((res) => {
+                            if (!res.ok) setError(res.error ?? "Push failed")
+                            setBusy(false)
+                            setCommitting(null)
+                          })
+                        }}
+                      >
+                        Push
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
             </div>
           )}
           <ScrollArea className="min-h-0 flex-1">

@@ -776,6 +776,32 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle("term:cwd", async (_e, id: string) => {
+    const proc = ptys.get(id)
+    if (!proc) return null
+    const pid = proc.pid
+    try {
+      if (process.platform === "linux") {
+        return await fs.readlink(`/proc/${pid}/cwd`)
+      }
+      // macOS / BSD: lsof reports the shell's cwd. Use -F so output is stable.
+      const { stdout } = await execFileP("/usr/sbin/lsof", [
+        "-a",
+        "-p",
+        String(pid),
+        "-d",
+        "cwd",
+        "-Fn",
+      ])
+      for (const line of stdout.split("\n")) {
+        if (line.startsWith("n")) return line.slice(1)
+      }
+      return null
+    } catch {
+      return null
+    }
+  })
+
   ipcMain.on("term:kill", (_e, id: string) => {
     const proc = ptys.get(id)
     if (!proc) return

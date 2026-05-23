@@ -591,6 +591,15 @@ export function TerminalView({
           Find
           <ContextMenuShortcut>⌘F</ContextMenuShortcut>
         </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={async () => {
+            const cwd = await window.term.getCwd(sessionId)
+            if (cwd) await window.shellApi.openInVSCode(cwd)
+          }}
+        >
+          Open in VS Code
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   )

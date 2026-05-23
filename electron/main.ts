@@ -499,8 +499,36 @@ app.whenReady().then(() => {
         "--exclude-standard",
         "-z",
       ])
-      const files = out.split("\0").filter(Boolean)
-      return { ok: true, files }
+      const files = new Set(out.split("\0").filter(Boolean))
+
+      // Match the file tree behavior: .env, .env.local, .env.production, etc.
+      // should still show in the palette even when gitignored.
+      try {
+        const { stdout } = await execFileP("find", [
+          ".",
+          "-type",
+          "f",
+          "(",
+          "-name",
+          ".env",
+          "-o",
+          "-name",
+          ".env.*",
+          ")",
+          "-not",
+          "-path",
+          "*/.git/*",
+          "-print0",
+        ], { cwd, maxBuffer: 1024 * 1024 })
+        for (const file of stdout.split("\0")) {
+          if (!file) continue
+          files.add(file.replace(/^\.\//, ""))
+        }
+      } catch {
+        // If `find` fails, keep the normal git result.
+      }
+
+      return { ok: true, files: [...files] }
     } catch (err) {
       return { ok: false, error: (err as Error).message, files: [] }
     }

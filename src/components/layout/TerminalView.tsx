@@ -22,28 +22,28 @@ type Props = {
 }
 
 const DARK_THEME = {
-  background: "#0a0a0a",
-  foreground: "#e5e5e5",
-  cursor: "#e5e5e5",
-  selectionBackground: "#ffffff40",
+  background: "#151515",
+  foreground: "#d4d4d4",
+  cursor: "#d4d4d4",
+  selectionBackground: "#264f78",
   selectionForeground: "#ffffff",
-  selectionInactiveBackground: "#ffffff25",
-  black: "#1a1a1a",
-  red: "#ef4444",
-  green: "#22c55e",
-  yellow: "#eab308",
-  blue: "#3b82f6",
-  magenta: "#a855f7",
-  cyan: "#06b6d4",
+  selectionInactiveBackground: "#3a3d41",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#0dbc79",
+  yellow: "#e5e510",
+  blue: "#2472c8",
+  magenta: "#bc3fbc",
+  cyan: "#11a8cd",
   white: "#e5e5e5",
   // Bright variants — brightBlack drives zsh-autosuggestions "ghost" text.
-  brightBlack: "#5a5a5a",
-  brightRed: "#f87171",
-  brightGreen: "#4ade80",
-  brightYellow: "#facc15",
-  brightBlue: "#60a5fa",
-  brightMagenta: "#c084fc",
-  brightCyan: "#22d3ee",
+  brightBlack: "#666666",
+  brightRed: "#f14c4c",
+  brightGreen: "#23d18b",
+  brightYellow: "#f5f543",
+  brightBlue: "#3b8eea",
+  brightMagenta: "#d670d6",
+  brightCyan: "#29b8db",
   brightWhite: "#fafafa",
 }
 const LIGHT_THEME = {
@@ -80,7 +80,7 @@ const SEARCH_DECORATIONS = {
   activeMatchColorOverviewRuler: "#facc15",
 }
 
-const WRAPPER_BG = "[--xterm-bg:#ffffff] dark:[--xterm-bg:#0a0a0a]"
+const WRAPPER_BG = "[--xterm-bg:#ffffff] dark:[--xterm-bg:#151515]"
 
 function shellQuote(s: string) {
   if (/^[A-Za-z0-9_\-./]+$/.test(s)) return s

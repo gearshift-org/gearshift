@@ -6,6 +6,7 @@ import type {
   FsApi,
   GitApi,
   ShellApi,
+  StateApi,
   TermApi,
 } from "../../electron/preload"
 
@@ -19,6 +20,7 @@ declare global {
     appApi: AppApi
     git: GitApi
     fsApi: FsApi
+    stateApi?: StateApi
   }
 }
 

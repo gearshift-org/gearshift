@@ -5,6 +5,10 @@ import { defineConfig } from "vite"
 import electron from "vite-plugin-electron/simple"
 
 export default defineConfig({
+  // Pinned so the renderer's localStorage origin stays stable across `bun dev`
+  // restarts — Vite would otherwise drift to 5174+ if the prior port hadn't
+  // freed, and projects (stored per-origin) would appear to vanish.
+  server: { port: 5173, strictPort: true },
   plugins: [
     react(),
     tailwindcss(),

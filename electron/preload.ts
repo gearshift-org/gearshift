@@ -171,6 +171,14 @@ const electronUtils = {
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
 }
 
+const stateApi = {
+  // Sync read at boot so renderer-side `loadProjects()` etc. stay synchronous.
+  readSync: (): Record<string, string> =>
+    ipcRenderer.sendSync("state:readSync") as Record<string, string>,
+  write: (data: Record<string, string>) =>
+    ipcRenderer.invoke("state:write", data) as Promise<{ ok: true }>,
+}
+
 contextBridge.exposeInMainWorld("dialogApi", dialogApi)
 contextBridge.exposeInMainWorld("shellApi", shellApi)
 contextBridge.exposeInMainWorld("term", termApi)
@@ -179,6 +187,7 @@ contextBridge.exposeInMainWorld("electronUtils", electronUtils)
 contextBridge.exposeInMainWorld("appApi", appApi)
 contextBridge.exposeInMainWorld("git", gitApi)
 contextBridge.exposeInMainWorld("fsApi", fsApi)
+contextBridge.exposeInMainWorld("stateApi", stateApi)
 
 export type DialogApi = typeof dialogApi
 export type ShellApi = typeof shellApi
@@ -188,3 +197,4 @@ export type ElectronUtils = typeof electronUtils
 export type AppApi = typeof appApi
 export type GitApi = typeof gitApi
 export type FsApi = typeof fsApi
+export type StateApi = typeof stateApi

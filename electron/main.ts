@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
+import { readFileSync } from "node:fs"
 import * as pty from "node-pty"
 import parcelWatcher from "@parcel/watcher"
 
@@ -246,8 +247,60 @@ async function buildUntrackedPatch(cwd: string, files: string[]) {
   return patches.filter(Boolean).join("\n")
 }
 
+function stateFilePath(): string {
+  return path.join(app.getPath("userData"), "state.json")
+}
+
+function readStateSync(): Record<string, string> {
+  try {
+    // Sync read — invoked from preload via ipcRenderer.sendSync at app boot so
+    // the renderer can hydrate localStorage-style getters synchronously.
+    const raw = readFileSync(stateFilePath(), "utf8")
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: Record<string, string> = {}
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === "string") out[k] = v
+      }
+      return out
+    }
+  } catch {
+    // missing or corrupt → start empty
+  }
+  return {}
+}
+
+let stateWriteTimer: NodeJS.Timeout | undefined
+let pendingState: Record<string, string> | null = null
+async function flushState() {
+  stateWriteTimer = undefined
+  const data = pendingState
+  if (!data) return
+  pendingState = null
+  const file = stateFilePath()
+  const tmp = `${file}.tmp`
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8")
+    await fs.rename(tmp, file)
+  } catch (err) {
+    console.error("state write failed", err)
+  }
+}
+
 app.whenReady().then(() => {
   buildMenu()
+
+  ipcMain.on("state:readSync", (event) => {
+    event.returnValue = readStateSync()
+  })
+
+  ipcMain.handle("state:write", async (_e, data: Record<string, string>) => {
+    pendingState = data
+    if (stateWriteTimer) clearTimeout(stateWriteTimer)
+    stateWriteTimer = setTimeout(() => void flushState(), 100)
+    return { ok: true }
+  })
 
   ipcMain.handle("clipboard:hasImage", () => {
     try {

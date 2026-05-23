@@ -1,3 +1,5 @@
+import { store } from "./store"
+
 export type StoredTab = {
   id: string
   name: string
@@ -21,7 +23,7 @@ export type RecentProject = { name: string; path: string }
 
 export function loadRecentProjects(): RecentProject[] {
   try {
-    const raw = localStorage.getItem(RECENTS_KEY)
+    const raw = store.get(RECENTS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -35,10 +37,7 @@ export function loadRecentProjects(): RecentProject[] {
 }
 
 export function saveRecentProjects(recents: RecentProject[]): void {
-  localStorage.setItem(
-    RECENTS_KEY,
-    JSON.stringify(recents.slice(0, RECENTS_MAX)),
-  )
+  store.set(RECENTS_KEY, JSON.stringify(recents.slice(0, RECENTS_MAX)))
 }
 
 export function pushRecentProject(entry: RecentProject): RecentProject[] {
@@ -50,7 +49,7 @@ export function pushRecentProject(entry: RecentProject): RecentProject[] {
 
 export function loadProjects(): StoredProject[] {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = store.get(KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -86,27 +85,27 @@ export function loadProjects(): StoredProject[] {
 }
 
 export function saveProjects(projects: StoredProject[]): void {
-  localStorage.setItem(KEY, JSON.stringify(projects))
+  store.set(KEY, JSON.stringify(projects))
 }
 
 export function loadActiveProjectId(): string | null {
   try {
-    return localStorage.getItem(ACTIVE_KEY)
+    return store.get(ACTIVE_KEY)
   } catch {
     return null
   }
 }
 
 export function saveActiveProjectId(id: string): void {
-  if (id) localStorage.setItem(ACTIVE_KEY, id)
-  else localStorage.removeItem(ACTIVE_KEY)
+  if (id) store.set(ACTIVE_KEY, id)
+  else store.remove(ACTIVE_KEY)
 }
 
 const SIDEBAR_WIDTH_KEY = "gearshift.sidebarWidth"
 
 export function loadSidebarWidth(): number | null {
   try {
-    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY)
+    const raw = store.get(SIDEBAR_WIDTH_KEY)
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -117,7 +116,7 @@ export function loadSidebarWidth(): number | null {
 
 export function saveSidebarWidth(width: number): void {
   try {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width)))
+    store.set(SIDEBAR_WIDTH_KEY, String(Math.round(width)))
   } catch {
     // ignore quota errors
   }
@@ -128,7 +127,7 @@ const SIDEBAR_OPEN_KEY = "gearshift.sidebarOpen"
 export function loadSidebarOpen(): boolean {
   try {
     // Default closed when nothing is stored.
-    return localStorage.getItem(SIDEBAR_OPEN_KEY) === "1"
+    return store.get(SIDEBAR_OPEN_KEY) === "1"
   } catch {
     return false
   }
@@ -136,7 +135,7 @@ export function loadSidebarOpen(): boolean {
 
 export function saveSidebarOpen(open: boolean): void {
   try {
-    localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0")
+    store.set(SIDEBAR_OPEN_KEY, open ? "1" : "0")
   } catch {
     // ignore
   }
@@ -146,7 +145,7 @@ const DIFF_VIEW_MODE_KEY = "gearshift.diffViewMode"
 
 export function loadDiffViewMode(): "unified" | "split" {
   try {
-    return localStorage.getItem(DIFF_VIEW_MODE_KEY) === "split"
+    return store.get(DIFF_VIEW_MODE_KEY) === "split"
       ? "split"
       : "unified"
   } catch {
@@ -156,7 +155,7 @@ export function loadDiffViewMode(): "unified" | "split" {
 
 export function saveDiffViewMode(mode: "unified" | "split"): void {
   try {
-    localStorage.setItem(DIFF_VIEW_MODE_KEY, mode)
+    store.set(DIFF_VIEW_MODE_KEY, mode)
   } catch {
     // ignore
   }
@@ -166,7 +165,7 @@ const PROJECT_COLORS_KEY = "gearshift.projectColors"
 
 function loadProjectColors(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(PROJECT_COLORS_KEY)
+    const raw = store.get(PROJECT_COLORS_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== "object") return {}
@@ -182,7 +181,7 @@ function loadProjectColors(): Record<string, string> {
 
 function saveProjectColors(map: Record<string, string>): void {
   try {
-    localStorage.setItem(PROJECT_COLORS_KEY, JSON.stringify(map))
+    store.set(PROJECT_COLORS_KEY, JSON.stringify(map))
   } catch {
     // ignore
   }

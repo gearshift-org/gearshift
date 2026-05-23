@@ -14,7 +14,7 @@
     "electron:build": "bun run build && electron-builder",
     "dist": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --config.mac.identity=null --config.mac.notarize=false",
     "dist:dmg": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --config.mac.identity=null --config.mac.notarize=false",
-    "install:app": "bun run dist && rm -rf '/Applications/GearShift V2.app' && ditto \"$(find release -maxdepth 2 -type d -name 'GearShift V2.app' | head -n 1)\" '/Applications/GearShift V2.app' && echo 'Installed to /Applications/GearShift V2.app'",
+    "install:app": "bun run dist && node scripts/install-macos-app.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {

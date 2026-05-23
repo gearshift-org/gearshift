@@ -6,6 +6,7 @@ import { WorkspaceSplit } from "./WorkspaceSplit"
 import { CommandPalette } from "./CommandPalette"
 import type { Project, WorkspaceTab } from "./types"
 import {
+  loadActiveProjectId,
   loadProjects,
   loadRecentProjects,
   loadSidebarOpen,
@@ -14,7 +15,26 @@ import {
   saveProjects,
   saveSidebarOpen,
   type RecentProject,
+  type StoredProject,
 } from "@/lib/projects"
+import { store } from "@/lib/store"
+
+function hydrateProjects(): Project[] {
+  return loadProjects().map((p: StoredProject) => ({
+    id: p.id,
+    name: p.name,
+    path: p.path,
+    tabs: (p.tabs ?? []).map((t) => ({
+      kind: "terminal" as const,
+      id: t.id,
+      name: t.name,
+      customName: t.customName,
+      panes: [{ id: t.id, pendingStart: true }],
+      activePaneId: t.id,
+    })),
+    activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
+  }))
+}
 
 function makeId() {
   return crypto.randomUUID()
@@ -66,28 +86,47 @@ export function AppShell() {
   const routeProjectId = params.projectId ?? null
   const routeTabId = params.tabId ?? null
 
-  const [projects, setProjects] = useState<Project[]>(() =>
-    loadProjects().map((p) => ({
-      id: p.id,
-      name: p.name,
-      path: p.path,
-      tabs: (p.tabs ?? []).map((t) => ({
-        kind: "terminal" as const,
-        id: t.id,
-        name: t.name,
-        customName: t.customName,
-        panes: [{ id: t.id, pendingStart: true }],
-        activePaneId: t.id,
-      })),
-      activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
-    })),
-  )
-
+  const [projects, setProjects] = useState<Project[]>(() => hydrateProjects())
   const [recents, setRecents] = useState<RecentProject[]>(() =>
     loadRecentProjects(),
   )
-
   const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
+
+  // Disk snapshot arrives async — re-sync once it lands so the UI can paint
+  // immediately with empty state and then fill in. Also restores the last
+  // active project (router boots at "/" since hydration isn't sync anymore).
+  useEffect(
+    () =>
+      store.onReady(() => {
+        const hydrated = hydrateProjects()
+        setProjects(hydrated)
+        setRecents(loadRecentProjects())
+        setSidebarOpen(loadSidebarOpen())
+        const storedActiveId = loadActiveProjectId()
+        if (
+          storedActiveId &&
+          hydrated.some((p) => p.id === storedActiveId) &&
+          !params.projectId
+        ) {
+          const proj = hydrated.find((p) => p.id === storedActiveId)!
+          if (proj.activeTabId) {
+            void navigate({
+              to: "/projects/$projectId/tabs/$tabId",
+              params: { projectId: proj.id, tabId: proj.activeTabId },
+              replace: true,
+            })
+          } else {
+            void navigate({
+              to: "/projects/$projectId",
+              params: { projectId: proj.id },
+              replace: true,
+            })
+          }
+        }
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
   // Forward reference: closePane (defined below) calls closeTab when the last
   // pane is being closed. Wired via effect once both are defined.
   const closeTabRef = useRef<(id: string) => void>(() => undefined)

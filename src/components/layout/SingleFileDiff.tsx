@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
+import { WorkerPoolContextProvider } from "@pierre/diffs/react"
 import { useTheme } from "@/components/theme-provider"
 import { DiffViewer } from "./DiffViewer"
 import {
@@ -24,6 +25,14 @@ const HIGHLIGHT_STYLE = `
 ::highlight(${HIGHLIGHT_NAME}) { background-color: rgba(250, 204, 21, 0.5); color: inherit; }
 ::highlight(${HIGHLIGHT_ACTIVE_NAME}) { background-color: rgb(250, 204, 21); color: black; }
 `
+
+const diffsWorkerPoolOptions = {
+  workerFactory: () =>
+    new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), {
+      type: "module",
+    }),
+  poolSize: 4,
+}
 
 /** Collect every Text node under root, descending into shadow roots. */
 function collectTextNodes(root: Node): Text[] {
@@ -274,11 +283,16 @@ export function SingleFileDiff({
       )
     }
     return (
-      <DiffViewer
-        patch={patch}
-        themeType={resolvedTheme}
-        viewMode={viewMode}
-      />
+      <WorkerPoolContextProvider
+        poolOptions={diffsWorkerPoolOptions}
+        highlighterOptions={{}}
+      >
+        <DiffViewer
+          patch={patch}
+          themeType={resolvedTheme}
+          viewMode={viewMode}
+        />
+      </WorkerPoolContextProvider>
     )
   }, [loading, patch, error, resolvedTheme, viewMode])
 

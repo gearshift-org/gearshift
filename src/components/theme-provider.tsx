@@ -105,6 +105,16 @@ export function ThemeProvider({
 
     return defaultTheme
   })
+
+  // Re-sync once the on-disk snapshot finishes hydrating (async).
+  React.useEffect(
+    () =>
+      store.onReady(() => {
+        const storedTheme = store.get(storageKey)
+        if (isTheme(storedTheme)) setThemeState(storedTheme)
+      }),
+    [storageKey],
+  )
   const [resolvedTheme, setResolvedTheme] = React.useState<ResolvedTheme>(() =>
     resolveTheme(theme)
   )

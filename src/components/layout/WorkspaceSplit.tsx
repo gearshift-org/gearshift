@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils"
 import { WorkspacePane } from "./WorkspacePane"
 import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
+import { store } from "@/lib/store"
 import type { Project } from "./types"
 
 const SIDEBAR_DEFAULT_PX = 410
@@ -49,6 +50,14 @@ export function WorkspaceSplit({
     const stored = loadSidebarWidth()
     return stored ? clampWidth(stored) : SIDEBAR_DEFAULT_PX
   })
+  useEffect(
+    () =>
+      store.onReady(() => {
+        const stored = loadSidebarWidth()
+        if (stored) setSidebarWidth(clampWidth(stored))
+      }),
+    [],
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
 

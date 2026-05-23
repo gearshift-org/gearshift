@@ -13,7 +13,6 @@ import { randomUUID } from "node:crypto"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
-import { readFileSync } from "node:fs"
 import * as pty from "node-pty"
 import parcelWatcher from "@parcel/watcher"
 
@@ -22,6 +21,10 @@ type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const execFileP = promisify(execFile)
+
+if (VITE_DEV_SERVER_URL) {
+  app.setPath("userData", path.join(app.getPath("appData"), "gearshift-v2-dev"))
+}
 
 const ptys = new Map<string, pty.IPty>()
 const projectWatchers = new Map<
@@ -74,6 +77,9 @@ function createWindow() {
     height: 800,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 11 },
+    // Dark default so the brief pre-paint frame isn't a jarring white flash
+    // while Vite/React boot. Window itself shows immediately.
+    backgroundColor: "#0a0a0a",
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
@@ -251,11 +257,9 @@ function stateFilePath(): string {
   return path.join(app.getPath("userData"), "state.json")
 }
 
-function readStateSync(): Record<string, string> {
+async function readState(): Promise<Record<string, string>> {
   try {
-    // Sync read — invoked from preload via ipcRenderer.sendSync at app boot so
-    // the renderer can hydrate localStorage-style getters synchronously.
-    const raw = readFileSync(stateFilePath(), "utf8")
+    const raw = await fs.readFile(stateFilePath(), "utf8")
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const out: Record<string, string> = {}
@@ -291,9 +295,7 @@ async function flushState() {
 app.whenReady().then(() => {
   buildMenu()
 
-  ipcMain.on("state:readSync", (event) => {
-    event.returnValue = readStateSync()
-  })
+  ipcMain.handle("state:read", () => readState())
 
   ipcMain.handle("state:write", async (_e, data: Record<string, string>) => {
     pendingState = data

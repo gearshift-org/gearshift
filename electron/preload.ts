@@ -172,9 +172,8 @@ const electronUtils = {
 }
 
 const stateApi = {
-  // Sync read at boot so renderer-side `loadProjects()` etc. stay synchronous.
-  readSync: (): Record<string, string> =>
-    ipcRenderer.sendSync("state:readSync") as Record<string, string>,
+  read: () =>
+    ipcRenderer.invoke("state:read") as Promise<Record<string, string>>,
   write: (data: Record<string, string>) =>
     ipcRenderer.invoke("state:write", data) as Promise<{ ok: true }>,
 }

@@ -6,7 +6,6 @@ import {
   Outlet,
 } from "@tanstack/react-router"
 import { AppShell } from "./components/layout/AppShell"
-import { loadActiveProjectId } from "./lib/projects"
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -46,14 +45,12 @@ const routeTree = rootRoute.addChildren([
   projectRoute.addChildren([projectIndexRoute, tabRoute]),
 ])
 
-function initialPath(): string {
-  const id = loadActiveProjectId()
-  return id ? `/projects/${id}` : "/"
-}
-
+// Boot always lands on "/"; AppShell navigates to the stored active project
+// once the on-disk state snapshot hydrates (async). Keeps initial render
+// non-blocking.
 export const router = createRouter({
   routeTree,
-  history: createMemoryHistory({ initialEntries: [initialPath()] }),
+  history: createMemoryHistory({ initialEntries: ["/"] }),
 })
 
 declare module "@tanstack/react-router" {

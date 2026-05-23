@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { Columns2, Rows3, SplitSquareHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalView } from "./TerminalView"
@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
+import { store } from "@/lib/store"
 import { tabDisplayName } from "./terminalName"
 import type {
   Project,
@@ -195,6 +196,10 @@ export function WorkspacePane({
   // last-persisted mode so the user's choice survives restarts.
   const [defaultDiffMode, setDefaultDiffMode] = useState<"unified" | "split">(
     () => loadDiffViewMode(),
+  )
+  useEffect(
+    () => store.onReady(() => setDefaultDiffMode(loadDiffViewMode())),
+    [],
   )
   const [diffViewModes, setDiffViewModes] = useState<
     Record<string, "unified" | "split">

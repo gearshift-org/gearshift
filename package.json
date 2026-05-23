@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "electron:build": "bun run build && electron-builder",
-    "install:app": "CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --config.mac.identity=null --config.mac.notarize=false && rm -rf '/Applications/GearShift V2.app' && cp -R \"$(find release -maxdepth 2 -type d -name 'GearShift V2.app' | head -n 1)\" /Applications/ && echo 'Installed to /Applications/GearShift V2.app'",
+    "dist": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --config.mac.identity=null --config.mac.notarize=false",
+    "dist:dmg": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --config.mac.identity=null --config.mac.notarize=false",
+    "install:app": "bun run dist && rm -rf '/Applications/GearShift V2.app' && ditto \"$(find release -maxdepth 2 -type d -name 'GearShift V2.app' | head -n 1)\" '/Applications/GearShift V2.app' && echo 'Installed to /Applications/GearShift V2.app'",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -27,12 +29,15 @@
     ]
   },
   "dependencies": {
+    "@parcel/watcher": "^2.5.6",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
     "@base-ui/react": "^1.5.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@fontsource-variable/inter": "^5.2.8",
-    "@parcel/watcher": "^2.5.6",
     "@pierre/diffs": "^1.1.22",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-router": "^1.170.7",
@@ -44,16 +49,13 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "lucide-react": "^1.16.0",
-    "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-resizable-panels": "^4.11.1",
     "shadcn": "^4.8.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.2.1",
-    "tw-animate-css": "^1.4.0"
-  },
-  "devDependencies": {
+    "tw-animate-css": "^1.4.0",
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",

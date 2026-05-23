@@ -1,21 +1,12 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RouterProvider } from "@tanstack/react-router"
-import { WorkerPoolContextProvider } from "@pierre/diffs/react"
 
 import "@xterm/xterm/css/xterm.css"
 import "./index.css"
 import { router } from "./router"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { TooltipProvider } from "@/components/ui/tooltip"
-
-const diffsWorkerPoolOptions = {
-  workerFactory: () =>
-    new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), {
-      type: "module",
-    }),
-  poolSize: 4,
-}
 
 // Mouse back/forward buttons navigate router history.
 window.addEventListener("auxclick", (e) => {
@@ -33,15 +24,10 @@ window.addEventListener("mouseup", (e) => {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <WorkerPoolContextProvider
-      poolOptions={diffsWorkerPoolOptions}
-      highlighterOptions={{}}
-    >
-      <ThemeProvider>
-        <TooltipProvider delay={200}>
-          <RouterProvider router={router} />
-        </TooltipProvider>
-      </ThemeProvider>
-    </WorkerPoolContextProvider>
+    <ThemeProvider>
+      <TooltipProvider delay={200}>
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

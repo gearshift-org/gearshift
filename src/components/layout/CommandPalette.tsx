@@ -1,10 +1,3 @@
-import { useEffect, useState } from "react"
-import {
-  FileDiff,
-  FileText,
-  FolderGit2,
-  TerminalSquare,
-} from "lucide-react"
 import {
   CommandDialog,
   CommandEmpty,
@@ -14,6 +7,13 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command"
+import {
+  FileDiff,
+  FileText,
+  FolderGit2,
+  TerminalSquare,
+} from "lucide-react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { tabDisplayName } from "./terminalName"
 import type { Project, WorkspaceTab } from "./types"
 
@@ -27,10 +27,39 @@ type Props = {
   onOpenFile: (path: string) => void
 }
 
+const MAX_FILE_RESULTS = 100
+
 function tabIcon(t: WorkspaceTab) {
   if (t.kind === "diff") return <FileDiff />
   if (t.kind === "file") return <FileText />
   return <TerminalSquare />
+}
+
+/**
+ * Lightweight scorer: prefers basename matches, then path matches, then
+ * subsequence matches. Returns null when nothing matches. Designed to be
+ * cheap enough to run across thousands of paths on every keystroke.
+ */
+function scorePath(path: string, qLower: string): number | null {
+  if (!qLower) return 0
+  const pLower = path.toLowerCase()
+  const slash = pLower.lastIndexOf("/")
+  const base = slash >= 0 ? pLower.slice(slash + 1) : pLower
+
+  if (base === qLower) return 1000
+  if (base.startsWith(qLower)) return 900 - base.length
+  const baseIdx = base.indexOf(qLower)
+  if (baseIdx >= 0) return 700 - baseIdx - base.length * 0.01
+  const pathIdx = pLower.indexOf(qLower)
+  if (pathIdx >= 0) return 500 - pathIdx - pLower.length * 0.01
+
+  // Subsequence fallback — every char in query appears in order somewhere.
+  let i = 0
+  for (let j = 0; j < pLower.length && i < qLower.length; j++) {
+    if (pLower[j] === qLower[i]) i++
+  }
+  if (i === qLower.length) return 100 - pLower.length * 0.01
+  return null
 }
 
 export function CommandPalette({
@@ -44,6 +73,11 @@ export function CommandPalette({
 }: Props) {
   const [files, setFiles] = useState<string[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
+  const [query, setQuery] = useState("")
+  const listRef = useRef<HTMLDivElement>(null)
+  // Defer the query so typing stays responsive while the large file list
+  // re-filters in a lower-priority render pass.
+  const deferredQuery = useDeferredValue(query)
   const projectPath = activeProject?.path
 
   // Lazy-load the project file list on first open / project change. Clear
@@ -67,6 +101,53 @@ export function CommandPalette({
     }
   }, [open, projectPath])
 
+  // Reset the query when the palette closes so reopening starts fresh.
+  useEffect(() => {
+    if (!open) setQuery("")
+  }, [open])
+
+  const qLower = deferredQuery.trim().toLowerCase()
+
+  // When the search changes, cmdk keeps the current scroll position. Move the
+  // results back to the top so the best matches are visible first.
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [qLower])
+
+  const filteredTabs = useMemo(() => {
+    const tabs = activeProject?.tabs ?? []
+    if (!qLower) return tabs
+    return tabs.filter((t) => {
+      const hay = (
+        tabDisplayName(t) +
+        " " +
+        (t.kind === "diff" || t.kind === "file" ? t.path : "")
+      ).toLowerCase()
+      return hay.includes(qLower)
+    })
+  }, [activeProject?.tabs, qLower])
+
+  const filteredProjects = useMemo(() => {
+    if (!qLower) return projects
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(qLower) ||
+        p.path.toLowerCase().includes(qLower),
+    )
+  }, [projects, qLower])
+
+  const filteredFiles = useMemo(() => {
+    if (!files.length) return []
+    if (!qLower) return files.slice(0, MAX_FILE_RESULTS)
+    const scored: Array<{ path: string; score: number }> = []
+    for (let i = 0; i < files.length; i++) {
+      const s = scorePath(files[i], qLower)
+      if (s !== null) scored.push({ path: files[i], score: s })
+    }
+    scored.sort((a, b) => b.score - a.score)
+    return scored.slice(0, MAX_FILE_RESULTS).map((s) => s.path)
+  }, [files, qLower])
+
   const run = (fn: () => void) => {
     fn()
     onOpenChange(false)
@@ -74,37 +155,66 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Type a command, file, tab, or project…" />
-      <CommandList>
+      <CommandInput
+        placeholder="Type a command, file, tab, or project…"
+        value={query}
+        onValueChange={setQuery}
+      />
+      <CommandList ref={listRef}>
         <CommandEmpty>
           {filesLoading ? "Loading…" : "No matches."}
         </CommandEmpty>
 
-        {activeProject && activeProject.tabs.length > 0 && (
-          <CommandGroup heading="Tabs">
-            {activeProject.tabs.map((t) => (
+        {/* Files first: when the user types a filename, the matching file
+            should be the default selection. Otherwise an already-open diff
+            tab in the "Tabs" group would auto-select and pressing Enter would
+            just re-focus the diff instead of opening the file as a file tab. */}
+        {activeProject && filteredFiles.length > 0 && (
+          <CommandGroup heading="Files">
+            {filteredFiles.map((f) => (
               <CommandItem
-                key={t.id}
-                value={`tab ${tabDisplayName(t)} ${t.kind === "diff" || t.kind === "file" ? t.path : ""}`}
-                onSelect={() => run(() => onSelectTab(t.id))}
+                key={f}
+                value={`file ${f}`}
+                onSelect={() => run(() => onOpenFile(f))}
               >
-                {tabIcon(t)}
-                <span className="truncate">{tabDisplayName(t)}</span>
-                {(t.kind === "diff" || t.kind === "file") && (
-                  <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {t.path}
-                  </span>
-                )}
+                <FileText />
+                <span className="truncate">{f.split("/").pop()}</span>
+                <span className="ml-auto truncate text-xs text-muted-foreground">
+                  {f}
+                </span>
               </CommandItem>
             ))}
           </CommandGroup>
         )}
 
-        {projects.length > 0 && (
+        {filteredTabs.length > 0 && (
+          <>
+            {activeProject && filteredFiles.length > 0 && <CommandSeparator />}
+            <CommandGroup heading="Tabs">
+              {filteredTabs.map((t) => (
+                <CommandItem
+                  key={t.id}
+                  value={`tab ${tabDisplayName(t)} ${t.kind === "diff" || t.kind === "file" ? t.path : ""}`}
+                  onSelect={() => run(() => onSelectTab(t.id))}
+                >
+                  {tabIcon(t)}
+                  <span className="truncate">{tabDisplayName(t)}</span>
+                  {(t.kind === "diff" || t.kind === "file") && (
+                    <span className="ml-auto truncate text-xs text-muted-foreground">
+                      {t.path}
+                    </span>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        )}
+
+        {filteredProjects.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Projects">
-              {projects.map((p) => (
+              {filteredProjects.map((p) => (
                 <CommandItem
                   key={p.id}
                   value={`project ${p.name} ${p.path}`}
@@ -114,27 +224,6 @@ export function CommandPalette({
                   <span className="truncate">{p.name}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
                     {p.path}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
-
-        {activeProject && files.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Files">
-              {files.map((f) => (
-                <CommandItem
-                  key={f}
-                  value={`file ${f}`}
-                  onSelect={() => run(() => onOpenFile(f))}
-                >
-                  <FileText />
-                  <span className="truncate">{f.split("/").pop()}</span>
-                  <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {f}
                   </span>
                 </CommandItem>
               ))}

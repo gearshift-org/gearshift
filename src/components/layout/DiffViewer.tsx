@@ -63,6 +63,14 @@ const DIFFS_UNSAFE_CSS = `
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
+/* Allow text selection / copy inside the diff. The library disables
+   user-select on the code area by default which makes Cmd+C a no-op. We
+   override it globally inside the shadow root rather than guess at the
+   exact selector the library uses. */
+*, *::before, *::after {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
 `
 
 const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
@@ -171,7 +179,27 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
       return <div className="diff-viewer-empty">No renderable diff</div>
     }
 
+    // Manual copy handler — if a selection exists anywhere on the page
+    // (including inside the diff viewer's shadow root), serialize it to the
+    // clipboard. This makes Cmd+C work even when the library suppresses
+    // default copy behavior on its code area.
+    const handleCopy = (e: React.ClipboardEvent) => {
+      try {
+        const sel = window.getSelection?.()
+        const text = sel ? sel.toString() : ""
+        if (!text) return
+        e.preventDefault()
+        e.clipboardData?.setData("text/plain", text)
+      } catch {
+        // ignore
+      }
+    }
+
     return (
+      <div
+        onCopy={handleCopy}
+        style={{ height: "100%" }}
+      >
       <CodeView
         ref={handleRef}
         className="diff-viewer-scroll"
@@ -206,6 +234,7 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
           )
         }}
       />
+      </div>
     )
   },
 )

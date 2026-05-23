@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 
 type Props = {
   cwd: string
@@ -51,6 +58,12 @@ export function FilePreview({ cwd, path }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bgRef = useRef<HTMLPreElement>(null)
+  // Snapshot of the textarea selection at the moment the context menu opens.
+  // base-ui moves focus to the menu, which can collapse the selection — we
+  // use this snapshot so Copy still works on what the user had highlighted.
+  const selectionSnapshotRef = useRef<{ start: number; end: number } | null>(
+    null,
+  )
 
   // Search overlay state.
   const [searchOpen, setSearchOpen] = useState(false)
@@ -77,6 +90,33 @@ export function FilePreview({ cwd, path }: Props) {
         setState({ kind: "ready", content: c })
         setSavedContent(c)
         setDraft(c)
+        // Reset scroll + caret to the top whenever a new file finishes
+        // loading so opening a file from the palette or sidebar always lands
+        // at the beginning. We focus a few times across frames because the
+        // Command Palette's dialog restores focus to its trigger when it
+        // closes — that happens after our first focus attempt and would
+        // otherwise steal it back.
+        const focusToTop = () => {
+          if (cancelled) return
+          const ta = textareaRef.current
+          const pre = bgRef.current
+          if (ta) {
+            ta.scrollTop = 0
+            ta.scrollLeft = 0
+            try {
+              ta.setSelectionRange(0, 0)
+            } catch {
+              // ignore
+            }
+            ta.focus({ preventScroll: true })
+          }
+          if (pre) {
+            pre.scrollTop = 0
+            pre.scrollLeft = 0
+          }
+        }
+        requestAnimationFrame(focusToTop)
+        setTimeout(focusToTop, 80)
       }
     })
     return () => {
@@ -325,32 +365,148 @@ export function FilePreview({ cwd, path }: Props) {
           {saveError && <span className="text-red-500">{saveError}</span>}
         </div>
       )}
-      <div className="relative flex-1 min-h-0">
-        {/* Background: the text rendered as real text nodes so the CSS
-            Highlight API has something to highlight. */}
-        <pre
-          ref={bgRef}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 m-0 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre text-foreground"
-        >
-          {draft}
-        </pre>
-        {/* Foreground: invisible-text textarea that still accepts input and
-            shows the caret. Keep scroll/size identical so highlights line up. */}
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onScroll={(e) => {
-            const pre = bgRef.current
-            if (!pre) return
-            pre.scrollTop = e.currentTarget.scrollTop
-            pre.scrollLeft = e.currentTarget.scrollLeft
-          }}
-          spellCheck={false}
-          className="absolute inset-0 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed whitespace-pre text-transparent caret-foreground outline-none selection:bg-foreground/20 [-webkit-text-fill-color:transparent]"
+      <ContextMenu
+        onOpenChange={(o) => {
+          if (!o) {
+            // After the menu closes, restore the visual selection from the
+            // snapshot so the user's highlight reappears.
+            const snap = selectionSnapshotRef.current
+            const ta = textareaRef.current
+            if (snap && ta && snap.start !== snap.end) {
+              requestAnimationFrame(() => {
+                try {
+                  ta.focus({ preventScroll: true })
+                  ta.setSelectionRange(snap.start, snap.end)
+                } catch {
+                  // ignore
+                }
+              })
+            }
+          }
+        }}
+      >
+        <ContextMenuTrigger
+          render={
+            <div className="relative flex-1 min-h-0">
+              {/* Background: the text rendered as real text nodes so the CSS
+                  Highlight API has something to highlight. */}
+              <pre
+                ref={bgRef}
+                aria-hidden
+                className="pointer-events-none absolute inset-0 m-0 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre text-foreground"
+              >
+                {draft}
+              </pre>
+              {/* Foreground: invisible-text textarea that still accepts input and
+                  shows the caret. Keep scroll/size identical so highlights line up. */}
+              <textarea
+                ref={textareaRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onScroll={(e) => {
+                  const pre = bgRef.current
+                  if (!pre) return
+                  pre.scrollTop = e.currentTarget.scrollTop
+                  pre.scrollLeft = e.currentTarget.scrollLeft
+                }}
+                onContextMenu={(e) => {
+                  const ta = e.currentTarget
+                  selectionSnapshotRef.current = {
+                    start: ta.selectionStart,
+                    end: ta.selectionEnd,
+                  }
+                }}
+                spellCheck={false}
+                className="absolute inset-0 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed whitespace-pre text-transparent caret-foreground outline-none selection:bg-foreground/20 [-webkit-text-fill-color:transparent]"
+              />
+            </div>
+          }
         />
-      </div>
+        <ContextMenuContent className="min-w-[160px]">
+          <ContextMenuItem
+            disabled={state.kind !== "ready"}
+            onClick={() => {
+              const ta = textareaRef.current
+              if (!ta) return
+              // Prefer the live selection; fall back to the snapshot taken
+              // when the context menu opened in case focus moved into the
+              // menu and collapsed the textarea's selection.
+              let start = ta.selectionStart
+              let end = ta.selectionEnd
+              if (start === end && selectionSnapshotRef.current) {
+                start = selectionSnapshotRef.current.start
+                end = selectionSnapshotRef.current.end
+              }
+              const sel = ta.value.substring(start, end)
+              const text = sel || ta.value
+              void navigator.clipboard.writeText(text)
+            }}
+          >
+            Copy
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={state.kind !== "ready"}
+            onClick={async () => {
+              const ta = textareaRef.current
+              if (!ta) return
+              try {
+                const text = await navigator.clipboard.readText()
+                let start = ta.selectionStart
+                let end = ta.selectionEnd
+                if (start === end && selectionSnapshotRef.current) {
+                  start = selectionSnapshotRef.current.start
+                  end = selectionSnapshotRef.current.end
+                }
+                const next = ta.value.slice(0, start) + text + ta.value.slice(end)
+                setDraft(next)
+                const caret = start + text.length
+                requestAnimationFrame(() => {
+                  ta.focus()
+                  try {
+                    ta.setSelectionRange(caret, caret)
+                  } catch {
+                    // ignore
+                  }
+                })
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            Paste
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={state.kind !== "ready"}
+            onClick={() => {
+              const ta = textareaRef.current
+              if (!ta) return
+              ta.focus()
+              ta.select()
+            }}
+          >
+            Select all
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={state.kind !== "ready" || draft.length === 0}
+            onClick={() => {
+              setDraft("")
+              requestAnimationFrame(() => {
+                const ta = textareaRef.current
+                if (!ta) return
+                ta.focus()
+                try {
+                  ta.setSelectionRange(0, 0)
+                } catch {
+                  // ignore
+                }
+              })
+            }}
+          >
+            Clear
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     </div>
   )
 }

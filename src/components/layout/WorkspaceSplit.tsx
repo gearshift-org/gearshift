@@ -104,6 +104,7 @@ export function WorkspaceSplit({
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}
+              onOpenFile={onOpenFileTab}
             />
           </div>
         ))}

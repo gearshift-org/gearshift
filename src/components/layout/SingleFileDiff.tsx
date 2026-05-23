@@ -2,12 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
 import { DiffViewer } from "./DiffViewer"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 
 type Props = {
   cwd: string
   path: string
   staged: boolean
   viewMode?: "unified" | "split"
+  onOpenFile?: (path: string) => void
 }
 
 const HIGHLIGHT_NAME = "gearshift-diff-search"
@@ -105,6 +113,7 @@ export function SingleFileDiff({
   path,
   staged,
   viewMode = "unified",
+  onOpenFile,
 }: Props) {
   const { resolvedTheme } = useTheme()
   const [patch, setPatch] = useState("")
@@ -118,6 +127,10 @@ export function SingleFileDiff({
   const [matchIdx, setMatchIdx] = useState(0)
   const [matchCount, setMatchCount] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Snapshot of the user's text selection at the moment the context menu
+  // opens. base-ui moves focus to the menu and can clear window.getSelection,
+  // so we capture it on `contextmenu` and use it inside the Copy handler.
+  const selectionTextRef = useRef<string>("")
 
   useEffect(() => {
     let cancelled = false
@@ -267,11 +280,29 @@ export function SingleFileDiff({
     )
   }, [loading, patch, error, resolvedTheme, viewMode])
 
+  const copySelectionOrAll = () => {
+    const sel = selectionTextRef.current
+    const text = sel || patch
+    if (!text) return
+    void navigator.clipboard.writeText(text)
+  }
+
   return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
     <div
       ref={containerRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onContextMenu={() => {
+        try {
+          const text = window.getSelection?.()?.toString() ?? ""
+          selectionTextRef.current = text
+        } catch {
+          selectionTextRef.current = ""
+        }
+      }}
       className="relative h-full outline-none"
     >
       {searchOpen && (
@@ -327,5 +358,40 @@ export function SingleFileDiff({
       )}
       {content}
     </div>
+        }
+      />
+      <ContextMenuContent className="min-w-[180px]">
+        {onOpenFile && (
+          <>
+            <ContextMenuItem onClick={() => onOpenFile(path)}>
+              Open file
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+        <ContextMenuItem onClick={copySelectionOrAll}>
+          {selectionTextRef.current ? "Copy selection" : "Copy diff"}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => void navigator.clipboard.writeText(path)}
+        >
+          Copy file path
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() => {
+            const root = containerRef.current
+            if (!root) return
+            const range = document.createRange()
+            range.selectNodeContents(root)
+            const sel = window.getSelection()
+            sel?.removeAllRanges()
+            sel?.addRange(range)
+          }}
+        >
+          Select all
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

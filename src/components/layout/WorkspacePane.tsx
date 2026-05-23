@@ -31,6 +31,7 @@ type Props = {
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onOpenFile?: (path: string) => void
 }
 
 function TerminalPaneView({
@@ -146,6 +147,7 @@ function PaneContent({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onOpenFile,
 }: {
   tab: WorkspaceTab
   project: Project
@@ -156,6 +158,7 @@ function PaneContent({
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onOpenFile?: (path: string) => void
 }) {
   if (tab.kind === "terminal") {
     return (
@@ -176,6 +179,7 @@ function PaneContent({
         path={tab.path}
         staged={tab.staged}
         viewMode={diffViewMode}
+        onOpenFile={onOpenFile}
       />
     )
   }
@@ -190,6 +194,7 @@ export function WorkspacePane({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onOpenFile,
 }: Props) {
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
   const isTerminalActive = activeTab?.kind === "terminal"
@@ -289,6 +294,7 @@ export function WorkspacePane({
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}
+              onOpenFile={onOpenFile}
             />
           </div>
         ))}

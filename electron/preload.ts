@@ -167,6 +167,23 @@ const gitApi = {
       ok: boolean
       error?: string
     }>,
+  branches: (cwd: string) =>
+    ipcRenderer.invoke("git:branches", cwd) as Promise<{
+      ok: boolean
+      error?: string
+      current: string | null
+      branches: string[]
+    }>,
+  checkout: (cwd: string, branch: string) =>
+    ipcRenderer.invoke("git:checkout", cwd, branch) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  createBranch: (cwd: string, branch: string) =>
+    ipcRenderer.invoke("git:createBranch", cwd, branch) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
 }
 
 const electronUtils = {

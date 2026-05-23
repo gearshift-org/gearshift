@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
+  GitBranch,
   Loader2,
   Minus,
   Plus,
+  PlusCircle,
   RefreshCw,
   Undo2,
 } from "lucide-react"
@@ -83,6 +86,9 @@ export function RightSidebar({
   const [ahead, setAhead] = useState(0)
   const [behind, setBehind] = useState(0)
   const [hasUpstream, setHasUpstream] = useState(false)
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null)
+  const [branches, setBranches] = useState<string[]>([])
+  const [switchingBranch, setSwitchingBranch] = useState(false)
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
@@ -92,9 +98,10 @@ export function RightSidebar({
       if (options?.showLoading) setLoading(true)
       setError(null)
       try {
-        const [status, ab] = await Promise.all([
+        const [status, ab, br] = await Promise.all([
           window.git.status(nextCwd),
           window.git.aheadBehind(nextCwd),
+          window.git.branches(nextCwd),
         ])
         if (!status.ok) {
           setError(status.error ?? "Failed to load Git status")
@@ -109,6 +116,10 @@ export function RightSidebar({
           setAhead(ab.ahead)
           setBehind(ab.behind)
           setHasUpstream(ab.hasUpstream)
+        }
+        if (br.ok) {
+          setCurrentBranch(br.current)
+          setBranches(br.branches)
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -315,6 +326,45 @@ export function RightSidebar({
 
   const canCommit = stagedFiles.length > 0 && commitMessage.trim().length > 0
 
+  const switchBranch = useCallback(
+    async (branch: string) => {
+      if (!cwd || !branch || branch === currentBranch) return
+      setSwitchingBranch(true)
+      setError(null)
+      try {
+        const res = await window.git.checkout(cwd, branch)
+        if (!res.ok) {
+          setError(res.error ?? "Checkout failed")
+          return
+        }
+        await runRefresh()
+      } finally {
+        setSwitchingBranch(false)
+      }
+    },
+    [cwd, currentBranch, runRefresh],
+  )
+
+  const createBranch = useCallback(
+    async (branch: string) => {
+      const name = branch.trim()
+      if (!cwd || !name) return
+      setSwitchingBranch(true)
+      setError(null)
+      try {
+        const res = await window.git.createBranch(cwd, name)
+        if (!res.ok) {
+          setError(res.error ?? "Create branch failed")
+          return
+        }
+        await runRefresh()
+      } finally {
+        setSwitchingBranch(false)
+      }
+    },
+    [cwd, runRefresh],
+  )
+
   const sync = useCallback(async () => {
     if (!cwd || busy) return
     setBusy(true)
@@ -396,6 +446,13 @@ export function RightSidebar({
         >
           {cwd && (
             <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3">
+              <BranchPicker
+                current={currentBranch}
+                branches={branches}
+                busy={switchingBranch || busy}
+                onSwitch={switchBranch}
+                onCreate={createBranch}
+              />
               <textarea
                 value={commitMessage}
                 onChange={(e) => setCommitMessage(e.target.value)}
@@ -600,6 +657,135 @@ export function RightSidebar({
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function BranchPicker({
+  current,
+  branches,
+  busy,
+  onSwitch,
+  onCreate,
+}: {
+  current: string | null
+  branches: string[]
+  busy: boolean
+  onSwitch: (branch: string) => void
+  onCreate: (branch: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) setQuery("")
+    else requestAnimationFrame(() => inputRef.current?.focus())
+  }, [open])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const list = q
+      ? branches.filter((b) => b.toLowerCase().includes(q))
+      : branches
+    return list.slice(0, 200)
+  }, [branches, query])
+
+  const trimmedQuery = query.trim()
+  // Git branch names can't contain whitespace or several special chars; this
+  // is a coarse client-side check — the server validates strictly.
+  const isValidNewBranchName =
+    trimmedQuery.length > 0 && !/[\s~^:?*[\\]/.test(trimmedQuery)
+  const canCreate =
+    isValidNewBranchName && !branches.includes(trimmedQuery)
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || branches.length === 0}
+            aria-label="Switch branch"
+            className="h-8 w-full justify-between gap-2 px-2 text-xs font-normal"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">
+                {current ?? "(detached HEAD)"}
+              </span>
+            </span>
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-(--anchor-width) p-0">
+        <div className="border-b border-border/60 p-1">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                if (filtered[0]) {
+                  onSwitch(filtered[0])
+                  setOpen(false)
+                } else if (canCreate) {
+                  onCreate(trimmedQuery)
+                  setOpen(false)
+                }
+              }
+              // Prevent base-ui's menu typeahead from stealing characters.
+              e.stopPropagation()
+            }}
+            placeholder="Filter or create branch…"
+            className="w-full rounded-sm bg-transparent px-1.5 py-1 text-xs outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto p-1">
+          {filtered.length === 0 && !canCreate && (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {trimmedQuery ? "Invalid branch name" : "No branches"}
+            </div>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => {
+                onCreate(trimmedQuery)
+                setOpen(false)
+              }}
+              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+            >
+              <PlusCircle className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Create branch <span className="font-medium">{trimmedQuery}</span>
+              </span>
+            </button>
+          )}
+          {filtered.map((b) => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => {
+                onSwitch(b)
+                setOpen(false)
+              }}
+              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+            >
+              <Check
+                className={cn(
+                  "size-3.5 shrink-0",
+                  b === current ? "opacity-100" : "opacity-0",
+                )}
+              />
+              <span className="truncate">{b}</span>
+            </button>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

@@ -626,6 +626,74 @@ app.whenReady().then(() => {
     },
   )
 
+  ipcMain.handle("git:branches", async (_event, cwd: string) => {
+    if (!cwd) {
+      return { ok: false, error: "no-cwd", current: null, branches: [] }
+    }
+    try {
+      const [currentRaw, listRaw] = await Promise.all([
+        runGitAllowExit1(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
+        runGit(cwd, [
+          "for-each-ref",
+          "--format=%(refname:short)",
+          "refs/heads/",
+        ]),
+      ])
+      const current = currentRaw.trim()
+      const branches = listRaw
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+      return {
+        ok: true,
+        current: current === "HEAD" ? null : current,
+        branches,
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: (err as Error).message,
+        current: null,
+        branches: [],
+      }
+    }
+  })
+
+  ipcMain.handle(
+    "git:checkout",
+    async (_event, cwd: string, branch: string) => {
+      if (!cwd || !branch) return { ok: false, error: "no-branch" }
+      try {
+        await runGit(cwd, ["checkout", branch])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return { ok: false, error: e.stderr || e.message || "checkout failed" }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "git:createBranch",
+    async (_event, cwd: string, branch: string) => {
+      if (!cwd || !branch) return { ok: false, error: "no-branch" }
+      const name = branch.trim()
+      if (!name || /\s/.test(name)) {
+        return { ok: false, error: "invalid-branch-name" }
+      }
+      try {
+        await runGit(cwd, ["checkout", "-b", name])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "create branch failed",
+        }
+      }
+    },
+  )
+
   ipcMain.handle("git:aheadBehind", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, ahead: 0, behind: 0, hasUpstream: false }
     try {

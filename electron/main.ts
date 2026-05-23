@@ -520,6 +520,40 @@ app.whenReady().then(() => {
     },
   )
 
+  ipcMain.handle("git:aheadBehind", async (_event, cwd: string) => {
+    if (!cwd) return { ok: false, ahead: 0, behind: 0, hasUpstream: false }
+    try {
+      // Throws when no upstream configured — treat as "no upstream".
+      const out = await runGit(cwd, [
+        "rev-list",
+        "--left-right",
+        "--count",
+        "@{upstream}...HEAD",
+      ])
+      const m = out.trim().match(/^(\d+)\s+(\d+)/)
+      if (!m) return { ok: true, ahead: 0, behind: 0, hasUpstream: true }
+      return {
+        ok: true,
+        behind: parseInt(m[1], 10),
+        ahead: parseInt(m[2], 10),
+        hasUpstream: true,
+      }
+    } catch {
+      return { ok: true, ahead: 0, behind: 0, hasUpstream: false }
+    }
+  })
+
+  ipcMain.handle("git:pull", async (_event, cwd: string) => {
+    if (!cwd) return { ok: false, error: "no-cwd" }
+    try {
+      await runGit(cwd, ["pull", "--ff-only"])
+      return { ok: true }
+    } catch (err) {
+      const e = err as { stderr?: string; message?: string }
+      return { ok: false, error: e.stderr || e.message || "pull failed" }
+    }
+  })
+
   ipcMain.handle("git:push", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {

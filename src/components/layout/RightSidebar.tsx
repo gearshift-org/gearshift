@@ -350,6 +350,7 @@ export function RightSidebar({
   // open before the initial fetch resolves.
   const canCommit =
     hasData && stagedFiles.length > 0 && commitMessage.trim().length > 0
+  const canPush = hasData && hasUpstream && ahead > 0
 
   const switchBranch = useCallback(
     async (branch: string) => {
@@ -621,9 +622,9 @@ export function RightSidebar({
                         Commit &amp; Push
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        disabled={busy}
+                        disabled={!canPush || busy}
                         onClick={() => {
-                          if (!cwd) return
+                          if (!cwd || !canPush) return
                           setBusy(true)
                           setCommitting("push")
                           window.git.push(cwd).then((res) => {

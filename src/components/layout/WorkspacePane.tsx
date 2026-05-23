@@ -114,22 +114,20 @@ function TerminalTabContent({
     </div>
   )
 
-  if (!multi) {
-    return <div className="h-full">{renderPane(tab.panes[0])}</div>
-  }
-
+  // Always render through ResizablePanelGroup — even with a single pane — so
+  // splitting from 1→2 panes doesn't change the parent structure and force an
+  // unmount/remount of the existing terminal (which causes a visible flicker).
   return (
-    <ResizablePanelGroup
-      // Key by pane ids so the layout resets when split/close changes the
-      // panel count instead of trying to remember the old layout.
-      key={tab.panes.map((p) => p.id).join("|")}
-      orientation="horizontal"
-      className="h-full"
-    >
+    <ResizablePanelGroup orientation="horizontal" className="h-full">
       {tab.panes.map((pane, idx) => (
         <Fragment key={pane.id}>
           {idx > 0 && <ResizableHandle />}
-          <ResizablePanel minSize={10} defaultSize={100 / tab.panes.length}>
+          <ResizablePanel
+            id={pane.id}
+            order={idx}
+            minSize={10}
+            defaultSize={100 / tab.panes.length}
+          >
             {renderPane(pane)}
           </ResizablePanel>
         </Fragment>

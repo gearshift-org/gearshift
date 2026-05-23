@@ -790,6 +790,15 @@ export function AppShell() {
     addTerminalRef.current = addTerminal
     closeActiveTabRef.current = () => {
       if (!activeTabId) return
+      const active = activeProject?.tabs.find((t) => t.id === activeTabId)
+      if (
+        active?.kind === "terminal" &&
+        active.panes.length > 1 &&
+        active.activePaneId
+      ) {
+        closePane(activeTabId, active.activePaneId)
+        return
+      }
       closeTab(activeTabId)
     }
     splitActiveTerminalRef.current = () => {

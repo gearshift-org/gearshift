@@ -301,10 +301,31 @@ export function TerminalView({
       onTitleChangeRef.current?.(trimmed)
     })
 
+    // Debounce + rAF: ResizeObserver can fire many times per frame while a
+    // split-pane handle is dragged or panes are added. Collapse those into a
+    // single fit() per animation frame to prevent visible reflow/flicker.
     let resizeTimer: number | undefined
+    let rafId: number | undefined
+    let lastCols = term.cols
+    let lastRows = term.rows
+    const scheduleFit = () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        try {
+          fit.fit()
+          if (term.cols !== lastCols || term.rows !== lastRows) {
+            lastCols = term.cols
+            lastRows = term.rows
+            window.term.resize(sessionId, term.cols, term.rows)
+          }
+        } catch {
+          // ignore
+        }
+      })
+    }
     const ro = new ResizeObserver(() => {
       if (resizeTimer) window.clearTimeout(resizeTimer)
-      resizeTimer = window.setTimeout(safeFit, 50)
+      resizeTimer = window.setTimeout(scheduleFit, 16)
     })
     ro.observe(container)
 
@@ -338,6 +359,7 @@ export function TerminalView({
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
       if (resizeTimer) window.clearTimeout(resizeTimer)
+      if (rafId) cancelAnimationFrame(rafId)
       offData()
       offExit()
       inputSub.dispose()

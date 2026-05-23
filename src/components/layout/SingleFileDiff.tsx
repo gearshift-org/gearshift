@@ -6,9 +6,15 @@ type Props = {
   cwd: string
   path: string
   staged: boolean
+  viewMode?: "unified" | "split"
 }
 
-export function SingleFileDiff({ cwd, path, staged }: Props) {
+export function SingleFileDiff({
+  cwd,
+  path,
+  staged,
+  viewMode = "unified",
+}: Props) {
   const { resolvedTheme } = useTheme()
   const [patch, setPatch] = useState("")
   const [loading, setLoading] = useState(true)
@@ -73,6 +79,6 @@ export function SingleFileDiff({ cwd, path, staged }: Props) {
   }
 
   return (
-    <DiffViewer patch={patch} themeType={resolvedTheme} viewMode="unified" />
+    <DiffViewer patch={patch} themeType={resolvedTheme} viewMode={viewMode} />
   )
 }

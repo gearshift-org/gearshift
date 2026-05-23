@@ -1,5 +1,5 @@
-import { Fragment } from "react"
-import { SplitSquareHorizontal } from "lucide-react"
+import { Fragment, useState } from "react"
+import { Columns2, Rows3, SplitSquareHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
@@ -141,6 +141,7 @@ function PaneContent({
   tab,
   project,
   isActive,
+  diffViewMode,
   onTitleChange,
   onStartTerminal,
   onSplitTerminal,
@@ -150,6 +151,7 @@ function PaneContent({
   tab: WorkspaceTab
   project: Project
   isActive: boolean
+  diffViewMode: "unified" | "split"
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onSplitTerminal?: (tabId: string) => void
@@ -174,6 +176,7 @@ function PaneContent({
         cwd={project.path}
         path={tab.path}
         staged={tab.staged}
+        viewMode={diffViewMode}
       />
     )
   }
@@ -191,6 +194,14 @@ export function WorkspacePane({
 }: Props) {
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
   const isTerminalActive = activeTab?.kind === "terminal"
+  const isDiffActive = activeTab?.kind === "diff"
+
+  // Per-diff-tab view mode, remembered while the tab exists.
+  const [diffViewModes, setDiffViewModes] = useState<
+    Record<string, "unified" | "split">
+  >({})
+  const activeDiffMode =
+    (activeTab && diffViewModes[activeTab.id]) || "unified"
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -202,6 +213,41 @@ export function WorkspacePane({
               ? "No tab"
               : "No project"}
         </span>
+        {isDiffActive && activeTab && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDiffViewModes((prev) => ({
+                      ...prev,
+                      [activeTab.id]:
+                        (prev[activeTab.id] ?? "unified") === "unified"
+                          ? "split"
+                          : "unified",
+                    }))
+                  }
+                  aria-label={
+                    activeDiffMode === "unified"
+                      ? "Switch to split diff"
+                      : "Switch to inline diff"
+                  }
+                  className="ml-auto grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                >
+                  {activeDiffMode === "unified" ? (
+                    <Columns2 className="size-3.5" />
+                  ) : (
+                    <Rows3 className="size-3.5" />
+                  )}
+                </button>
+              }
+            />
+            <TooltipContent>
+              {activeDiffMode === "unified" ? "Split diff" : "Inline diff"}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {isTerminalActive && onSplitTerminal && (
           <Tooltip>
             <TooltipTrigger
@@ -233,6 +279,7 @@ export function WorkspacePane({
               tab={t}
               project={project}
               isActive={isActive && t.id === project.activeTabId}
+              diffViewMode={diffViewModes[t.id] ?? "unified"}
               onTitleChange={onTitleChange}
               onStartTerminal={onStartTerminal}
               onSplitTerminal={onSplitTerminal}

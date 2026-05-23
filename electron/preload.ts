@@ -89,6 +89,11 @@ const fsApi = {
       binary?: boolean
       size?: number
     }>,
+  writeFile: (absPath: string, content: string) =>
+    ipcRenderer.invoke("fs:writeFile", absPath, content) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   listAllFiles: (cwd: string) =>
     ipcRenderer.invoke("fs:listAllFiles", cwd) as Promise<{
       ok: boolean

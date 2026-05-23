@@ -402,11 +402,20 @@ app.whenReady().then(() => {
             resolve()
           })
           child.on("error", () => resolve())
-          child.stdin.write(relPaths.join("\0"))
+          // `--stdin -z` requires every input path NUL-terminated, including
+          // the last one — otherwise git silently fails to match it.
+          child.stdin.write(relPaths.map((p) => p + "\0").join(""))
           child.stdin.end()
         })
 
+        // Allow-list: .env, .env.local, .env.production etc. should appear in
+        // the tree even when gitignored, since the user often needs to view
+        // them in the app.
+        const isAllowlistedDotenv = (name: string) =>
+          name === ".env" || name.startsWith(".env.")
+
         const entries = candidates.filter((c) => {
+          if (isAllowlistedDotenv(c.name)) return true
           const full = path.join(absPath, c.name)
           const rel = path.relative(repoRoot!, full)
           return !ignored.has(rel)
@@ -435,6 +444,19 @@ app.whenReady().then(() => {
       return { ok: false, error: (err as Error).message, files: [] }
     }
   })
+
+  ipcMain.handle(
+    "fs:writeFile",
+    async (_event, absPath: string, content: string) => {
+      if (!absPath) return { ok: false, error: "no-path" }
+      try {
+        await fs.writeFile(absPath, content, "utf8")
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
 
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }

@@ -161,3 +161,61 @@ export function saveDiffViewMode(mode: "unified" | "split"): void {
     // ignore
   }
 }
+
+const PROJECT_COLORS_KEY = "gearshift.projectColors"
+
+function loadProjectColors(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(PROJECT_COLORS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object") return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function saveProjectColors(map: Record<string, string>): void {
+  try {
+    localStorage.setItem(PROJECT_COLORS_KEY, JSON.stringify(map))
+  } catch {
+    // ignore
+  }
+}
+
+function randomHexColor(): string {
+  // Bias toward mid-luminance, vibrant colors so initials stay readable on
+  // either light or dark backgrounds.
+  const h = Math.floor(Math.random() * 360)
+  const s = 55 + Math.floor(Math.random() * 25) // 55–80%
+  const l = 45 + Math.floor(Math.random() * 15) // 45–60%
+  // HSL → RGB
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    const c = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+    return Math.round(255 * c)
+      .toString(16)
+      .padStart(2, "0")
+  }
+  return `#${f(0)}${f(8)}${f(4)}`
+}
+
+/**
+ * Get a stable hex color for a project, keyed by its path. Generates and
+ * persists a new random color the first time a path is seen.
+ */
+export function getProjectColor(path: string): string {
+  if (!path) return "#888888"
+  const map = loadProjectColors()
+  if (map[path]) return map[path]
+  const color = randomHexColor()
+  map[path] = color
+  saveProjectColors(map)
+  return color
+}

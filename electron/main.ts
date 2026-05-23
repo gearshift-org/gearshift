@@ -29,6 +29,16 @@ type PullRequestInfo = {
   url: string
 }
 
+type AgentStatusInfo = {
+  running: boolean
+  agentName?: "claude" | "codex" | "opencode" | "pi" | "gemini"
+}
+
+app.setName("GearShift V2")
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.gearshift.v2")
+}
+
 if (VITE_DEV_SERVER_URL) {
   app.setPath("userData", path.join(app.getPath("appData"), "gearshift-v2-dev"))
 } else {
@@ -83,6 +93,64 @@ async function readGitignoreGlobs(cwd: string): Promise<string[]> {
 function defaultShell(): string {
   if (process.platform === "win32") return process.env.COMSPEC || "powershell.exe"
   return process.env.SHELL || "/bin/zsh"
+}
+
+function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
+  const tokens = command.trim().split(/\s+/)
+  const basenames = tokens.map((token) =>
+    path.basename(token).toLowerCase().replace(/\.js$/, ""),
+  )
+  if (basenames.some((base) => base === "claude" || base === "claude-code")) {
+    return "claude"
+  }
+  if (basenames.some((base) => base === "codex" || base === "codex-cli")) {
+    return "codex"
+  }
+  if (basenames.some((base) => base === "opencode")) return "opencode"
+  if (basenames.some((base) => base === "pi")) return "pi"
+  if (basenames.some((base) => base === "gemini" || base === "gemini-cli")) {
+    return "gemini"
+  }
+  return undefined
+}
+
+async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
+  if (process.platform === "win32") return { running: false }
+
+  try {
+    const { stdout } = await execFileP("/bin/ps", [
+      "-axo",
+      "pid=,ppid=,command=",
+    ])
+    const childrenByParent = new Map<number, Array<{ pid: number; command: string }>>()
+
+    for (const line of stdout.split("\n")) {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
+      if (!match) continue
+      const pid = Number(match[1])
+      const ppid = Number(match[2])
+      const command = match[3]?.trim() ?? ""
+      if (!pid || !ppid || !command) continue
+      const children = childrenByParent.get(ppid) ?? []
+      children.push({ pid, command })
+      childrenByParent.set(ppid, children)
+    }
+
+    const queue = [...(childrenByParent.get(rootPid) ?? [])]
+    const seen = new Set<number>()
+    while (queue.length > 0) {
+      const proc = queue.shift()!
+      if (seen.has(proc.pid)) continue
+      seen.add(proc.pid)
+      const agentName = supportedAgentName(proc.command)
+      if (agentName) return { running: true, agentName }
+      queue.push(...(childrenByParent.get(proc.pid) ?? []))
+    }
+  } catch {
+    // Process inspection is best-effort; the UI falls back to no agent.
+  }
+
+  return { running: false }
 }
 
 function createWindow() {
@@ -855,7 +923,10 @@ app.whenReady().then(() => {
             !isDefaultBranch(currentBranch, defaultBranch),
         }
       } catch (err) {
-        console.warn("pull request check failed", err)
+        const signal = (err as { signal?: string } | null)?.signal
+        if (signal !== "SIGINT" && signal !== "SIGTERM") {
+          console.warn("pull request check failed", err)
+        }
         return {
           ok: true,
           ghAvailable: false,
@@ -1121,6 +1192,12 @@ app.whenReady().then(() => {
     } catch {
       return null
     }
+  })
+
+  ipcMain.handle("term:agentStatus", async (_e, id: string) => {
+    const proc = ptys.get(id)
+    if (!proc) return { running: false } satisfies AgentStatusInfo
+    return detectPtyAgent(proc.pid)
   })
 
   ipcMain.on("term:kill", (_e, id: string) => {

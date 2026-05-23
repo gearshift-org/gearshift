@@ -6,7 +6,7 @@ import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { Project } from "./types"
+import type { Project, TerminalAgentStatus } from "./types"
 
 const SIDEBAR_DEFAULT_PX = 410
 const SIDEBAR_MIN_PX = 220
@@ -22,6 +22,11 @@ type Props = {
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
   onTerminalTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onTerminalAgentStatusChange?: (
+    tabId: string,
+    paneId: string,
+    status: TerminalAgentStatus,
+  ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
@@ -39,6 +44,7 @@ export function WorkspaceSplit({
   workspaceTabs,
   sidebarOpen = true,
   onTerminalTitleChange,
+  onTerminalAgentStatusChange,
   onStartTerminal,
   onSplitTerminal,
   onClosePane,
@@ -115,15 +121,17 @@ export function WorkspaceSplit({
         {projects.map((p) => (
           <div
             key={p.id}
+            aria-hidden={p.id !== activeProjectId}
             className={cn(
-              "absolute inset-0",
-              p.id !== activeProjectId && "pointer-events-none invisible"
+              "absolute inset-0 transition-opacity duration-75",
+              p.id !== activeProjectId && "pointer-events-none opacity-0"
             )}
           >
             <WorkspacePane
               project={p}
               isActive={p.id === activeProjectId}
               onTitleChange={onTerminalTitleChange}
+              onAgentStatusChange={onTerminalAgentStatusChange}
               onStartTerminal={onStartTerminal}
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}

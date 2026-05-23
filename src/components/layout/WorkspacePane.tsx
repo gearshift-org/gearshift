@@ -19,6 +19,7 @@ import { store } from "@/lib/store"
 import { tabDisplayName } from "./terminalName"
 import type {
   Project,
+  TerminalAgentStatus,
   TerminalPane as TerminalPaneType,
   TerminalTab,
   WorkspaceTab,
@@ -28,6 +29,11 @@ type Props = {
   project: Project | undefined
   isActive?: boolean
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onAgentStatusChange?: (
+    tabId: string,
+    paneId: string,
+    status: TerminalAgentStatus,
+  ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
@@ -40,6 +46,7 @@ function TerminalPaneView({
   pane,
   isTabActive,
   onTitleChange,
+  onAgentStatusChange,
   onStartTerminal,
   onFocus,
 }: {
@@ -47,6 +54,11 @@ function TerminalPaneView({
   pane: TerminalPaneType
   isTabActive: boolean
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onAgentStatusChange?: (
+    tabId: string,
+    paneId: string,
+    status: TerminalAgentStatus,
+  ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onFocus?: () => void
 }) {
@@ -74,6 +86,9 @@ function TerminalPaneView({
         sessionId={pane.id}
         isActive={isTabActive && tab.activePaneId === pane.id}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
+        onAgentStatusChange={(status) =>
+          onAgentStatusChange?.(tab.id, pane.id, status)
+        }
       />
     </div>
   )
@@ -83,12 +98,18 @@ function TerminalTabContent({
   tab,
   isActive,
   onTitleChange,
+  onAgentStatusChange,
   onStartTerminal,
   onFocusPane,
 }: {
   tab: TerminalTab
   isActive: boolean
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onAgentStatusChange?: (
+    tabId: string,
+    paneId: string,
+    status: TerminalAgentStatus,
+  ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
 }) {
@@ -108,6 +129,7 @@ function TerminalTabContent({
         pane={pane}
         isTabActive={isActive}
         onTitleChange={onTitleChange}
+        onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
         onFocus={() => onFocusPane?.(tab.id, pane.id)}
       />
@@ -141,6 +163,7 @@ function PaneContent({
   isActive,
   diffViewMode,
   onTitleChange,
+  onAgentStatusChange,
   onStartTerminal,
   onFocusPane,
   onOpenFile,
@@ -150,6 +173,11 @@ function PaneContent({
   isActive: boolean
   diffViewMode: "unified" | "split"
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onAgentStatusChange?: (
+    tabId: string,
+    paneId: string,
+    status: TerminalAgentStatus,
+  ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
@@ -160,6 +188,7 @@ function PaneContent({
         tab={tab}
         isActive={isActive}
         onTitleChange={onTitleChange}
+        onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
         onFocusPane={onFocusPane}
       />
@@ -183,6 +212,7 @@ export function WorkspacePane({
   project,
   isActive = true,
   onTitleChange,
+  onAgentStatusChange,
   onStartTerminal,
   onSplitTerminal,
   onFocusPane,
@@ -275,9 +305,10 @@ export function WorkspacePane({
         {project?.tabs.map((t) => (
           <div
             key={t.id}
+            aria-hidden={t.id !== project.activeTabId}
             className={cn(
-              "absolute inset-0",
-              t.id !== project.activeTabId && "invisible pointer-events-none",
+              "absolute inset-0 transition-opacity duration-75",
+              t.id !== project.activeTabId && "pointer-events-none opacity-0",
             )}
           >
             <PaneContent
@@ -286,6 +317,7 @@ export function WorkspacePane({
               isActive={isActive && t.id === project.activeTabId}
               diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
               onTitleChange={onTitleChange}
+              onAgentStatusChange={onAgentStatusChange}
               onStartTerminal={onStartTerminal}
               onFocusPane={onFocusPane}
               onOpenFile={onOpenFile}

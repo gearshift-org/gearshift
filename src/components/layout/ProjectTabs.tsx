@@ -55,6 +55,18 @@ function readableTextOn(hex: string): string {
   return lum > 0.6 ? "#000000" : "#ffffff"
 }
 
+function projectHasWorkingAgent(project: Project): boolean {
+  return project.tabs.some(
+    (tab) =>
+      tab.kind === "terminal" &&
+      tab.panes.some((pane) => pane.agentStatus?.working),
+  )
+}
+
+function projectHasDoneAgent(project: Project): boolean {
+  return !!project.agentDone && !projectHasWorkingAgent(project)
+}
+
 type Props = {
   projects: Project[]
   activeId: string
@@ -117,6 +129,8 @@ function ProjectTabItem({
     randomizeProjectColor(p.path)
     setColorVersion((v) => v + 1)
   }
+  const hasWorkingAgent = projectHasWorkingAgent(p)
+  const hasDoneAgent = projectHasDoneAgent(p)
 
   return (
     <ContextMenu>
@@ -146,6 +160,25 @@ function ProjectTabItem({
             </span>
           )
         })()}
+        {hasWorkingAgent && (
+          <span
+            aria-label="Coding agent working"
+            title="Coding agent working"
+            className="relative -ml-0.5 grid size-2.5 shrink-0 place-items-center"
+          >
+            <span className="absolute size-2.5 animate-ping rounded-full bg-orange-400/65" />
+            <span className="relative size-1.5 rounded-full bg-orange-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+          </span>
+        )}
+        {!hasWorkingAgent && hasDoneAgent && (
+          <span
+            aria-label="Coding agent done"
+            title="Coding agent done"
+            className="relative -ml-0.5 grid size-2.5 shrink-0 animate-bounce place-items-center"
+          >
+            <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+          </span>
+        )}
         <span className="truncate">{p.name}</span>
         {canClose && (
           <Tooltip>

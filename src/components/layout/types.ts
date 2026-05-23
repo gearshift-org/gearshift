@@ -3,8 +3,18 @@ export type TerminalPane = {
   id: string
   /** Title emitted by the running process (OSC sequence). */
   autoTitle?: string
+  /** Ephemeral coding-agent status detected from the PTY process/output. */
+  agentStatus?: TerminalAgentStatus
   /** True for restored panes whose PTY has not been spawned yet. */
   pendingStart?: boolean
+}
+
+export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi" | "gemini"
+
+export type TerminalAgentStatus = {
+  running: boolean
+  working: boolean
+  agentName?: TerminalAgentName
 }
 
 export type TerminalTab = {
@@ -49,4 +59,6 @@ export type Project = {
   path: string
   tabs: WorkspaceTab[]
   activeTabId: string
+  /** Ephemeral marker shown after a background coding agent finishes work. */
+  agentDone?: boolean
 }

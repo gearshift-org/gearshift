@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import { toast } from "sonner"
 import { TitleBar } from "./TitleBar"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import { CommandPalette } from "./CommandPalette"
-import type { Project, WorkspaceTab } from "./types"
+import { tabDisplayName } from "./terminalName"
+import agentCompleteSoundUrl from "@/assets/sounds/agent-complete.wav?url"
+import type { Project, TerminalAgentStatus, WorkspaceTab } from "./types"
 import {
   loadActiveProjectId,
   loadPaletteRecents,
@@ -85,6 +88,31 @@ function serializeProjects(projects: Project[]) {
   })
 }
 
+function agentDoneToastId(projectId: string, tabId: string, paneId: string) {
+  return `agent-done:${projectId}:${tabId}:${paneId}`
+}
+
+function dismissProjectAgentDoneToasts(project: Project) {
+  for (const tab of project.tabs) {
+    if (tab.kind !== "terminal") continue
+    for (const pane of tab.panes) {
+      toast.dismiss(agentDoneToastId(project.id, tab.id, pane.id))
+    }
+  }
+}
+
+function isAppVisibleAndFocused() {
+  return document.visibilityState === "visible" && document.hasFocus()
+}
+
+function playAgentCompleteSound() {
+  const audio = new Audio(agentCompleteSoundUrl)
+  audio.volume = 0.5
+  void audio.play().catch(() => {
+    // Sound playback can be blocked until the user has interacted with the app.
+  })
+}
+
 export function AppShell() {
   const navigate = useNavigate()
   const params = useParams({ strict: false }) as {
@@ -152,6 +180,7 @@ export function AppShell() {
   // Forward reference: closePane (defined below) calls closeTab when the last
   // pane is being closed. Wired via effect once both are defined.
   const closeTabRef = useRef<(id: string) => void>(() => undefined)
+  const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
 
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
@@ -226,6 +255,20 @@ export function AppShell() {
     saveActiveProjectId(activeProjectId)
     if (activeProjectPath) pushRecentPaletteProject(activeProjectPath)
   }, [activeProjectId, activeProjectPath, stateRestored])
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    const activeProject = projects.find((p) => p.id === activeProjectId)
+    if (activeProject) dismissProjectAgentDoneToasts(activeProject)
+    if (!activeProject?.agentDone) return
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === activeProjectId && p.agentDone
+          ? { ...p, agentDone: false }
+          : p,
+      ),
+    )
+  }, [activeProjectId, projects])
 
   useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return
@@ -340,6 +383,14 @@ export function AppShell() {
 
   const selectProject = (id: string) => {
     const p = projects.find((x) => x.id === id)
+    if (p) dismissProjectAgentDoneToasts(p)
+    setProjects((prev) =>
+      prev.map((project) =>
+        project.id === id && project.agentDone
+          ? { ...project, agentDone: false }
+          : project,
+      ),
+    )
     navigateToProject(id, p?.activeTabId || undefined)
   }
 
@@ -545,6 +596,35 @@ export function AppShell() {
       )
     },
     [activeProjectId],
+  )
+
+  const openAgentDoneTarget = useCallback(
+    (
+      projectId: string,
+      tabId: string,
+      paneId: string,
+      toastId?: string | number,
+    ) => {
+      if (toastId !== undefined) toast.dismiss(toastId)
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === projectId
+            ? {
+                ...p,
+                agentDone: false,
+                activeTabId: tabId,
+                tabs: p.tabs.map((t) =>
+                  t.id === tabId && t.kind === "terminal"
+                    ? { ...t, activePaneId: paneId }
+                    : t,
+                ),
+              }
+            : p,
+        ),
+      )
+      navigateToProject(projectId, tabId)
+    },
+    [navigateToProject],
   )
 
   const openDiffTab = useCallback(
@@ -801,6 +881,116 @@ export function AppShell() {
     })
   }
 
+  const setTerminalAgentStatus = (
+    tabId: string,
+    paneId: string,
+    status: TerminalAgentStatus,
+  ) => {
+    const key = `${tabId}:${paneId}`
+    const previousStatus = terminalAgentStatusRef.current.get(key)
+    terminalAgentStatusRef.current.set(key, status)
+
+    const targetProject = projects.find((p) =>
+      p.tabs.some((t) => t.id === tabId),
+    )
+    const targetTab = targetProject?.tabs.find((t) => t.id === tabId)
+    const fallbackPane =
+      targetTab?.kind === "terminal"
+        ? targetTab.panes.find((pp) => pp.id === paneId)
+        : undefined
+    const wasWorking =
+      previousStatus?.working ?? fallbackPane?.agentStatus?.working ?? false
+    const finishedWork = wasWorking && !status.working
+    const appVisibleAndFocused = isAppVisibleAndFocused()
+    const finishedAwayFromAttention =
+      finishedWork &&
+      !!targetProject &&
+      (targetProject.id !== activeProjectId || !appVisibleAndFocused)
+
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (!p.tabs.some((t) => t.id === tabId)) return p
+
+        const tabs = p.tabs.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t
+          return {
+            ...t,
+            panes: t.panes.map((pp) =>
+              pp.id === paneId ? { ...pp, agentStatus: status } : pp,
+            ),
+          }
+        })
+
+        return {
+          ...p,
+          tabs,
+          agentDone:
+            status.working || p.id === activeProjectId
+              ? false
+              : finishedWork
+                ? true
+                : p.agentDone,
+        }
+      }),
+    )
+
+    if (finishedAwayFromAttention && targetProject && targetTab?.kind === "terminal") {
+      playAgentCompleteSound()
+      const terminalName = tabDisplayName(targetTab)
+      const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
+      if (appVisibleAndFocused) {
+        console.info("Agent complete: showing in-app toast")
+        toast.custom(
+          (id) => (
+            <button
+              type="button"
+              onClick={() =>
+                openAgentDoneTarget(targetProject.id, tabId, paneId, id)
+              }
+              className="flex w-full min-w-72 items-start gap-3 rounded-md border border-border bg-popover p-3 text-left text-popover-foreground shadow-lg"
+            >
+              <span className="mt-1 size-2 shrink-0 rounded-full bg-emerald-500" />
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="text-sm font-medium">Agent finished</span>
+                <span className="flex min-w-0 items-baseline gap-1 text-xs">
+                  <span className="max-w-36 truncate font-semibold text-foreground">
+                    {targetProject.name}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">·</span>
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {terminalName}
+                  </span>
+                </span>
+              </span>
+            </button>
+          ),
+          {
+            id: toastId,
+            duration: Infinity,
+          },
+        )
+      } else {
+        console.info("Agent complete: showing desktop notification")
+        if (typeof Notification !== "undefined") {
+          try {
+            const notification = new Notification(
+              targetProject.name || "GearShift",
+              {
+                body: `Agent finished in ${terminalName}`,
+                silent: true,
+              },
+            )
+            notification.onclick = () => {
+              openAgentDoneTarget(targetProject.id, tabId, paneId)
+            }
+          } catch (err) {
+            console.warn("Desktop notification failed", err)
+          }
+        }
+      }
+    }
+  }
+
   const renameTab = (tabId: string, name: string) => {
     setProjects((prev) =>
       prev.map((p) =>
@@ -895,7 +1085,6 @@ export function AppShell() {
     )
     navigateToProject(activeProjectId)
   }
-
   const addTerminalRef = useRef<() => void>(() => undefined)
   const closeActiveTabRef = useRef<() => void>(() => undefined)
   const splitActiveTerminalRef = useRef<() => void>(() => undefined)
@@ -991,6 +1180,7 @@ export function AppShell() {
           activeProjectId={activeProjectId}
           sidebarOpen={sidebarOpen}
           onTerminalTitleChange={setTerminalTitle}
+          onTerminalAgentStatusChange={setTerminalAgentStatus}
           onStartTerminal={(tabId, paneId) => {
             void startTerminalPane(activeProject.id, tabId, paneId)
           }}

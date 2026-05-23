@@ -9,6 +9,7 @@ import "@xterm/xterm/css/xterm.css"
 import "./index.css"
 import { router } from "./router"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
+import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 // SWR-style caching: keep stale data visible across project switches and
@@ -56,6 +57,7 @@ createRoot(document.getElementById("root")!).render(
       <ThemeProvider>
         <TooltipProvider delay={200}>
           <RouterProvider router={router} />
+          <Toaster position="bottom-right" />
         </TooltipProvider>
       </ThemeProvider>
     </PersistQueryClientProvider>

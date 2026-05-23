@@ -8,6 +8,8 @@ import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { useTheme } from "@/components/theme-provider"
 import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { cn } from "@/lib/utils"
+import { agentActivityTitleSignal } from "./terminalName"
+import type { TerminalAgentStatus } from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -21,6 +23,7 @@ type Props = {
   sessionId: string
   isActive?: boolean
   onTitleChange?: (title: string) => void
+  onAgentStatusChange?: (status: TerminalAgentStatus) => void
 }
 
 const DARK_THEME = {
@@ -83,6 +86,12 @@ const SEARCH_DECORATIONS = {
 }
 
 const WRAPPER_BG = "[--xterm-bg:#ffffff] dark:[--xterm-bg:#151515]"
+const AGENT_STATUS_POLL_MS = 2000
+const AGENT_WORKING_QUIET_MS = 2500
+const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
+const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
+const USER_INPUT_ECHO_SUPPRESS_MS = 750
+const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
 
 function shellQuote(s: string) {
   if (/^[A-Za-z0-9_\-./]+$/.test(s)) return s
@@ -110,6 +119,7 @@ export function TerminalView({
   sessionId,
   isActive = true,
   onTitleChange,
+  onAgentStatusChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -119,7 +129,15 @@ export function TerminalView({
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
   const onTitleChangeRef = useRef(onTitleChange)
-  onTitleChangeRef.current = onTitleChange
+  const onAgentStatusChangeRef = useRef(onAgentStatusChange)
+  const agentStatusRef = useRef<TerminalAgentStatus>({ running: false, working: false })
+  const agentWorkingTimerRef = useRef<number | undefined>(undefined)
+  const lastAgentActivityAtRef = useRef(0)
+  const lastUserInputAtRef = useRef(0)
+  const lastAgentSubmitAtRef = useRef(0)
+  const lastTitleSignalRef = useRef<string | undefined>(undefined)
+  const hasSubmittedToAgentRef = useRef(false)
+  const suppressAgentActivityUntilRef = useRef(0)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -141,6 +159,76 @@ export function TerminalView({
     searchRef.current?.clearDecorations()
     termRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    onTitleChangeRef.current = onTitleChange
+  }, [onTitleChange])
+
+  useEffect(() => {
+    onAgentStatusChangeRef.current = onAgentStatusChange
+  }, [onAgentStatusChange])
+
+  const emitAgentStatus = useCallback((next: TerminalAgentStatus) => {
+    const prev = agentStatusRef.current
+    if (
+      prev.running === next.running &&
+      prev.working === next.working &&
+      prev.agentName === next.agentName
+    ) {
+      return
+    }
+    agentStatusRef.current = next
+    onAgentStatusChangeRef.current?.(next)
+  }, [])
+
+  const markAgentWorking = useCallback(() => {
+    const now = Date.now()
+    if (now < suppressAgentActivityUntilRef.current) return
+    const latestInputWasSubmit =
+      lastAgentSubmitAtRef.current >= lastUserInputAtRef.current
+    if (
+      !latestInputWasSubmit &&
+      now - lastUserInputAtRef.current < USER_INPUT_ECHO_SUPPRESS_MS
+    ) {
+      return
+    }
+    const current = agentStatusRef.current
+    if (!current.running || !hasSubmittedToAgentRef.current) return
+    lastAgentActivityAtRef.current = now
+    emitAgentStatus({ ...current, working: true })
+    if (agentWorkingTimerRef.current) {
+      window.clearTimeout(agentWorkingTimerRef.current)
+    }
+    agentWorkingTimerRef.current = window.setTimeout(() => {
+      const latest = agentStatusRef.current
+      if (latest.running) emitAgentStatus({ ...latest, working: false })
+    }, AGENT_WORKING_QUIET_MS)
+  }, [emitAgentStatus])
+
+  useEffect(() => {
+    const suppressFocusRedrawActivity = () => {
+      suppressAgentActivityUntilRef.current =
+        Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        suppressFocusRedrawActivity()
+      }
+    }
+
+    window.addEventListener("focus", suppressFocusRedrawActivity)
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      window.removeEventListener("focus", suppressFocusRedrawActivity)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isActive) return
+    suppressAgentActivityUntilRef.current =
+      Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
+  }, [isActive])
 
   useEffect(() => {
     const container = containerRef.current
@@ -332,15 +420,54 @@ export function TerminalView({
     safeFit()
     if (isActive) term.focus()
 
-    const offData = window.term.onData(sessionId, (chunk) => term.write(chunk))
+    const offData = window.term.onData(sessionId, (chunk) => {
+      term.write(chunk)
+      const current = agentStatusRef.current
+      if (
+        current.running &&
+        current.agentName &&
+        OUTPUT_ACTIVITY_AGENTS.has(current.agentName)
+      ) {
+        markAgentWorking()
+      }
+    })
     const offExit = window.term.onExit(sessionId, () => {
       term.write("\r\n\x1b[31m[process exited]\x1b[0m\r\n")
     })
 
-    const inputSub = term.onData((d) => window.term.write(sessionId, d))
+    const inputSub = term.onData((d) => {
+      const current = agentStatusRef.current
+      if (current.running) {
+        const now = Date.now()
+        lastUserInputAtRef.current = now
+        if (d.includes("\r")) {
+          hasSubmittedToAgentRef.current = true
+          lastAgentSubmitAtRef.current = now
+        } else {
+          suppressAgentActivityUntilRef.current =
+            now + USER_INPUT_ECHO_SUPPRESS_MS
+        }
+      }
+      window.term.write(sessionId, d)
+    })
     const titleSub = term.onTitleChange((t) => {
       const trimmed = t.trim()
       onTitleChangeRef.current?.(trimmed)
+      const titleSignal = agentActivityTitleSignal(trimmed)
+      if (!titleSignal) return
+
+      const current = agentStatusRef.current
+      const previousTitleSignal = lastTitleSignalRef.current
+      lastTitleSignalRef.current = titleSignal
+
+      if (current.agentName === "claude") {
+        if (previousTitleSignal && previousTitleSignal !== titleSignal) {
+          markAgentWorking()
+        }
+        return
+      }
+
+      markAgentWorking()
     })
 
     // Debounce + rAF: ResizeObserver can fire many times per frame while a
@@ -362,6 +489,8 @@ export function TerminalView({
           ) {
             lastCols = term.cols
             lastRows = term.rows
+            suppressAgentActivityUntilRef.current =
+              Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
             window.term.resize(sessionId, term.cols, term.rows)
           }
         } catch {
@@ -416,6 +545,10 @@ export function TerminalView({
       container.removeEventListener("drop", onDrop)
       if (resizeTimer) window.clearTimeout(resizeTimer)
       if (rafId) cancelAnimationFrame(rafId)
+      if (agentWorkingTimerRef.current) {
+        window.clearTimeout(agentWorkingTimerRef.current)
+        agentWorkingTimerRef.current = undefined
+      }
       offData()
       offExit()
       inputSub.dispose()
@@ -431,8 +564,49 @@ export function TerminalView({
       term.dispose()
       termRef.current = null
       searchRef.current = null
+      emitAgentStatus({ running: false, working: false })
     }
-  }, [sessionId, openSearch])
+  }, [sessionId, openSearch, markAgentWorking, emitAgentStatus])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const refreshAgentStatus = async () => {
+      try {
+        const detected = await window.term.agentStatus(sessionId)
+        if (cancelled) return
+        const current = agentStatusRef.current
+        if (!current.running && detected.running) {
+          hasSubmittedToAgentRef.current = false
+          lastAgentActivityAtRef.current = 0
+          lastUserInputAtRef.current = 0
+          lastAgentSubmitAtRef.current = 0
+        }
+        const recentlyActive =
+          Date.now() - lastAgentActivityAtRef.current < AGENT_WORKING_QUIET_MS
+        emitAgentStatus({
+          running: detected.running,
+          working: detected.running
+            ? current.working || recentlyActive
+            : false,
+          agentName: detected.agentName,
+        })
+      } catch {
+        if (!cancelled) emitAgentStatus({ running: false, working: false })
+      }
+    }
+
+    void refreshAgentStatus()
+    const interval = window.setInterval(
+      () => void refreshAgentStatus(),
+      AGENT_STATUS_POLL_MS,
+    )
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [sessionId, emitAgentStatus])
 
   // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens,
   // matching the original GearShift pattern, so xterm has stable cell metrics.

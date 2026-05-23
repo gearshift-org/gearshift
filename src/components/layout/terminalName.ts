@@ -28,6 +28,18 @@ export function formatAutoTitle(title: string | undefined): string | undefined {
   return shellTitle?.[1]?.trim() || trimmed
 }
 
+export function agentActivityTitleSignal(
+  title: string | undefined,
+): string | undefined {
+  if (!title) return undefined
+  const match = title.trim().match(LEADING_SPARKLE_RE)
+  return match?.[0]?.trim() || undefined
+}
+
+export function hasAgentActivityTitleSignal(title: string | undefined): boolean {
+  return !!agentActivityTitleSignal(title)
+}
+
 export function displayName(t: TerminalTab): string {
   if (t.customName?.trim()) return t.customName.trim()
   const activePane =

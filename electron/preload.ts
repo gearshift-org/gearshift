@@ -20,6 +20,11 @@ const termApi = {
   kill: (id: string) => ipcRenderer.send("term:kill", id),
   getCwd: (id: string) =>
     ipcRenderer.invoke("term:cwd", id) as Promise<string | null>,
+  agentStatus: (id: string) =>
+    ipcRenderer.invoke("term:agentStatus", id) as Promise<{
+      running: boolean
+      agentName?: "claude" | "codex" | "opencode" | "pi" | "gemini"
+    }>,
   onData: (id: string, cb: (chunk: string) => void) => {
     const channel = `term:data:${id}`
     const listener = (_e: unknown, chunk: string) => cb(chunk)

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
+import { FileIcon } from "@/components/icons/FileIcon"
 import {
   CodeView,
   type CodeViewHandle,
@@ -221,6 +222,10 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
               ) : (
                 <ChevronDown className="diff-viewer-chevron" />
               )}
+              <FileIcon
+                name={item.fileDiff.name.split("/").pop() ?? item.fileDiff.name}
+                className="size-4 shrink-0"
+              />
               <span className="diff-viewer-file-name">{item.fileDiff.name}</span>
               <span className="diff-viewer-plugin-stats">
                 {additions > 0 && (

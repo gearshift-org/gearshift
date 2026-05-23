@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import { FileDiff, FileText, Plus, TerminalSquare, X } from "lucide-react"
+import { FileDiff, Plus, TerminalSquare, X } from "lucide-react"
+import { FileIcon } from "@/components/icons/FileIcon"
 import {
   DndContext,
   PointerSensor,
@@ -68,7 +69,14 @@ type TabItemProps = {
 
 function TabIcon({ tab }: { tab: WorkspaceTab }) {
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
-  if (tab.kind === "file") return <FileText className="size-3.5 shrink-0" />
+  if (tab.kind === "file") {
+    return (
+      <FileIcon
+        name={tab.path.split("/").pop() ?? tab.path}
+        className="size-4 shrink-0"
+      />
+    )
+  }
   return <TerminalSquare className="size-3.5 shrink-0" />
 }
 

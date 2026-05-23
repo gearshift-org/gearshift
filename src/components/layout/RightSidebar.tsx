@@ -31,6 +31,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
+import { FileIcon } from "@/components/icons/FileIcon"
 import { FilesTree } from "./FilesTree"
 
 type Status = "M" | "A" | "D" | "R" | "C" | "U" | string
@@ -701,7 +702,11 @@ function FileRow({
             onClick={onOpen}
             className="group/row flex cursor-pointer items-center gap-3 px-4 py-1.5 text-xs hover:bg-accent/40"
           >
-      <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
+            <FileIcon
+              name={file.path.split("/").pop() ?? file.path}
+              className="size-4 shrink-0"
+            />
+            <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
       <div className="flex items-center gap-0.5">
         {onSecondaryAction && secondaryActionLabel && (
           <Tooltip>

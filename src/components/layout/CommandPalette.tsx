@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/command"
 import {
   FileDiff,
-  FileText,
   FolderGit2,
   TerminalSquare,
 } from "lucide-react"
+import { FileIcon } from "@/components/icons/FileIcon"
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import type { PaletteRecents } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
@@ -33,7 +33,7 @@ const MAX_FILE_RESULTS = 100
 
 function tabIcon(t: WorkspaceTab) {
   if (t.kind === "diff") return <FileDiff />
-  if (t.kind === "file") return <FileText />
+  if (t.kind === "file") return <FileIcon name={t.path.split("/").pop() ?? t.path} />
   return <TerminalSquare />
 }
 
@@ -251,7 +251,7 @@ export function CommandPalette({
                   value={`file ${f}`}
                   onSelect={() => run(() => onOpenFile(f))}
                 >
-                  <FileText />
+                  <FileIcon name={f.split("/").pop() ?? f} />
                   <span className="truncate">{f.split("/").pop()}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
                     {f}

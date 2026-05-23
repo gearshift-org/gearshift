@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ChevronDown, ChevronRight, File, Folder } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
+import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 
@@ -84,7 +85,7 @@ function FolderNode({
           ) : (
             <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
           )}
-          <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+          <FolderIcon name={relPath.split("/").pop() ?? relPath} open={open} className="size-4 shrink-0" />
           <span className="truncate">{relPath.split("/").pop()}</span>
         </button>
       )}
@@ -163,7 +164,7 @@ function FileNode({
       )}
       style={{ paddingLeft: (depth + 1) * 12 + 12 }}
     >
-      <File className="size-3.5 shrink-0 text-muted-foreground" />
+      <FileIcon name={name} className="size-4 shrink-0" />
       <span className="truncate">{name}</span>
     </button>
   )

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { codeToHtml } from "shiki"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -29,6 +30,61 @@ const HIGHLIGHT_STYLE = `
 ::highlight(${HIGHLIGHT_ACTIVE_NAME}) { background-color: rgb(250, 204, 21); color: black; }
 `
 
+const EXT_TO_LANG: Record<string, string> = {
+  astro: "astro",
+  bash: "bash",
+  c: "c",
+  cjs: "javascript",
+  cpp: "cpp",
+  cs: "csharp",
+  css: "css",
+  go: "go",
+  graphql: "graphql",
+  h: "c",
+  hpp: "cpp",
+  html: "html",
+  java: "java",
+  js: "javascript",
+  json: "json",
+  jsonc: "jsonc",
+  jsx: "jsx",
+  kt: "kotlin",
+  less: "less",
+  lua: "lua",
+  md: "markdown",
+  mdx: "mdx",
+  mjs: "javascript",
+  php: "php",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  scss: "scss",
+  sh: "shellscript",
+  sql: "sql",
+  svelte: "svelte",
+  swift: "swift",
+  toml: "toml",
+  ts: "typescript",
+  tsx: "tsx",
+  vue: "vue",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  zsh: "shellscript",
+}
+
+function detectLang(filePath: string): string {
+  const base = filePath.split("/").pop()?.toLowerCase() ?? ""
+  if (base.startsWith("dockerfile")) return "dockerfile"
+  if (base.startsWith("makefile")) return "makefile"
+  const ext = base.includes(".") ? base.split(".").pop() : ""
+  return (ext && EXT_TO_LANG[ext]) || "text"
+}
+
+function currentThemeType(): "light" | "dark" {
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark"
+}
+
 function joinPath(cwd: string, rel: string): string {
   if (rel.startsWith("/")) return rel
   return `${cwd.replace(/\/+$/, "")}/${rel}`
@@ -56,8 +112,12 @@ export function FilePreview({ cwd, path }: Props) {
   const [draft, setDraft] = useState<string>("")
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [themeType, setThemeType] = useState<"light" | "dark">(() =>
+    currentThemeType(),
+  )
+  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const bgRef = useRef<HTMLPreElement>(null)
+  const bgRef = useRef<HTMLDivElement>(null)
   // Snapshot of the textarea selection at the moment the context menu opens.
   // base-ui moves focus to the menu, which can collapse the selection — we
   // use this snapshot so Copy still works on what the user had highlighted.
@@ -72,6 +132,38 @@ export function FilePreview({ cwd, path }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const dirty = state.kind === "ready" && draft !== savedContent
+  const deferredDraft = useDeferredValue(draft)
+  const lang = useMemo(() => detectLang(path), [path])
+
+  useEffect(() => {
+    const root = document.documentElement
+    const observer = new MutationObserver(() => setThemeType(currentThemeType()))
+    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-theme"] })
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (state.kind !== "ready" || query) {
+      setHighlightedHtml(null)
+      return
+    }
+
+    let cancelled = false
+    codeToHtml(deferredDraft, {
+      lang,
+      theme: themeType === "dark" ? "github-dark" : "github-light",
+    })
+      .then((html) => {
+        if (!cancelled) setHighlightedHtml(html)
+      })
+      .catch(() => {
+        if (!cancelled) setHighlightedHtml(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [deferredDraft, lang, query, state.kind, themeType])
 
   useEffect(() => {
     let cancelled = false
@@ -390,13 +482,14 @@ export function FilePreview({ cwd, path }: Props) {
             <div className="relative flex-1 min-h-0">
               {/* Background: the text rendered as real text nodes so the CSS
                   Highlight API has something to highlight. */}
-              <pre
+              <div
                 ref={bgRef}
                 aria-hidden
-                className="pointer-events-none absolute inset-0 m-0 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre text-foreground"
-              >
-                {draft}
-              </pre>
+                className="file-preview-highlight pointer-events-none absolute inset-0 m-0 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre text-foreground"
+                {...(highlightedHtml
+                  ? { dangerouslySetInnerHTML: { __html: highlightedHtml } }
+                  : { children: draft })}
+              />
               {/* Foreground: invisible-text textarea that still accepts input and
                   shows the caret. Keep scroll/size identical so highlights line up. */}
               <textarea

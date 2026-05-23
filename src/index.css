@@ -152,6 +152,22 @@
   padding-top: 0 !important;
 }
 
+.file-preview-highlight .shiki {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  font: inherit !important;
+  line-height: inherit !important;
+}
+
+.file-preview-highlight .shiki code {
+  display: block;
+  font: inherit !important;
+  line-height: inherit !important;
+}
+
 .diff-viewer-content {
   display: flex;
   flex-direction: column;

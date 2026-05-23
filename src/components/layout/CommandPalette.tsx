@@ -165,22 +165,18 @@ export function CommandPalette({
           {filesLoading ? "Loading…" : "No matches."}
         </CommandEmpty>
 
-        {/* Files first: when the user types a filename, the matching file
-            should be the default selection. Otherwise an already-open diff
-            tab in the "Tabs" group would auto-select and pressing Enter would
-            just re-focus the diff instead of opening the file as a file tab. */}
-        {activeProject && filteredFiles.length > 0 && (
-          <CommandGroup heading="Files">
-            {filteredFiles.map((f) => (
+        {filteredProjects.length > 0 && (
+          <CommandGroup heading="Projects">
+            {filteredProjects.map((p) => (
               <CommandItem
-                key={f}
-                value={`file ${f}`}
-                onSelect={() => run(() => onOpenFile(f))}
+                key={p.id}
+                value={`project ${p.name} ${p.path}`}
+                onSelect={() => run(() => onSelectProject(p.id))}
               >
-                <FileText />
-                <span className="truncate">{f.split("/").pop()}</span>
+                <FolderGit2 />
+                <span className="truncate">{p.name}</span>
                 <span className="ml-auto truncate text-xs text-muted-foreground">
-                  {f}
+                  {p.path}
                 </span>
               </CommandItem>
             ))}
@@ -189,7 +185,7 @@ export function CommandPalette({
 
         {filteredTabs.length > 0 && (
           <>
-            {activeProject && filteredFiles.length > 0 && <CommandSeparator />}
+            {filteredProjects.length > 0 && <CommandSeparator />}
             <CommandGroup heading="Tabs">
               {filteredTabs.map((t) => (
                 <CommandItem
@@ -210,20 +206,22 @@ export function CommandPalette({
           </>
         )}
 
-        {filteredProjects.length > 0 && (
+        {activeProject && filteredFiles.length > 0 && (
           <>
-            <CommandSeparator />
-            <CommandGroup heading="Projects">
-              {filteredProjects.map((p) => (
+            {(filteredProjects.length > 0 || filteredTabs.length > 0) && (
+              <CommandSeparator />
+            )}
+            <CommandGroup heading="Files">
+              {filteredFiles.map((f) => (
                 <CommandItem
-                  key={p.id}
-                  value={`project ${p.name} ${p.path}`}
-                  onSelect={() => run(() => onSelectProject(p.id))}
+                  key={f}
+                  value={`file ${f}`}
+                  onSelect={() => run(() => onOpenFile(f))}
                 >
-                  <FolderGit2 />
-                  <span className="truncate">{p.name}</span>
+                  <FileText />
+                  <span className="truncate">{f.split("/").pop()}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {p.path}
+                    {f}
                   </span>
                 </CommandItem>
               ))}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { TitleBar } from "./TitleBar"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
@@ -7,13 +7,18 @@ import { CommandPalette } from "./CommandPalette"
 import type { Project, WorkspaceTab } from "./types"
 import {
   loadActiveProjectId,
+  loadPaletteRecents,
   loadProjects,
   loadRecentProjects,
   loadSidebarOpen,
+  pushRecentPaletteFile,
+  pushRecentPaletteProject,
+  pushRecentPaletteTab,
   pushRecentProject,
   saveActiveProjectId,
   saveProjects,
   saveSidebarOpen,
+  type PaletteRecents,
   type RecentProject,
   type StoredProject,
 } from "@/lib/projects"
@@ -90,6 +95,9 @@ export function AppShell() {
   const [recents, setRecents] = useState<RecentProject[]>(() =>
     loadRecentProjects(),
   )
+  const [paletteRecents, setPaletteRecents] = useState<PaletteRecents>(() =>
+    loadPaletteRecents(),
+  )
   const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
 
   // Disk snapshot arrives async — re-sync once it lands so the UI can paint
@@ -101,6 +109,7 @@ export function AppShell() {
         const hydrated = hydrateProjects()
         setProjects(hydrated)
         setRecents(loadRecentProjects())
+        setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
         const storedActiveId = loadActiveProjectId()
         if (
@@ -141,6 +150,7 @@ export function AppShell() {
       ? routeProjectId
       : projects[0]?.id) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
+  const activeProjectPath = activeProject?.path
 
   const activeTabId = (() => {
     if (!activeProject) return ""
@@ -190,7 +200,13 @@ export function AppShell() {
 
   useEffect(() => {
     saveActiveProjectId(activeProjectId)
-  }, [activeProjectId])
+    if (activeProjectPath) pushRecentPaletteProject(activeProjectPath)
+  }, [activeProjectId, activeProjectPath])
+
+  useEffect(() => {
+    if (!activeProjectId || !activeProjectPath || !activeTabId) return
+    pushRecentPaletteTab(activeProjectPath, activeTabId)
+  }, [activeProjectId, activeProjectPath, activeTabId])
 
   useEffect(() => {
     if (!activeProjectId || !activeTabId) return
@@ -571,6 +587,7 @@ export function AppShell() {
   const openFileTab = useCallback(
     (path: string) => {
       if (!activeProject) return
+      setPaletteRecents(pushRecentPaletteFile(activeProject.path, path))
       const exact = activeProject.tabs.find(
         (t) => t.kind === "file" && t.path === path,
       )
@@ -701,6 +718,29 @@ export function AppShell() {
   }, [activeProject, activeTabId, startTerminalPane])
 
   const selectTab = (id: string) => navigateToTab(id)
+
+  const commandPaletteRecents = useMemo<PaletteRecents>(() => {
+    const projectsRecent = activeProjectPath
+      ? [
+          activeProjectPath,
+          ...paletteRecents.projects.filter((p) => p !== activeProjectPath),
+        ]
+      : paletteRecents.projects
+    const tabsByProject = { ...paletteRecents.tabsByProject }
+    if (activeProjectPath && activeTabId) {
+      tabsByProject[activeProjectPath] = [
+        activeTabId,
+        ...(tabsByProject[activeProjectPath] ?? []).filter(
+          (id) => id !== activeTabId,
+        ),
+      ]
+    }
+    return {
+      ...paletteRecents,
+      projects: projectsRecent,
+      tabsByProject,
+    }
+  }, [activeProjectPath, activeTabId, paletteRecents])
 
   const setTerminalTitle = (tabId: string, paneId: string, title: string) => {
     setProjects((prev) => {
@@ -868,7 +908,7 @@ export function AppShell() {
         e.preventDefault()
         setSidebarOpen((v) => !v)
       }
-      if (mod && !e.shiftKey && !e.altKey && e.key === "/") {
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p") {
         e.preventDefault()
         setPaletteOpen((v) => !v)
       }
@@ -888,6 +928,7 @@ export function AppShell() {
         onOpenChange={setPaletteOpen}
         projects={projects}
         activeProject={activeProject}
+        paletteRecents={commandPaletteRecents}
         onSelectProject={selectProject}
         onSelectTab={selectTab}
         onOpenFile={openFileTab}

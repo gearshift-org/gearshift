@@ -14,6 +14,7 @@ import {
   TerminalSquare,
 } from "lucide-react"
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import type { PaletteRecents } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
 import type { Project, WorkspaceTab } from "./types"
 
@@ -22,6 +23,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   projects: Project[]
   activeProject: Project | undefined
+  paletteRecents: PaletteRecents
   onSelectProject: (id: string) => void
   onSelectTab: (id: string) => void
   onOpenFile: (path: string) => void
@@ -40,6 +42,11 @@ function tabIcon(t: WorkspaceTab) {
  * subsequence matches. Returns null when nothing matches. Designed to be
  * cheap enough to run across thousands of paths on every keystroke.
  */
+function recencyIndex(recents: string[], value: string): number {
+  const index = recents.indexOf(value)
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
+
 function scorePath(path: string, qLower: string): number | null {
   if (!qLower) return 0
   const pLower = path.toLowerCase()
@@ -67,6 +74,7 @@ export function CommandPalette({
   onOpenChange,
   projects,
   activeProject,
+  paletteRecents,
   onSelectProject,
   onSelectTab,
   onOpenFile,
@@ -116,37 +124,62 @@ export function CommandPalette({
 
   const filteredTabs = useMemo(() => {
     const tabs = activeProject?.tabs ?? []
-    if (!qLower) return tabs
-    return tabs.filter((t) => {
+    const recentTabs = paletteRecents.tabsByProject[activeProject?.path ?? ""] ?? []
+    const byRecency = (items: WorkspaceTab[]) =>
+      items.slice().sort((a, b) => recencyIndex(recentTabs, a.id) - recencyIndex(recentTabs, b.id))
+    if (!qLower) return byRecency(tabs)
+    return byRecency(tabs.filter((t) => {
       const hay = (
         tabDisplayName(t) +
         " " +
         (t.kind === "diff" || t.kind === "file" ? t.path : "")
       ).toLowerCase()
       return hay.includes(qLower)
-    })
-  }, [activeProject?.tabs, qLower])
+    }))
+  }, [activeProject?.path, activeProject?.tabs, paletteRecents.tabsByProject, qLower])
 
   const filteredProjects = useMemo(() => {
-    if (!qLower) return projects
-    return projects.filter(
-      (p) =>
-        p.name.toLowerCase().includes(qLower) ||
-        p.path.toLowerCase().includes(qLower),
+    const byRecency = (items: Project[]) =>
+      items
+        .slice()
+        .sort(
+          (a, b) =>
+            recencyIndex(paletteRecents.projects, a.path) -
+            recencyIndex(paletteRecents.projects, b.path),
+        )
+    if (!qLower) return byRecency(projects)
+    return byRecency(
+      projects.filter(
+        (p) =>
+          p.name.toLowerCase().includes(qLower) ||
+          p.path.toLowerCase().includes(qLower),
+      ),
     )
-  }, [projects, qLower])
+  }, [paletteRecents.projects, projects, qLower])
 
   const filteredFiles = useMemo(() => {
     if (!files.length) return []
-    if (!qLower) return files.slice(0, MAX_FILE_RESULTS)
+    const recentFiles = paletteRecents.filesByProject[activeProject?.path ?? ""] ?? []
+    if (!qLower) {
+      return files
+        .slice()
+        .sort(
+          (a, b) => recencyIndex(recentFiles, a) - recencyIndex(recentFiles, b),
+        )
+        .slice(0, MAX_FILE_RESULTS)
+    }
     const scored: Array<{ path: string; score: number }> = []
     for (let i = 0; i < files.length; i++) {
       const s = scorePath(files[i], qLower)
       if (s !== null) scored.push({ path: files[i], score: s })
     }
-    scored.sort((a, b) => b.score - a.score)
+    scored.sort(
+      (a, b) =>
+        b.score - a.score ||
+        recencyIndex(recentFiles, a.path) - recencyIndex(recentFiles, b.path),
+    )
     return scored.slice(0, MAX_FILE_RESULTS).map((s) => s.path)
-  }, [files, qLower])
+  }, [activeProject?.path, files, paletteRecents.filesByProject, qLower])
 
   const run = (fn: () => void) => {
     fn()

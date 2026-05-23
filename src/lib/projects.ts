@@ -18,8 +18,104 @@ const KEY = "gearshift.projects"
 const ACTIVE_KEY = "gearshift.activeProjectId"
 const RECENTS_KEY = "gearshift.recentProjects"
 const RECENTS_MAX = 10
+const PALETTE_RECENTS_KEY = "gearshift.paletteRecents"
+const PALETTE_RECENTS_MAX = 200
 
 export type RecentProject = { name: string; path: string }
+
+export type PaletteRecents = {
+  projects: string[]
+  tabsByProject: Record<string, string[]>
+  filesByProject: Record<string, string[]>
+}
+
+function cleanStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+}
+
+function pushRecent(list: string[], value: string, max = PALETTE_RECENTS_MAX): string[] {
+  if (!value) return list
+  return [value, ...list.filter((v) => v !== value)].slice(0, max)
+}
+
+export function loadPaletteRecents(): PaletteRecents {
+  try {
+    const raw = store.get(PALETTE_RECENTS_KEY)
+    if (!raw) return { projects: [], tabsByProject: {}, filesByProject: {} }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object") {
+      return { projects: [], tabsByProject: {}, filesByProject: {} }
+    }
+    const tabsByProject: Record<string, string[]> = {}
+    if (parsed.tabsByProject && typeof parsed.tabsByProject === "object") {
+      for (const [projectPath, tabs] of Object.entries(parsed.tabsByProject)) {
+        tabsByProject[projectPath] = cleanStringArray(tabs)
+      }
+    }
+    const filesByProject: Record<string, string[]> = {}
+    if (parsed.filesByProject && typeof parsed.filesByProject === "object") {
+      for (const [projectPath, files] of Object.entries(parsed.filesByProject)) {
+        filesByProject[projectPath] = cleanStringArray(files)
+      }
+    }
+    return {
+      projects: cleanStringArray(parsed.projects),
+      tabsByProject,
+      filesByProject,
+    }
+  } catch {
+    return { projects: [], tabsByProject: {}, filesByProject: {} }
+  }
+}
+
+export function savePaletteRecents(recents: PaletteRecents): void {
+  store.set(PALETTE_RECENTS_KEY, JSON.stringify(recents))
+}
+
+export function pushRecentPaletteProject(projectPath: string): PaletteRecents {
+  const current = loadPaletteRecents()
+  const next = {
+    ...current,
+    projects: pushRecent(current.projects, projectPath),
+  }
+  savePaletteRecents(next)
+  return next
+}
+
+export function pushRecentPaletteTab(
+  projectPath: string,
+  tabId: string,
+): PaletteRecents {
+  const current = loadPaletteRecents()
+  const next = {
+    ...current,
+    tabsByProject: {
+      ...current.tabsByProject,
+      [projectPath]: pushRecent(current.tabsByProject[projectPath] ?? [], tabId),
+    },
+  }
+  savePaletteRecents(next)
+  return next
+}
+
+export function pushRecentPaletteFile(
+  projectPath: string,
+  filePath: string,
+): PaletteRecents {
+  const current = loadPaletteRecents()
+  const next = {
+    ...current,
+    filesByProject: {
+      ...current.filesByProject,
+      [projectPath]: pushRecent(
+        current.filesByProject[projectPath] ?? [],
+        filePath,
+      ),
+    },
+  }
+  savePaletteRecents(next)
+  return next
+}
 
 export function loadRecentProjects(): RecentProject[] {
   try {

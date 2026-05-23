@@ -1,5 +1,11 @@
 export type GitStatus = "M" | "A" | "D" | "R" | "C" | "U" | string
 export type GitFile = { path: string; status: GitStatus; staged: boolean }
+export type PullRequestInfo = {
+  number: number
+  id: string
+  title: string
+  url: string
+}
 
 export type GitQueryData = {
   files: GitFile[]
@@ -8,6 +14,9 @@ export type GitQueryData = {
   hasUpstream: boolean
   currentBranch: string | null
   branches: string[]
+  ghAvailable: boolean
+  pullRequest: PullRequestInfo | null
+  canCreatePullRequest: boolean
 }
 
 export const EMPTY_GIT_FILES: GitFile[] = []
@@ -21,16 +30,28 @@ export async function fetchGitQueryData(cwd: string): Promise<GitQueryData> {
     window.git.branches(cwd),
   ])
   if (!status.ok) throw new Error(status.error ?? "Failed to load Git status")
+  const currentBranch = br.ok ? br.current : null
+  const ahead = ab.ok ? ab.ahead : 0
+  const hasUpstream = ab.ok ? ab.hasUpstream : false
+  const pr = await window.git.pullRequestStatus(
+    cwd,
+    currentBranch,
+    hasUpstream,
+    ahead
+  )
   return {
     files: [
       ...status.unstaged.map((f) => ({ ...f, staged: false }) as GitFile),
       ...status.staged.map((f) => ({ ...f, staged: true }) as GitFile),
     ],
-    ahead: ab.ok ? ab.ahead : 0,
+    ahead,
     behind: ab.ok ? ab.behind : 0,
-    hasUpstream: ab.ok ? ab.hasUpstream : false,
-    currentBranch: br.ok ? br.current : null,
+    hasUpstream,
+    currentBranch,
     branches: br.ok ? br.branches : [],
+    ghAvailable: pr.ghAvailable,
+    pullRequest: pr.pullRequest,
+    canCreatePullRequest: pr.canCreatePullRequest,
   }
 }
 

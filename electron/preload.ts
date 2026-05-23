@@ -109,6 +109,13 @@ type GitFileRaw = {
   status: string
 }
 
+type PullRequestInfo = {
+  number: number
+  id: string
+  title: string
+  url: string
+}
+
 const gitApi = {
   status: (cwd: string) =>
     ipcRenderer.invoke("git:status", cwd) as Promise<{
@@ -181,6 +188,35 @@ const gitApi = {
     }>,
   createBranch: (cwd: string, branch: string) =>
     ipcRenderer.invoke("git:createBranch", cwd, branch) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  pullRequestStatus: (
+    cwd: string,
+    currentBranch: string | null,
+    hasUpstream: boolean,
+    ahead: number,
+  ) =>
+    ipcRenderer.invoke(
+      "git:pullRequestStatus",
+      cwd,
+      currentBranch,
+      hasUpstream,
+      ahead,
+    ) as Promise<{
+      ok: boolean
+      error?: string
+      ghAvailable: boolean
+      pullRequest: PullRequestInfo | null
+      canCreatePullRequest: boolean
+    }>,
+  openPullRequest: (cwd: string, number: number) =>
+    ipcRenderer.invoke("git:openPullRequest", cwd, number) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  createPullRequest: (cwd: string, branch: string) =>
+    ipcRenderer.invoke("git:createPullRequest", cwd, branch) as Promise<{
       ok: boolean
       error?: string
     }>,

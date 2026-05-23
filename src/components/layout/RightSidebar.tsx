@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   GitBranch,
+  GitPullRequest,
   Loader2,
   Minus,
   Plus,
@@ -45,6 +46,7 @@ import {
   type GitFile,
   type GitQueryData,
   type GitStatus,
+  type PullRequestInfo,
 } from "@/lib/gitStatusQuery"
 
 const REFRESH_DEBOUNCE_MS = 350
@@ -89,6 +91,9 @@ export function RightSidebar({
     null | "commit" | "push" | "sync"
   >(null)
   const [switchingBranch, setSwitchingBranch] = useState(false)
+  const [pullRequestBusy, setPullRequestBusy] = useState<
+    null | "create" | "open"
+  >(null)
 
   const queryClient = useQueryClient()
   const currentGitQueryKey = useMemo(() => gitQueryKey(cwd), [cwd])
@@ -112,6 +117,9 @@ export function RightSidebar({
   const hasUpstream = gitQuery.data?.hasUpstream ?? false
   const currentBranch = gitQuery.data?.currentBranch ?? null
   const branches = gitQuery.data?.branches ?? []
+  const ghAvailable = gitQuery.data?.ghAvailable ?? false
+  const pullRequest = gitQuery.data?.pullRequest ?? null
+  const canCreatePullRequest = gitQuery.data?.canCreatePullRequest ?? false
   const queryError = gitQuery.error
     ? gitQuery.error instanceof Error
       ? gitQuery.error.message
@@ -382,6 +390,42 @@ export function RightSidebar({
     [cwd, runRefresh]
   )
 
+  const openPullRequest = useCallback(async () => {
+    if (!cwd || !pullRequest || pullRequestBusy) return
+    setPullRequestBusy("open")
+    setActionError(null)
+    try {
+      const res = await window.git.openPullRequest(cwd, pullRequest.number)
+      if (!res.ok) setActionError(res.error ?? "Open pull request failed")
+    } finally {
+      setPullRequestBusy(null)
+    }
+  }, [cwd, pullRequest, pullRequestBusy])
+
+  const createPullRequest = useCallback(async () => {
+    if (!cwd || !currentBranch || !canCreatePullRequest || pullRequestBusy) {
+      return
+    }
+    setPullRequestBusy("create")
+    setActionError(null)
+    try {
+      const res = await window.git.createPullRequest(cwd, currentBranch)
+      if (!res.ok) {
+        setActionError(res.error ?? "Create pull request failed")
+        return
+      }
+      void runRefresh()
+    } finally {
+      setPullRequestBusy(null)
+    }
+  }, [
+    cwd,
+    currentBranch,
+    canCreatePullRequest,
+    pullRequestBusy,
+    runRefresh,
+  ])
+
   const sync = useCallback(async () => {
     if (!cwd || busy) return
     setBusy(true)
@@ -463,13 +507,26 @@ export function RightSidebar({
         >
           {cwd && (
             <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3">
-              <BranchPicker
-                current={currentBranch}
-                branches={branches}
-                busy={switchingBranch || busy}
-                onSwitch={switchBranch}
-                onCreate={createBranch}
-              />
+              <div className="flex items-center gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <BranchPicker
+                    current={currentBranch}
+                    branches={branches}
+                    busy={switchingBranch || busy}
+                    onSwitch={switchBranch}
+                    onCreate={createBranch}
+                  />
+                </div>
+                {ghAvailable && (pullRequest || canCreatePullRequest) && (
+                  <PullRequestAction
+                    pullRequest={pullRequest}
+                    canCreate={canCreatePullRequest}
+                    busy={pullRequestBusy}
+                    onOpen={openPullRequest}
+                    onCreate={createPullRequest}
+                  />
+                )}
+              </div>
               <textarea
                 value={commitMessage}
                 onChange={(e) => setCommitMessage(e.target.value)}
@@ -675,6 +732,58 @@ export function RightSidebar({
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function PullRequestAction({
+  pullRequest,
+  canCreate,
+  busy,
+  onOpen,
+  onCreate,
+}: {
+  pullRequest: PullRequestInfo | null
+  canCreate: boolean
+  busy: null | "create" | "open"
+  onOpen: () => void
+  onCreate: () => void
+}) {
+  const isOpening = busy === "open"
+  const isCreating = busy === "create"
+  const label = pullRequest
+    ? `View Pull Request #${pullRequest.number}`
+    : "Create pull request"
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!!busy || (!pullRequest && !canCreate)}
+            aria-label={label}
+            onClick={pullRequest ? onOpen : onCreate}
+            className={cn(
+              "h-8 shrink-0 gap-1.5 px-2 text-xs",
+              pullRequest &&
+                "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+            )}
+          >
+            {isOpening || isCreating ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <GitPullRequest className="size-3.5" />
+            )}
+            <span>{pullRequest ? `#${pullRequest.number}` : "Create PR"}</span>
+          </Button>
+        }
+      />
+      <TooltipContent side="bottom">
+        {pullRequest ? "View Pull Request" : "Open GitHub to create a pull request"}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

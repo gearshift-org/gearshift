@@ -22,6 +22,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const execFileP = promisify(execFile)
 
+type PullRequestInfo = {
+  number: number
+  id: string
+  title: string
+  url: string
+}
+
 if (VITE_DEV_SERVER_URL) {
   app.setPath("userData", path.join(app.getPath("appData"), "gearshift-v2-dev"))
 } else {
@@ -166,6 +173,127 @@ async function runGitAllowExit1(cwd: string, args: string[]): Promise<string> {
     if (e.code === 1 && typeof e.stdout === "string") return e.stdout
     throw err
   }
+}
+
+async function findBinary(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  extraCandidates: string[] = [],
+): Promise<string | null> {
+  const candidates = [command, ...extraCandidates]
+  for (const bin of candidates) {
+    try {
+      await execFileP(bin, args, { env, maxBuffer: 1024 * 1024 })
+      return bin
+    } catch {
+      // try the next likely install path
+    }
+  }
+  return null
+}
+
+async function findGhBinary(env: NodeJS.ProcessEnv): Promise<string | null> {
+  return findBinary("gh", ["--version"], env, [
+    "/opt/homebrew/bin/gh",
+    "/usr/local/bin/gh",
+    "/usr/bin/gh",
+  ])
+}
+
+async function findDirenvBinary(
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
+  return findBinary("direnv", ["version"], env, [
+    "/opt/homebrew/bin/direnv",
+    "/usr/local/bin/direnv",
+    "/usr/bin/direnv",
+  ])
+}
+
+async function projectCommandEnv(cwd: string): Promise<NodeJS.ProcessEnv> {
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  const direnv = await findDirenvBinary(env)
+  if (!direnv) return env
+
+  try {
+    const { stdout } = await execFileP(direnv, ["export", "json"], {
+      cwd,
+      env,
+      maxBuffer: 20 * 1024 * 1024,
+    })
+    const parsed = JSON.parse(stdout) as Record<string, string | null>
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === null) {
+        delete env[key]
+      } else {
+        env[key] = value
+      }
+    }
+  } catch {
+    // If direnv is unavailable, blocked, or not allowed, fall back to the
+    // app's environment and let gh report any real auth/repo problem.
+  }
+
+  return env
+}
+
+async function runGh(cwd: string, args: string[]): Promise<string> {
+  const env = await projectCommandEnv(cwd)
+  const gh = await findGhBinary(env)
+  if (!gh) {
+    const err = new Error("github-cli-unavailable") as Error & {
+      code?: string
+    }
+    err.code = "github-cli-unavailable"
+    throw err
+  }
+  const { stdout } = await execFileP(gh, args, {
+    cwd,
+    env,
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  return stdout
+}
+
+async function getDefaultBranch(cwd: string): Promise<string | null> {
+  try {
+    const raw = await runGit(cwd, [
+      "symbolic-ref",
+      "--quiet",
+      "--short",
+      "refs/remotes/origin/HEAD",
+    ])
+    return raw.trim().replace(/^origin\//, "") || null
+  } catch {
+    return null
+  }
+}
+
+function parsePullRequest(raw: string): PullRequestInfo | null {
+  try {
+    const parsed = JSON.parse(raw) as PullRequestInfo[]
+    const pr = parsed[0]
+    if (
+      !pr ||
+      typeof pr.number !== "number" ||
+      typeof pr.id !== "string" ||
+      typeof pr.title !== "string" ||
+      typeof pr.url !== "string"
+    ) {
+      return null
+    }
+    return pr
+  } catch {
+    return null
+  }
+}
+
+function isDefaultBranch(currentBranch: string, defaultBranch: string | null) {
+  return (
+    currentBranch === defaultBranch ||
+    (!defaultBranch && (currentBranch === "main" || currentBranch === "master"))
+  )
 }
 
 function isPathInside(parent: string, child: string): boolean {
@@ -667,6 +795,78 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle(
+    "git:pullRequestStatus",
+    async (
+      _event,
+      cwd: string,
+      currentBranch: string | null,
+      hasUpstream: boolean,
+      ahead: number,
+    ) => {
+      if (!cwd || !currentBranch) {
+        return {
+          ok: true,
+          ghAvailable: false,
+          pullRequest: null,
+          canCreatePullRequest: false,
+        }
+      }
+
+      const env = await projectCommandEnv(cwd)
+      const gh = await findGhBinary(env)
+      if (!gh) {
+        return {
+          ok: true,
+          ghAvailable: false,
+          pullRequest: null,
+          canCreatePullRequest: false,
+        }
+      }
+
+      try {
+        const [raw, defaultBranch] = await Promise.all([
+          execFileP(
+            gh,
+            [
+              "pr",
+              "list",
+              "--head",
+              currentBranch,
+              "--state",
+              "open",
+              "--json",
+              "number,id,title,url",
+              "--limit",
+              "1",
+            ],
+            { cwd, env, maxBuffer: 20 * 1024 * 1024 },
+          ).then((res) => res.stdout),
+          getDefaultBranch(cwd),
+        ])
+        const pullRequest = parsePullRequest(raw)
+        return {
+          ok: true,
+          ghAvailable: true,
+          pullRequest,
+          canCreatePullRequest:
+            !pullRequest &&
+            hasUpstream &&
+            ahead === 0 &&
+            !isDefaultBranch(currentBranch, defaultBranch),
+        }
+      } catch (err) {
+        console.warn("pull request check failed", err)
+        return {
+          ok: true,
+          ghAvailable: false,
+          pullRequest: null,
+          canCreatePullRequest: false,
+        }
+      }
+    },
+  )
+
+  ipcMain.handle(
     "git:checkout",
     async (_event, cwd: string, branch: string) => {
       if (!cwd || !branch) return { ok: false, error: "no-branch" }
@@ -745,6 +945,52 @@ app.whenReady().then(() => {
       return { ok: false, error: e.stderr || e.message || "push failed" }
     }
   })
+
+  ipcMain.handle(
+    "git:openPullRequest",
+    async (_event, cwd: string, number: number) => {
+      if (!cwd || !Number.isInteger(number) || number <= 0) {
+        return { ok: false, error: "invalid-pull-request" }
+      }
+      try {
+        await runGh(cwd, ["pr", "view", String(number), "--web"])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "open pull request failed",
+        }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "git:createPullRequest",
+    async (_event, cwd: string, branch: string) => {
+      const currentBranch = branch?.trim()
+      if (!cwd || !currentBranch) {
+        return { ok: false, error: "no-branch" }
+      }
+      try {
+        await runGh(cwd, [
+          "pr",
+          "create",
+          "--web",
+          "--fill",
+          "--head",
+          currentBranch,
+        ])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "create pull request failed",
+        }
+      }
+    },
+  )
 
   ipcMain.handle(
     "git:diffFile",

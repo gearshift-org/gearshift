@@ -68,3 +68,19 @@ finishes.
 
 Inactive projects (mounted in other tabs but not focused) skip both the
 watcher subscription and polling — only the active project pays the cost.
+
+### GitHub pull requests
+
+The Changes pane shows pull request status beside the branch picker when the
+GitHub CLI (`gh`) is installed and available. GearShift checks the current
+branch with `gh pr list`; if an open pull request exists, it shows the PR
+number and opens it in GitHub. If no PR exists and the branch is already pushed
+to an upstream remote, it shows a Create PR action that opens GitHub's PR
+creation page.
+
+No GitHub API token is managed by the app. Authentication stays with the
+GitHub CLI, so users should run `gh auth login` if GitHub reports an auth
+error. When `direnv` is installed, GearShift evaluates the opened project's
+`.envrc` environment before running `gh`, including `.envrc` files inherited
+from parent directories. This lets different projects use different GitHub
+accounts or tokens without changing the global GitHub CLI account.

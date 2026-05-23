@@ -5,7 +5,7 @@ import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
 import type { Project } from "./types"
 
-const SIDEBAR_DEFAULT_PX = 315
+const SIDEBAR_DEFAULT_PX = 410
 const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
 
@@ -18,8 +18,15 @@ type Props = {
   activeProjectId: string
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
-  onTerminalTitleChange?: (terminalId: string, title: string) => void
-  onStartTerminal?: (tabId: string) => void
+  onTerminalTitleChange?: (
+    tabId: string,
+    paneId: string,
+    title: string,
+  ) => void
+  onStartTerminal?: (tabId: string, paneId: string) => void
+  onSplitTerminal?: (tabId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
+  onFocusPane?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
 }
@@ -31,6 +38,9 @@ export function WorkspaceSplit({
   sidebarOpen = true,
   onTerminalTitleChange,
   onStartTerminal,
+  onSplitTerminal,
+  onClosePane,
+  onFocusPane,
   onOpenDiffTab,
   onOpenFileTab,
 }: Props) {
@@ -91,6 +101,9 @@ export function WorkspaceSplit({
               isActive={p.id === activeProjectId}
               onTitleChange={onTerminalTitleChange}
               onStartTerminal={onStartTerminal}
+              onSplitTerminal={onSplitTerminal}
+              onClosePane={onClosePane}
+              onFocusPane={onFocusPane}
             />
           </div>
         ))}

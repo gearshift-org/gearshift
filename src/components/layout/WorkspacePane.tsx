@@ -1,15 +1,140 @@
+import { Fragment } from "react"
+import { SplitSquareHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import { FilePreview } from "./FilePreview"
-import { displayName, tabDisplayName } from "./terminalName"
-import type { Project, TerminalTab, WorkspaceTab } from "./types"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { tabDisplayName } from "./terminalName"
+import type {
+  Project,
+  TerminalPane as TerminalPaneType,
+  TerminalTab,
+  WorkspaceTab,
+} from "./types"
 
 type Props = {
   project: Project | undefined
   isActive?: boolean
-  onTitleChange?: (terminalId: string, title: string) => void
-  onStartTerminal?: (tabId: string) => void
+  onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onStartTerminal?: (tabId: string, paneId: string) => void
+  onSplitTerminal?: (tabId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
+  onFocusPane?: (tabId: string, paneId: string) => void
+}
+
+function TerminalPaneView({
+  tab,
+  pane,
+  isTabActive,
+  onTitleChange,
+  onStartTerminal,
+  onFocus,
+}: {
+  tab: TerminalTab
+  pane: TerminalPaneType
+  isTabActive: boolean
+  onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onStartTerminal?: (tabId: string, paneId: string) => void
+  onFocus?: () => void
+}) {
+  if (pane.pendingStart) {
+    return (
+      <div
+        onClick={onFocus}
+        className="grid h-full place-items-center bg-card"
+      >
+        <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
+          <span>"{tab.customName ?? tab.name}" is not running.</span>
+          <button
+            onClick={() => onStartTerminal?.(tab.id, pane.id)}
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40"
+          >
+            Start terminal
+          </button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div onMouseDown={onFocus} className="h-full">
+      <TerminalView
+        sessionId={pane.id}
+        isActive={isTabActive && tab.activePaneId === pane.id}
+        onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
+      />
+    </div>
+  )
+}
+
+function TerminalTabContent({
+  tab,
+  isActive,
+  onTitleChange,
+  onStartTerminal,
+  onClosePane,
+  onFocusPane,
+}: {
+  tab: TerminalTab
+  isActive: boolean
+  onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onStartTerminal?: (tabId: string, paneId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
+  onFocusPane?: (tabId: string, paneId: string) => void
+}) {
+  const multi = tab.panes.length > 1
+
+  const renderPane = (pane: TerminalPaneType) => (
+    <div
+      className={cn(
+        "group/pane relative h-full",
+        multi &&
+          tab.activePaneId === pane.id &&
+          "ring-1 ring-inset ring-foreground/15",
+      )}
+    >
+      <TerminalPaneView
+        tab={tab}
+        pane={pane}
+        isTabActive={isActive}
+        onTitleChange={onTitleChange}
+        onStartTerminal={onStartTerminal}
+        onFocus={() => onFocusPane?.(tab.id, pane.id)}
+      />
+    </div>
+  )
+
+  if (!multi) {
+    return <div className="h-full">{renderPane(tab.panes[0])}</div>
+  }
+
+  return (
+    <ResizablePanelGroup
+      // Key by pane ids so the layout resets when split/close changes the
+      // panel count instead of trying to remember the old layout.
+      key={tab.panes.map((p) => p.id).join("|")}
+      orientation="horizontal"
+      className="h-full"
+    >
+      {tab.panes.map((pane, idx) => (
+        <Fragment key={pane.id}>
+          {idx > 0 && <ResizableHandle />}
+          <ResizablePanel minSize={10} defaultSize={100 / tab.panes.length}>
+            {renderPane(pane)}
+          </ResizablePanel>
+        </Fragment>
+      ))}
+    </ResizablePanelGroup>
+  )
 }
 
 function PaneContent({
@@ -18,22 +143,28 @@ function PaneContent({
   isActive,
   onTitleChange,
   onStartTerminal,
+  onSplitTerminal,
+  onClosePane,
+  onFocusPane,
 }: {
   tab: WorkspaceTab
   project: Project
   isActive: boolean
-  onTitleChange?: (terminalId: string, title: string) => void
-  onStartTerminal?: (tabId: string) => void
+  onTitleChange?: (tabId: string, paneId: string, title: string) => void
+  onStartTerminal?: (tabId: string, paneId: string) => void
+  onSplitTerminal?: (tabId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
+  onFocusPane?: (tabId: string, paneId: string) => void
 }) {
   if (tab.kind === "terminal") {
-    if (tab.pendingStart) {
-      return <PendingPane tab={tab} onStart={() => onStartTerminal?.(tab.id)} />
-    }
     return (
-      <TerminalView
-        sessionId={tab.id}
+      <TerminalTabContent
+        tab={tab}
         isActive={isActive}
-        onTitleChange={(title) => onTitleChange?.(tab.id, title)}
+        onTitleChange={onTitleChange}
+        onStartTerminal={onStartTerminal}
+        onClosePane={onClosePane}
+        onFocusPane={onFocusPane}
       />
     )
   }
@@ -54,17 +185,40 @@ export function WorkspacePane({
   isActive = true,
   onTitleChange,
   onStartTerminal,
+  onSplitTerminal,
+  onClosePane,
+  onFocusPane,
 }: Props) {
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
+  const isTerminalActive = activeTab?.kind === "terminal"
 
   return (
     <div className="flex h-full flex-col bg-card">
-      <div className="flex h-[34px] shrink-0 items-center border-b border-border px-4 text-xs text-muted-foreground">
-        {activeTab
-          ? tabDisplayName(activeTab)
-          : project
-            ? "No tab"
-            : "No project"}
+      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3 text-xs text-muted-foreground">
+        <span className="truncate">
+          {activeTab
+            ? tabDisplayName(activeTab)
+            : project
+              ? "No tab"
+              : "No project"}
+        </span>
+        {isTerminalActive && onSplitTerminal && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => onSplitTerminal(activeTab!.id)}
+                  aria-label="Split terminal"
+                  className="ml-auto grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                >
+                  <SplitSquareHorizontal className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>Split terminal (⌘D)</TooltipContent>
+          </Tooltip>
+        )}
       </div>
       <div className="relative flex-1">
         {project?.tabs.map((t) => (
@@ -81,6 +235,9 @@ export function WorkspacePane({
               isActive={isActive && t.id === project.activeTabId}
               onTitleChange={onTitleChange}
               onStartTerminal={onStartTerminal}
+              onSplitTerminal={onSplitTerminal}
+              onClosePane={onClosePane}
+              onFocusPane={onFocusPane}
             />
           </div>
         ))}
@@ -94,28 +251,6 @@ export function WorkspacePane({
             No project open
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-function PendingPane({
-  tab,
-  onStart,
-}: {
-  tab: TerminalTab
-  onStart: () => void
-}) {
-  return (
-    <div className="grid h-full place-items-center bg-card">
-      <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
-        <span>"{displayName(tab)}" is not running.</span>
-        <button
-          onClick={onStart}
-          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40"
-        >
-          Start terminal
-        </button>
       </div>
     </div>
   )

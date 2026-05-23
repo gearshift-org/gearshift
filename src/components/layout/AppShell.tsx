@@ -24,6 +24,19 @@ function basename(p: string) {
   return p.replace(/\/+$/, "").split("/").pop() || p
 }
 
+function killAllPanes(tab: WorkspaceTab) {
+  if (tab.kind !== "terminal") return
+  for (const pane of tab.panes) {
+    if (!pane.pendingStart) {
+      try {
+        window.term.kill(pane.id)
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 function serializeProjects(projects: Project[]) {
   return projects.map((p) => {
     const terminals = p.tabs.filter((t) => t.kind === "terminal")
@@ -63,7 +76,8 @@ export function AppShell() {
         id: t.id,
         name: t.name,
         customName: t.customName,
-        pendingStart: true,
+        panes: [{ id: t.id, pendingStart: true }],
+        activePaneId: t.id,
       })),
       activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
     })),
@@ -74,6 +88,9 @@ export function AppShell() {
   )
 
   const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
+  // Forward reference: closePane (defined below) calls closeTab when the last
+  // pane is being closed. Wired via effect once both are defined.
+  const closeTabRef = useRef<(id: string) => void>(() => undefined)
 
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
@@ -179,22 +196,29 @@ export function AppShell() {
         window.term.kill(id)
         return
       }
+      const tabId = makeId()
       setProjects((prev) =>
         prev.map((p) =>
           p.id === activeProject.id
             ? {
                 ...p,
                 tabs: [
-                  { kind: "terminal", id, name: "Terminal 1" },
+                  {
+                    kind: "terminal",
+                    id: tabId,
+                    name: "Terminal 1",
+                    panes: [{ id }],
+                    activePaneId: id,
+                  },
                 ] as WorkspaceTab[],
-                activeTabId: id,
+                activeTabId: tabId,
               }
             : p,
         ),
       )
       void navigate({
         to: "/projects/$projectId/tabs/$tabId",
-        params: { projectId: activeProject.id, tabId: id },
+        params: { projectId: activeProject.id, tabId },
         replace: true,
       })
     })()
@@ -244,9 +268,7 @@ export function AppShell() {
     setProjects((prev) => {
       const target = prev.find((p) => p.id === id)
       if (target) {
-        for (const t of target.tabs) {
-          if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
-        }
+        for (const t of target.tabs) killAllPanes(t)
       }
       const next = prev.filter((p) => p.id !== id)
       if (id === activeProjectId) {
@@ -268,9 +290,7 @@ export function AppShell() {
       const toClose = prev.slice(idx + 1)
       if (toClose.length === 0) return prev
       for (const p of toClose) {
-        for (const t of p.tabs) {
-          if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
-        }
+        for (const t of p.tabs) killAllPanes(t)
       }
       const closedIds = new Set(toClose.map((p) => p.id))
       const next = prev.filter((p) => !closedIds.has(p.id))
@@ -321,9 +341,7 @@ export function AppShell() {
     setProjects((prev) => {
       for (const p of prev) {
         if (p.id === keepId) continue
-        for (const t of p.tabs) {
-          if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
-        }
+        for (const t of p.tabs) killAllPanes(t)
       }
       const next = prev.filter((p) => p.id === keepId)
       const keep = next[0]
@@ -334,7 +352,8 @@ export function AppShell() {
 
   const addTerminal = async () => {
     if (!activeProject) return
-    const { id } = await window.term.create({ cwd: activeProject.path })
+    const { id: paneId } = await window.term.create({ cwd: activeProject.path })
+    const tabId = makeId()
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProject.id) return p
@@ -345,16 +364,109 @@ export function AppShell() {
             ...p.tabs,
             {
               kind: "terminal" as const,
-              id,
+              id: tabId,
               name: `Terminal ${terminalCount + 1}`,
+              panes: [{ id: paneId }],
+              activePaneId: paneId,
             },
           ],
-          activeTabId: id,
+          activeTabId: tabId,
         }
       }),
     )
-    navigateToTab(id)
+    navigateToTab(tabId)
   }
+
+  /** Add a new terminal pane to an existing terminal tab (Cmd+D / split). */
+  const splitTerminalPane = useCallback(
+    async (tabId: string) => {
+      if (!activeProject) return
+      const tab = activeProject.tabs.find((t) => t.id === tabId)
+      if (!tab || tab.kind !== "terminal") return
+      const { id: paneId } = await window.term.create({
+        cwd: activeProject.path,
+      })
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProject.id
+            ? {
+                ...p,
+                tabs: p.tabs.map((t) =>
+                  t.id === tabId && t.kind === "terminal"
+                    ? {
+                        ...t,
+                        panes: [...t.panes, { id: paneId }],
+                        activePaneId: paneId,
+                      }
+                    : t,
+                ),
+              }
+            : p,
+        ),
+      )
+    },
+    [activeProject],
+  )
+
+  /** Close a single pane within a terminal tab. Closes the tab if it was the last. */
+  const closePane = useCallback(
+    (tabId: string, paneId: string) => {
+      const tab = activeProject?.tabs.find((t) => t.id === tabId)
+      if (!tab || tab.kind !== "terminal") return
+      const pane = tab.panes.find((pp) => pp.id === paneId)
+      if (!pane) return
+      if (!pane.pendingStart) {
+        try {
+          window.term.kill(paneId)
+        } catch {
+          // ignore
+        }
+      }
+      if (tab.panes.length <= 1) {
+        // last pane → close the tab entirely
+        closeTabRef.current?.(tabId)
+        return
+      }
+      setProjects((prev) =>
+        prev.map((p) => {
+          if (p.id !== activeProjectId) return p
+          return {
+            ...p,
+            tabs: p.tabs.map((t) => {
+              if (t.id !== tabId || t.kind !== "terminal") return t
+              const panes = t.panes.filter((pp) => pp.id !== paneId)
+              const nextActive =
+                t.activePaneId === paneId
+                  ? panes[panes.length - 1]?.id ?? ""
+                  : t.activePaneId
+              return { ...t, panes, activePaneId: nextActive }
+            }),
+          }
+        }),
+      )
+    },
+    [activeProject, activeProjectId],
+  )
+
+  const setActivePane = useCallback(
+    (tabId: string, paneId: string) => {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProjectId
+            ? {
+                ...p,
+                tabs: p.tabs.map((t) =>
+                  t.id === tabId && t.kind === "terminal"
+                    ? { ...t, activePaneId: paneId }
+                    : t,
+                ),
+              }
+            : p,
+        ),
+      )
+    },
+    [activeProjectId],
+  )
 
   const openDiffTab = useCallback(
     (path: string, staged: boolean) => {
@@ -496,14 +608,15 @@ export function AppShell() {
 
   const startingTerminalsRef = useRef(new Set<string>())
 
-  const startTerminal = useCallback(
-    async (projectId: string, tabId: string) => {
+  const startTerminalPane = useCallback(
+    async (projectId: string, tabId: string, paneId: string) => {
       const project = projects.find((p) => p.id === projectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
-      if (!project || !tab || tab.kind !== "terminal" || !tab.pendingStart)
-        return
+      if (!project || !tab || tab.kind !== "terminal") return
+      const pane = tab.panes.find((pp) => pp.id === paneId)
+      if (!pane || !pane.pendingStart) return
 
-      const startKey = `${projectId}:${tabId}`
+      const startKey = `${projectId}:${tabId}:${paneId}`
       if (startingTerminalsRef.current.has(startKey)) return
       startingTerminalsRef.current.add(startKey)
 
@@ -514,44 +627,43 @@ export function AppShell() {
             if (p.id !== projectId) return p
             return {
               ...p,
-              tabs: p.tabs.map((t) =>
-                t.id === tabId && t.kind === "terminal"
-                  ? { ...t, id: newId, pendingStart: false }
-                  : t,
-              ),
-              activeTabId: p.activeTabId === tabId ? newId : p.activeTabId,
+              tabs: p.tabs.map((t) => {
+                if (t.id !== tabId || t.kind !== "terminal") return t
+                return {
+                  ...t,
+                  panes: t.panes.map((pp) =>
+                    pp.id === paneId
+                      ? { ...pp, id: newId, pendingStart: false }
+                      : pp,
+                  ),
+                  activePaneId:
+                    t.activePaneId === paneId ? newId : t.activePaneId,
+                }
+              }),
             }
           }),
         )
-        if (
-          routeProjectId === projectId &&
-          routeTabId === tabId &&
-          tabId !== newId
-        ) {
-          void navigate({
-            to: "/projects/$projectId/tabs/$tabId",
-            params: { projectId, tabId: newId },
-            replace: true,
-          })
-        }
       } finally {
         startingTerminalsRef.current.delete(startKey)
       }
     },
-    [projects, navigate, routeProjectId, routeTabId],
+    [projects],
   )
 
   useEffect(() => {
     if (!activeProject || !activeTabId) return
     const activeTab = activeProject.tabs.find((t) => t.id === activeTabId)
-    if (activeTab?.kind === "terminal" && activeTab.pendingStart) {
-      void startTerminal(activeProject.id, activeTab.id)
+    if (activeTab?.kind !== "terminal") return
+    for (const pane of activeTab.panes) {
+      if (pane.pendingStart) {
+        void startTerminalPane(activeProject.id, activeTab.id, pane.id)
+      }
     }
-  }, [activeProject, activeTabId, startTerminal])
+  }, [activeProject, activeTabId, startTerminalPane])
 
   const selectTab = (id: string) => navigateToTab(id)
 
-  const setTerminalTitle = (tabId: string, title: string) => {
+  const setTerminalTitle = (tabId: string, paneId: string, title: string) => {
     setProjects((prev) => {
       const next = prev.map((p) =>
         p.tabs.some((t) => t.id === tabId)
@@ -559,7 +671,12 @@ export function AppShell() {
               ...p,
               tabs: p.tabs.map((t) =>
                 t.id === tabId && t.kind === "terminal"
-                  ? { ...t, autoTitle: title }
+                  ? {
+                      ...t,
+                      panes: t.panes.map((pp) =>
+                        pp.id === paneId ? { ...pp, autoTitle: title } : pp,
+                      ),
+                    }
                   : t,
               ),
             }
@@ -589,7 +706,7 @@ export function AppShell() {
 
   const closeTab = (id: string) => {
     const tab = activeProject?.tabs.find((t) => t.id === id)
-    if (tab?.kind === "terminal" && !tab.pendingStart) window.term.kill(id)
+    if (tab) killAllPanes(tab)
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProjectId) return p
@@ -619,9 +736,7 @@ export function AppShell() {
     if (idx < 0) return
     const toClose = activeProject.tabs.slice(idx + 1)
     if (toClose.length === 0) return
-    for (const t of toClose) {
-      if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
-    }
+    for (const t of toClose) killAllPanes(t)
     const closedIds = new Set(toClose.map((t) => t.id))
     setProjects((prev) =>
       prev.map((p) => {
@@ -640,9 +755,7 @@ export function AppShell() {
     if (!activeProject) return
     const toClose = activeProject.tabs.filter((t) => t.id !== keepId)
     if (toClose.length === 0) return
-    for (const t of toClose) {
-      if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
-    }
+    for (const t of toClose) killAllPanes(t)
     const keep = activeProject.tabs.find((t) => t.id === keepId)
     setProjects((prev) =>
       prev.map((p) =>
@@ -660,9 +773,7 @@ export function AppShell() {
 
   const closeAllTabs = () => {
     if (!activeProject) return
-    for (const t of activeProject.tabs) {
-      if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
-    }
+    for (const t of activeProject.tabs) killAllPanes(t)
     setProjects((prev) =>
       prev.map((p) =>
         p.id === activeProjectId ? { ...p, tabs: [], activeTabId: "" } : p,
@@ -673,6 +784,7 @@ export function AppShell() {
 
   const addTerminalRef = useRef<() => void>(() => undefined)
   const closeActiveTabRef = useRef<() => void>(() => undefined)
+  const splitActiveTerminalRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     addTerminalRef.current = addTerminal
@@ -680,6 +792,14 @@ export function AppShell() {
       if (!activeTabId) return
       closeTab(activeTabId)
     }
+    splitActiveTerminalRef.current = () => {
+      if (!activeProject || !activeTabId) return
+      const active = activeProject.tabs.find((t) => t.id === activeTabId)
+      if (active?.kind === "terminal") {
+        void splitTerminalPane(activeTabId)
+      }
+    }
+    closeTabRef.current = closeTab
   })
 
   useEffect(() => {
@@ -703,6 +823,10 @@ export function AppShell() {
       if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+      }
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "d") {
+        e.preventDefault()
+        splitActiveTerminalRef.current()
       }
     }
     window.addEventListener("keydown", onKeyDown)
@@ -743,9 +867,12 @@ export function AppShell() {
           activeProjectId={activeProjectId}
           sidebarOpen={sidebarOpen}
           onTerminalTitleChange={setTerminalTitle}
-          onStartTerminal={(tabId) => {
-            void startTerminal(activeProject.id, tabId)
+          onStartTerminal={(tabId, paneId) => {
+            void startTerminalPane(activeProject.id, tabId, paneId)
           }}
+          onSplitTerminal={(tabId) => void splitTerminalPane(tabId)}
+          onClosePane={closePane}
+          onFocusPane={setActivePane}
           onOpenDiffTab={openDiffTab}
           onOpenFileTab={openFileTab}
           workspaceTabs={

@@ -29,7 +29,11 @@ export function formatAutoTitle(title: string | undefined): string | undefined {
 }
 
 export function displayName(t: TerminalTab): string {
-  return t.customName?.trim() || formatAutoTitle(t.autoTitle) || t.name
+  if (t.customName?.trim()) return t.customName.trim()
+  const activePane =
+    t.panes.find((p) => p.id === t.activePaneId) ?? t.panes[0]
+  const autoFromPane = formatAutoTitle(activePane?.autoTitle)
+  return autoFromPane || t.name
 }
 
 /** Display name for any workspace tab kind. */

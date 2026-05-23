@@ -237,6 +237,26 @@ export function saveSidebarOpen(open: boolean): void {
   }
 }
 
+const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
+
+export type RightSidebarTab = "changes" | "files"
+
+export function loadRightSidebarTab(): RightSidebarTab {
+  try {
+    return store.get(RIGHT_SIDEBAR_TAB_KEY) === "files" ? "files" : "changes"
+  } catch {
+    return "changes"
+  }
+}
+
+export function saveRightSidebarTab(tab: RightSidebarTab): void {
+  try {
+    store.set(RIGHT_SIDEBAR_TAB_KEY, tab)
+  } catch {
+    // ignore
+  }
+}
+
 const DIFF_VIEW_MODE_KEY = "gearshift.diffViewMode"
 
 export function loadDiffViewMode(): "unified" | "split" {

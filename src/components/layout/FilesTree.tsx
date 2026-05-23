@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -16,12 +17,27 @@ type NodeProps = {
   depth: number
   onOpenFile: (relPath: string) => void
   activePath?: string
-  /** Bumped to invalidate readDir caches across the tree. */
-  invalidation: number
 }
 
 function joinPath(a: string, b: string): string {
   return `${a.replace(/\/+$/, "")}/${b}`
+}
+
+function fileTreeProjectQueryKey(cwd: string) {
+  return ["file-tree", cwd] as const
+}
+
+function fileTreeDirQueryKey(cwd: string, absPath: string) {
+  return [...fileTreeProjectQueryKey(cwd), absPath] as const
+}
+
+async function readDirEntries(absPath: string): Promise<Entry[]> {
+  const res = await window.fsApi.readDir(absPath)
+  if (!res.ok) return []
+  return [...res.entries].sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
 }
 
 function FolderNode({
@@ -31,52 +47,27 @@ function FolderNode({
   depth,
   onOpenFile,
   activePath,
-  invalidation,
 }: NodeProps) {
-  const [open, setOpen] = useState(depth === 0)
-  const [entries, setEntries] = useState<Entry[] | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
   const isActiveAncestor =
     !!activePath && (depth === 0 || activePath.startsWith(`${relPath}/`))
+  const open = depth === 0 || manuallyOpen || isActiveAncestor
 
-  const load = useCallback(() => {
-    setLoading(true)
-    window.fsApi.readDir(absPath).then((res) => {
-      if (res.ok) {
-        const sorted = [...res.entries].sort((a, b) => {
-          if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-          return a.name.localeCompare(b.name)
-        })
-        setEntries(sorted)
-      } else {
-        setEntries([])
-      }
-      setLoading(false)
-    })
-  }, [absPath])
-
-  useEffect(() => {
-    if (isActiveAncestor) setOpen(true)
-  }, [isActiveAncestor])
-
-  useEffect(() => {
-    if (open && entries === null) load()
-  }, [open, entries, load])
-
-  // Re-load on invalidation if we were already open.
-  useEffect(() => {
-    if (open) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invalidation])
+  const entriesQuery = useQuery({
+    queryKey: fileTreeDirQueryKey(cwd, absPath),
+    enabled: open,
+    queryFn: () => readDirEntries(absPath),
+  })
+  const entries = entriesQuery.data
 
   return (
     <div>
       {depth > 0 && (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setManuallyOpen((v) => !v)}
           className={cn(
-            "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+            "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
           )}
           style={{ paddingLeft: depth * 12 }}
         >
@@ -85,13 +76,17 @@ function FolderNode({
           ) : (
             <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
           )}
-          <FolderIcon name={relPath.split("/").pop() ?? relPath} open={open} className="size-4 shrink-0" />
+          <FolderIcon
+            name={relPath.split("/").pop() ?? relPath}
+            open={open}
+            className="size-4 shrink-0"
+          />
           <span className="truncate">{relPath.split("/").pop()}</span>
         </button>
       )}
       {open && (
         <div>
-          {loading && entries === null && (
+          {entriesQuery.isLoading && entries === undefined && (
             <div
               className="px-2 py-1 text-xs text-muted-foreground"
               style={{ paddingLeft: (depth + 1) * 12 }}
@@ -112,7 +107,6 @@ function FolderNode({
                   depth={depth + 1}
                   onOpenFile={onOpenFile}
                   activePath={activePath}
-                  invalidation={invalidation}
                 />
               )
             }
@@ -160,7 +154,7 @@ function FileNode({
       onClick={() => onOpenFile(relPath)}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
-        active && "bg-accent text-accent-foreground",
+        active && "bg-accent text-accent-foreground"
       )}
       style={{ paddingLeft: (depth + 1) * 12 + 12 }}
     >
@@ -177,8 +171,7 @@ type Props = {
 }
 
 export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
-  // Bump on fs:changed to invalidate cached entries across nodes.
-  const [invalidation, setInvalidation] = useState(0)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     let active = true
@@ -191,7 +184,11 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
     const off = window.fsApi.onChanged((ev) => {
       if (ev.cwd !== cwd) return
       if (timer !== null) window.clearTimeout(timer)
-      timer = window.setTimeout(() => setInvalidation((n) => n + 1), 300)
+      timer = window.setTimeout(() => {
+        void queryClient.invalidateQueries({
+          queryKey: fileTreeProjectQueryKey(cwd),
+        })
+      }, 300)
     })
     return () => {
       active = false
@@ -199,18 +196,18 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
       if (timer !== null) window.clearTimeout(timer)
       if (watchId) window.fsApi.unwatchProject(watchId)
     }
-  }, [cwd])
+  }, [cwd, queryClient])
 
   return (
     <ScrollArea className="h-full">
       <FolderNode
+        key={cwd}
         cwd={cwd}
         absPath={cwd}
         relPath=""
         depth={0}
         onOpenFile={onOpenFile}
         activePath={activePath}
-        invalidation={invalidation}
       />
     </ScrollArea>
   )

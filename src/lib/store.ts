@@ -68,15 +68,11 @@ function createStore(): Store {
     },
   )
 
-  let writeTimer: number | undefined
   const persist = () => {
     // Suppress writes until hydration completes — initial useState empties
     // would otherwise clobber the on-disk snapshot.
     if (!ready) return
-    if (writeTimer) window.clearTimeout(writeTimer)
-    writeTimer = window.setTimeout(() => {
-      void api.write({ ...cache })
-    }, 100)
+    void api.write({ ...cache })
   }
 
   return {

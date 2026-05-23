@@ -10,6 +10,7 @@ import {
   loadPaletteRecents,
   loadProjects,
   loadRecentProjects,
+  loadRightSidebarTab,
   loadSidebarOpen,
   pushRecentPaletteFile,
   pushRecentPaletteProject,
@@ -17,9 +18,11 @@ import {
   pushRecentProject,
   saveActiveProjectId,
   saveProjects,
+  saveRightSidebarTab,
   saveSidebarOpen,
   type PaletteRecents,
   type RecentProject,
+  type RightSidebarTab,
   type StoredProject,
 } from "@/lib/projects"
 import { store } from "@/lib/store"
@@ -99,6 +102,13 @@ export function AppShell() {
     loadPaletteRecents(),
   )
   const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
+  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
+    loadRightSidebarTab(),
+  )
+  const [stateRestored, setStateRestored] = useState(() => store.isReady())
+  const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
+    string | null
+  >(() => loadActiveProjectId())
 
   // Disk snapshot arrives async — re-sync once it lands so the UI can paint
   // immediately with empty state and then fill in. Also restores the last
@@ -111,13 +121,16 @@ export function AppShell() {
         setRecents(loadRecentProjects())
         setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
+        setRightSidebarTab(loadRightSidebarTab())
         const storedActiveId = loadActiveProjectId()
-        if (
-          storedActiveId &&
-          hydrated.some((p) => p.id === storedActiveId) &&
-          !params.projectId
-        ) {
-          const proj = hydrated.find((p) => p.id === storedActiveId)!
+        const validStoredActiveId =
+          storedActiveId && hydrated.some((p) => p.id === storedActiveId)
+            ? storedActiveId
+            : null
+        setRestoredActiveProjectId(validStoredActiveId)
+        setStateRestored(true)
+        if (validStoredActiveId && !params.projectId) {
+          const proj = hydrated.find((p) => p.id === validStoredActiveId)!
           if (proj.activeTabId) {
             void navigate({
               to: "/projects/$projectId/tabs/$tabId",
@@ -143,16 +156,21 @@ export function AppShell() {
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
   }, [sidebarOpen])
+  useEffect(() => {
+    saveRightSidebarTab(rightSidebarTab)
+  }, [rightSidebarTab])
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [rightSidebarTab, setRightSidebarTab] = useState<"changes" | "files">(
-    "changes",
-  )
   const [activeTreeFilePath, setActiveTreeFilePath] = useState("")
 
+  const restoredProjectId =
+    restoredActiveProjectId &&
+    projects.some((p) => p.id === restoredActiveProjectId)
+      ? restoredActiveProjectId
+      : null
   const activeProjectId =
     (routeProjectId && projects.some((p) => p.id === routeProjectId)
       ? routeProjectId
-      : projects[0]?.id) ?? ""
+      : (restoredProjectId ?? projects[0]?.id)) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
 
@@ -172,6 +190,7 @@ export function AppShell() {
 
   const navigateToProject = useCallback(
     (id: string | null, tabId?: string) => {
+      if (stateRestored) saveActiveProjectId(id ?? "")
       if (!id) {
         void navigate({ to: "/" })
         return
@@ -188,7 +207,7 @@ export function AppShell() {
         })
       }
     },
-    [navigate],
+    [navigate, stateRestored],
   )
 
   const navigateToTab = useCallback(
@@ -203,9 +222,10 @@ export function AppShell() {
   )
 
   useEffect(() => {
+    if (!stateRestored) return
     saveActiveProjectId(activeProjectId)
     if (activeProjectPath) pushRecentPaletteProject(activeProjectPath)
-  }, [activeProjectId, activeProjectPath])
+  }, [activeProjectId, activeProjectPath, stateRestored])
 
   useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return

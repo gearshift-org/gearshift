@@ -1,4 +1,5 @@
 import { Moon, Sun } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { useTheme } from "@/components/theme-provider"
 
 export function ThemeToggle() {
@@ -6,12 +7,15 @@ export function ThemeToggle() {
   const isDark = resolvedTheme === "dark"
 
   return (
-    <button
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label="Toggle theme"
-      className="grid h-full w-10 place-items-center border-l border-border/60 text-muted-foreground hover:bg-background/60 [-webkit-app-region:no-drag]"
-    >
-      {isDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-    </button>
+    <div className="flex items-center pr-1 [-webkit-app-region:no-drag]">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={() => setTheme(isDark ? "light" : "dark")}
+        aria-label="Toggle theme"
+      >
+        {isDark ? <Sun /> : <Moon />}
+      </Button>
+    </div>
   )
 }

@@ -200,7 +200,7 @@ export function ProjectTabs({
               index={i}
               total={projects.length}
               isActive={p.id === activeId}
-              canClose={!!onClose && projects.length > 1}
+              canClose={!!onClose}
               hasTabsToRight={i < projects.length - 1}
               onSelect={onSelect}
               onClose={onClose}

@@ -1,5 +1,12 @@
+import { PanelRight } from "lucide-react"
 import { ProjectTabs } from "./ProjectTabs"
 import { ThemeToggle } from "./ThemeToggle"
+import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { RecentProject } from "@/lib/projects"
 import type { Project } from "./types"
 
@@ -15,6 +22,8 @@ type Props = {
   onCloseProjectsToRight?: (id: string) => void
   onOpenProjectInVSCode?: (id: string) => void
   onReorderProjects?: (fromId: string, toId: string) => void
+  changesPaneOpen?: boolean
+  onToggleChangesPane?: () => void
 }
 
 export function TitleBar({
@@ -29,6 +38,8 @@ export function TitleBar({
   onCloseProjectsToRight,
   onOpenProjectInVSCode,
   onReorderProjects,
+  changesPaneOpen,
+  onToggleChangesPane,
 }: Props) {
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
@@ -48,6 +59,30 @@ export function TitleBar({
       />
       <div className="flex-1" />
       <ThemeToggle />
+      {onToggleChangesPane && (
+        <div className="flex items-center pr-1 [-webkit-app-region:no-drag]">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={onToggleChangesPane}
+                  aria-pressed={changesPaneOpen}
+                  aria-label={
+                    changesPaneOpen ? "Hide changes" : "Show changes"
+                  }
+                >
+                  <PanelRight />
+                </Button>
+              }
+            />
+            <TooltipContent>
+              {changesPaneOpen ? "Hide changes" : "Show changes"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
     </div>
   )
 }

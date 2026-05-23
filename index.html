@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>vite-app</title>
+    <script type="module">
+      // Workaround: @vitejs/plugin-react v5 + Vite 8 (Rolldown) doesn't inject
+      // the React Refresh preamble. Safe no-op in production (/@react-refresh
+      // only exists in the dev server).
+      try {
+        const m = await import("/@react-refresh")
+        m.default.injectIntoGlobalHook(window)
+        window.$RefreshReg$ = () => {}
+        window.$RefreshSig$ = () => (type) => type
+        window.__vite_plugin_react_preamble_installed__ = true
+      } catch {}
+    </script>
     <script>
       ;(() => {
         const stored = localStorage.getItem("theme")

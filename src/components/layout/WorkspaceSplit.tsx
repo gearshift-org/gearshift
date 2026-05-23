@@ -13,6 +13,7 @@ type Props = {
   projects: Project[]
   activeProjectId: string
   terminalTabs: ReactNode
+  changesPaneOpen?: boolean
   onTerminalTitleChange?: (terminalId: string, title: string) => void
   onStartTerminal?: (tabId: string) => void
 }
@@ -21,39 +22,48 @@ export function WorkspaceSplit({
   projects,
   activeProjectId,
   terminalTabs,
+  changesPaneOpen = true,
   onTerminalTitleChange,
   onStartTerminal,
 }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId)
+  const terminalSection = (
+    <div className="flex h-full flex-col">
+      {terminalTabs}
+      <div className="relative flex-1 min-h-0">
+        {projects.map((p) => (
+          <div
+            key={p.id}
+            className={cn(
+              "absolute inset-0",
+              p.id !== activeProjectId && "invisible pointer-events-none",
+            )}
+          >
+            <TerminalPane
+              project={p}
+              isActive={p.id === activeProjectId}
+              onTitleChange={onTerminalTitleChange}
+              onStartTerminal={onStartTerminal}
+            />
+          </div>
+        ))}
+        {!activeProject && (
+          <div className="grid h-full place-items-center text-xs text-muted-foreground">
+            No project open
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  if (!changesPaneOpen) {
+    return <div className="flex-1 min-h-0">{terminalSection}</div>
+  }
+
   return (
     <ResizablePanelGroup orientation="horizontal" className="flex-1">
       <ResizablePanel defaultSize={50} minSize={25}>
-        <div className="flex h-full flex-col">
-          {terminalTabs}
-          <div className="relative flex-1 min-h-0">
-            {projects.map((p) => (
-              <div
-                key={p.id}
-                className={cn(
-                  "absolute inset-0",
-                  p.id !== activeProjectId && "invisible pointer-events-none",
-                )}
-              >
-                <TerminalPane
-                  project={p}
-                  isActive={p.id === activeProjectId}
-                  onTitleChange={onTerminalTitleChange}
-                  onStartTerminal={onStartTerminal}
-                />
-              </div>
-            ))}
-            {!activeProject && (
-              <div className="grid h-full place-items-center text-xs text-muted-foreground">
-                No project open
-              </div>
-            )}
-          </div>
-        </div>
+        {terminalSection}
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize={50} minSize={25}>

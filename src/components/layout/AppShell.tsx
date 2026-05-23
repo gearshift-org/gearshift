@@ -63,6 +63,8 @@ export function AppShell() {
     loadRecentProjects(),
   )
 
+  const [changesPaneOpen, setChangesPaneOpen] = useState(true)
+
   // Resolve current project from the route (with fallback to first project).
   const activeProjectId =
     (routeProjectId && projects.some((p) => p.id === routeProjectId)
@@ -570,35 +572,48 @@ export function AppShell() {
         onCloseProjectsToRight={closeProjectsToRight}
         onOpenProjectInVSCode={openProjectInVSCode}
         onReorderProjects={reorderProjects}
+        changesPaneOpen={changesPaneOpen}
+        onToggleChangesPane={() => setChangesPaneOpen((v) => !v)}
       />
-      <WorkspaceSplit
-        projects={projects}
-        activeProjectId={activeProjectId}
-        onTerminalTitleChange={setTerminalTitle}
-        onStartTerminal={(tabId) => {
-          if (!activeProject) return
-          void startTerminal(activeProject.id, tabId)
-        }}
-        terminalTabs={
-          <TerminalTabBar
-            terminals={activeProject?.terminals ?? []}
-            activeId={activeTerminalId}
-            onSelect={selectTerminal}
-            onAdd={addTerminal}
-            onClose={closeTerminal}
-            onCloseAll={closeAllTerminals}
-            onCloseOthers={closeOtherTerminals}
-            onCloseToRight={closeTerminalsToRight}
-            onRename={renameTerminal}
-            onReorder={reorderTerminals}
-            onOpenInVSCode={
-              activeProject
-                ? () => void window.shellApi.openInVSCode(activeProject.path)
-                : undefined
-            }
-          />
-        }
-      />
+      {activeProject ? (
+        <WorkspaceSplit
+          projects={projects}
+          activeProjectId={activeProjectId}
+          changesPaneOpen={changesPaneOpen}
+          onTerminalTitleChange={setTerminalTitle}
+          onStartTerminal={(tabId) => {
+            void startTerminal(activeProject.id, tabId)
+          }}
+          terminalTabs={
+            <TerminalTabBar
+              terminals={activeProject.terminals}
+              activeId={activeTerminalId}
+              onSelect={selectTerminal}
+              onAdd={addTerminal}
+              onClose={closeTerminal}
+              onCloseAll={closeAllTerminals}
+              onCloseOthers={closeOtherTerminals}
+              onCloseToRight={closeTerminalsToRight}
+              onRename={renameTerminal}
+              onReorder={reorderTerminals}
+              onOpenInVSCode={() =>
+                void window.shellApi.openInVSCode(activeProject.path)
+              }
+            />
+          }
+        />
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+          <p>No project selected</p>
+          <button
+            type="button"
+            onClick={addProject}
+            className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+          >
+            Select a Project
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -132,24 +132,29 @@ export function WorkspaceSplit({
     </div>
   )
 
-  if (!sidebarOpen) {
-    return <div className="flex-1 min-h-0">{workspaceSection}</div>
-  }
-
+  // Keep the tree structurally stable regardless of `sidebarOpen` — otherwise
+  // toggling unmounts `WorkspacePane`/`TerminalView`, the xterm remeasures
+  // before layout settles, and TUIs (Claude Code, etc.) get stuck at cols=1.
   return (
     <div ref={containerRef} className="flex flex-1 min-h-0">
       <div className="min-w-0 flex-1">{workspaceSection}</div>
+      {sidebarOpen && (
+        <div
+          onMouseDown={startDrag}
+          role="separator"
+          aria-orientation="vertical"
+          className="group relative -mx-[3px] w-[7px] shrink-0 cursor-col-resize"
+        >
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
+        </div>
+      )}
       <div
-        onMouseDown={startDrag}
-        role="separator"
-        aria-orientation="vertical"
-        className="group relative -mx-[3px] w-[7px] shrink-0 cursor-col-resize"
-      >
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
-      </div>
-      <div
-        style={{ width: sidebarWidth }}
-        className="relative h-full shrink-0"
+        style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+        className={cn(
+          "relative h-full shrink-0 overflow-hidden",
+          !sidebarOpen && "pointer-events-none",
+        )}
+        aria-hidden={!sidebarOpen}
       >
         {projects.map((p) => (
           <div
@@ -158,6 +163,7 @@ export function WorkspaceSplit({
               "absolute inset-0",
               p.id !== activeProjectId && "invisible pointer-events-none",
             )}
+            style={{ width: sidebarWidth }}
           >
             <RightSidebar
               cwd={p.path}
@@ -171,14 +177,16 @@ export function WorkspaceSplit({
           </div>
         ))}
         {!activeProject && (
-          <RightSidebar
-            cwd={null}
-            activeTab={rightSidebarTab}
-            onActiveTabChange={onRightSidebarTabChange}
-            activeFilePath={activeTreeFilePath}
-            onOpenDiff={onOpenDiffTab}
-            onOpenFile={onOpenFileTab}
-          />
+          <div className="absolute inset-0" style={{ width: sidebarWidth }}>
+            <RightSidebar
+              cwd={null}
+              activeTab={rightSidebarTab}
+              onActiveTabChange={onRightSidebarTabChange}
+              activeFilePath={activeTreeFilePath}
+              onOpenDiff={onOpenDiffTab}
+              onOpenFile={onOpenFileTab}
+            />
+          </div>
         )}
       </div>
     </div>

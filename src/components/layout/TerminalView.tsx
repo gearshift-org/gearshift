@@ -314,11 +314,15 @@ export function TerminalView({
       return true
     })
 
-    // Initial size + send to PTY.
+    // Initial size + send to PTY. Skip the resize IPC if the container hasn't
+    // laid out yet (cols would collapse to 1) — the ResizeObserver below will
+    // fire as soon as real dimensions are available.
     const safeFit = () => {
       try {
         fit.fit()
-        window.term.resize(sessionId, term.cols, term.rows)
+        if (term.cols >= 2 && term.rows >= 2) {
+          window.term.resize(sessionId, term.cols, term.rows)
+        }
       } catch {
         // ignore
       }
@@ -349,7 +353,11 @@ export function TerminalView({
       rafId = requestAnimationFrame(() => {
         try {
           fit.fit()
-          if (term.cols !== lastCols || term.rows !== lastRows) {
+          if (
+            (term.cols !== lastCols || term.rows !== lastRows) &&
+            term.cols >= 2 &&
+            term.rows >= 2
+          ) {
             lastCols = term.cols
             lastRows = term.rows
             window.term.resize(sessionId, term.cols, term.rows)

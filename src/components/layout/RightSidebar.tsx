@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowDown,
   ArrowUp,
@@ -36,16 +37,22 @@ import {
 import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/icons/FileIcon"
 import { FilesTree } from "./FilesTree"
-
-type Status = "M" | "A" | "D" | "R" | "C" | "U" | string
-type GitFile = { path: string; status: Status; staged: boolean }
+import {
+  EMPTY_GIT_FILES,
+  fetchGitQueryData,
+  gitQueryKey,
+  moveCachedGitFiles,
+  type GitFile,
+  type GitQueryData,
+  type GitStatus,
+} from "@/lib/gitStatusQuery"
 
 const REFRESH_DEBOUNCE_MS = 350
 const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
 
-const STATUS_STYLES: Record<Status, string> = {
+const STATUS_STYLES: Record<GitStatus, string> = {
   M: "text-amber-500",
   A: "text-emerald-500",
   D: "text-red-500",
@@ -75,71 +82,58 @@ export function RightSidebar({
 }: Props) {
   const [internalTab, setInternalTab] = useState<"changes" | "files">("changes")
   const tab = activeTab ?? internalTab
-  const [files, setFiles] = useState<GitFile[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
     null | "commit" | "push" | "sync"
   >(null)
-  const [ahead, setAhead] = useState(0)
-  const [behind, setBehind] = useState(0)
-  const [hasUpstream, setHasUpstream] = useState(false)
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null)
-  const [branches, setBranches] = useState<string[]>([])
   const [switchingBranch, setSwitchingBranch] = useState(false)
+
+  const queryClient = useQueryClient()
+  const currentGitQueryKey = useMemo(() => gitQueryKey(cwd), [cwd])
+  // Single combined query so switching projects shows the previously cached
+  // git state instantly (stale-while-revalidate). Key on cwd; gcTime keeps
+  // entries warm for 5 minutes after the last subscriber detaches.
+  const gitQuery = useQuery({
+    queryKey: currentGitQueryKey,
+    enabled: !!cwd,
+    queryFn: () => fetchGitQueryData(cwd!),
+  })
+
+  // `hasData` distinguishes "we've never seen data for this cwd" from "data
+  // loaded and empty". Used to suppress the counter badge / commit-button
+  // toggle until we actually know the answer — otherwise switching to a
+  // not-yet-loaded project flashes enabled→disabled.
+  const hasData = gitQuery.data !== undefined
+  const files = gitQuery.data?.files ?? EMPTY_GIT_FILES
+  const ahead = gitQuery.data?.ahead ?? 0
+  const behind = gitQuery.data?.behind ?? 0
+  const hasUpstream = gitQuery.data?.hasUpstream ?? false
+  const currentBranch = gitQuery.data?.currentBranch ?? null
+  const branches = gitQuery.data?.branches ?? []
+  const queryError = gitQuery.error
+    ? gitQuery.error instanceof Error
+      ? gitQuery.error.message
+      : String(gitQuery.error)
+    : null
+  const error = actionError ?? queryError
+  const loading = gitQuery.isLoading
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
 
-  const refresh = useCallback(
-    async (nextCwd: string, options?: { showLoading?: boolean }) => {
-      if (options?.showLoading) setLoading(true)
-      setError(null)
-      try {
-        const [status, ab, br] = await Promise.all([
-          window.git.status(nextCwd),
-          window.git.aheadBehind(nextCwd),
-          window.git.branches(nextCwd),
-        ])
-        if (!status.ok) {
-          setError(status.error ?? "Failed to load Git status")
-          setFiles([])
-        } else {
-          setFiles([
-            ...status.unstaged.map((f) => ({ ...f, staged: false })),
-            ...status.staged.map((f) => ({ ...f, staged: true })),
-          ])
-        }
-        if (ab.ok) {
-          setAhead(ab.ahead)
-          setBehind(ab.behind)
-          setHasUpstream(ab.hasUpstream)
-        }
-        if (br.ok) {
-          setCurrentBranch(br.current)
-          setBranches(br.branches)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (options?.showLoading) setLoading(false)
-      }
+  const updateCachedFiles = useCallback(
+    (paths: string[], staged: boolean) => {
+      queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
+        moveCachedGitFiles(data, paths, staged)
+      )
     },
-    [],
+    [currentGitQueryKey, queryClient]
   )
 
-  useEffect(() => {
-    if (!cwd) {
-      setFiles([])
-      setError(null)
-      return
-    }
-    if (!isActive) return
-    refresh(cwd, { showLoading: true })
-  }, [cwd, isActive, refresh])
-
+  // Coalesce overlapping refreshes — `git status` can take a beat on big
+  // repos and we don't want a stampede when fs events fire in bursts.
   const inFlightRef = useRef(false)
   const pendingRef = useRef(false)
   const runRefresh = useCallback(async () => {
@@ -150,7 +144,7 @@ export function RightSidebar({
     }
     inFlightRef.current = true
     try {
-      await refresh(cwd)
+      await queryClient.refetchQueries({ queryKey: currentGitQueryKey })
     } finally {
       inFlightRef.current = false
       if (pendingRef.current) {
@@ -158,10 +152,12 @@ export function RightSidebar({
         void runRefresh()
       }
     }
-  }, [cwd, refresh])
+  }, [cwd, currentGitQueryKey, queryClient])
 
+  // Watch the current project and keep the query cache in sync with external
+  // git/file operations.
   useEffect(() => {
-    if (!cwd || !isActive) return
+    if (!cwd) return
     let watchId: string | null = null
     let refreshTimer: number | null = null
     const scheduleRefresh = () => {
@@ -184,77 +180,91 @@ export function RightSidebar({
       offChanged()
       if (watchId) window.fsApi.unwatchProject(watchId)
     }
-  }, [cwd, isActive, runRefresh])
+  }, [cwd, runRefresh])
 
   const stagePath = useCallback(
     async (path: string) => {
       if (!cwd || busy) return
       setBusy(true)
+      setActionError(null)
       try {
-        await window.git.stage(cwd, [path])
-        await runRefresh()
+        const res = await window.git.stage(cwd, [path])
+        if (!res.ok) {
+          setActionError(res.error ?? "Stage failed")
+          return
+        }
+        updateCachedFiles([path], true)
+        void runRefresh()
       } finally {
         setBusy(false)
       }
     },
-    [cwd, busy, runRefresh],
+    [cwd, busy, runRefresh, updateCachedFiles]
   )
 
   const unstagePath = useCallback(
     async (path: string) => {
       if (!cwd || busy) return
       setBusy(true)
+      setActionError(null)
       try {
-        await window.git.unstage(cwd, [path])
-        await runRefresh()
+        const res = await window.git.unstage(cwd, [path])
+        if (!res.ok) {
+          setActionError(res.error ?? "Unstage failed")
+          return
+        }
+        updateCachedFiles([path], false)
+        void runRefresh()
       } finally {
         setBusy(false)
       }
     },
-    [cwd, busy, runRefresh],
+    [cwd, busy, runRefresh, updateCachedFiles]
   )
 
   const stageAll = useCallback(async () => {
     if (!cwd || busy || unstagedFiles.length === 0) return
     setBusy(true)
+    setActionError(null)
     try {
-      await window.git.stage(
-        cwd,
-        unstagedFiles.map((f) => f.path),
-      )
-      await runRefresh()
+      const paths = unstagedFiles.map((f) => f.path)
+      const res = await window.git.stage(cwd, paths)
+      if (!res.ok) {
+        setActionError(res.error ?? "Stage failed")
+        return
+      }
+      updateCachedFiles(paths, true)
+      void runRefresh()
     } finally {
       setBusy(false)
     }
-  }, [cwd, busy, unstagedFiles, runRefresh])
+  }, [cwd, busy, unstagedFiles, runRefresh, updateCachedFiles])
 
   const discardPath = useCallback(
     async (path: string) => {
       if (!cwd || busy) return
       if (
-        !window.confirm(
-          `Discard changes to "${path}"?\nThis cannot be undone.`,
-        )
+        !window.confirm(`Discard changes to "${path}"?\nThis cannot be undone.`)
       ) {
         return
       }
       setBusy(true)
       try {
         const res = await window.git.discard(cwd, [path])
-        if (!res.ok) setError(res.error ?? "Discard failed")
+        if (!res.ok) setActionError(res.error ?? "Discard failed")
         await runRefresh()
       } finally {
         setBusy(false)
       }
     },
-    [cwd, busy, runRefresh],
+    [cwd, busy, runRefresh]
   )
 
   const discardAllUnstaged = useCallback(async () => {
     if (!cwd || busy || unstagedFiles.length === 0) return
     if (
       !window.confirm(
-        `Discard changes to ${unstagedFiles.length} file${unstagedFiles.length === 1 ? "" : "s"}?\nThis cannot be undone.`,
+        `Discard changes to ${unstagedFiles.length} file${unstagedFiles.length === 1 ? "" : "s"}?\nThis cannot be undone.`
       )
     ) {
       return
@@ -263,9 +273,9 @@ export function RightSidebar({
     try {
       const res = await window.git.discard(
         cwd,
-        unstagedFiles.map((f) => f.path),
+        unstagedFiles.map((f) => f.path)
       )
-      if (!res.ok) setError(res.error ?? "Discard failed")
+      if (!res.ok) setActionError(res.error ?? "Discard failed")
       await runRefresh()
     } finally {
       setBusy(false)
@@ -275,36 +285,40 @@ export function RightSidebar({
   const unstageAll = useCallback(async () => {
     if (!cwd || busy || stagedFiles.length === 0) return
     setBusy(true)
+    setActionError(null)
     try {
-      await window.git.unstage(
-        cwd,
-        stagedFiles.map((f) => f.path),
-      )
-      await runRefresh()
+      const paths = stagedFiles.map((f) => f.path)
+      const res = await window.git.unstage(cwd, paths)
+      if (!res.ok) {
+        setActionError(res.error ?? "Unstage failed")
+        return
+      }
+      updateCachedFiles(paths, false)
+      void runRefresh()
     } finally {
       setBusy(false)
     }
-  }, [cwd, busy, stagedFiles, runRefresh])
+  }, [cwd, busy, stagedFiles, runRefresh, updateCachedFiles])
 
   const commit = useCallback(
     async (opts?: { push?: boolean }) => {
       if (!cwd || busy) return
       const message = commitMessage.trim()
       if (!message) {
-        setError("Commit message required")
+        setActionError("Commit message required")
         return
       }
       if (stagedFiles.length === 0) {
-        setError("Nothing staged to commit")
+        setActionError("Nothing staged to commit")
         return
       }
       setBusy(true)
       setCommitting("commit")
-      setError(null)
+      setActionError(null)
       try {
         const res = await window.git.commit(cwd, message)
         if (!res.ok) {
-          setError(res.error ?? "Commit failed")
+          setActionError(res.error ?? "Commit failed")
           return
         }
         setCommitMessage("")
@@ -312,7 +326,7 @@ export function RightSidebar({
           setCommitting("push")
           const pushRes = await window.git.push(cwd)
           if (!pushRes.ok) {
-            setError(pushRes.error ?? "Push failed")
+            setActionError(pushRes.error ?? "Push failed")
           }
         }
         await runRefresh()
@@ -321,20 +335,23 @@ export function RightSidebar({
         setCommitting(null)
       }
     },
-    [cwd, busy, commitMessage, stagedFiles.length, runRefresh],
+    [cwd, busy, commitMessage, stagedFiles.length, runRefresh]
   )
 
-  const canCommit = stagedFiles.length > 0 && commitMessage.trim().length > 0
+  // Gate on `hasData` so the button doesn't briefly enable on first project
+  // open before the initial fetch resolves.
+  const canCommit =
+    hasData && stagedFiles.length > 0 && commitMessage.trim().length > 0
 
   const switchBranch = useCallback(
     async (branch: string) => {
       if (!cwd || !branch || branch === currentBranch) return
       setSwitchingBranch(true)
-      setError(null)
+      setActionError(null)
       try {
         const res = await window.git.checkout(cwd, branch)
         if (!res.ok) {
-          setError(res.error ?? "Checkout failed")
+          setActionError(res.error ?? "Checkout failed")
           return
         }
         await runRefresh()
@@ -342,7 +359,7 @@ export function RightSidebar({
         setSwitchingBranch(false)
       }
     },
-    [cwd, currentBranch, runRefresh],
+    [cwd, currentBranch, runRefresh]
   )
 
   const createBranch = useCallback(
@@ -350,11 +367,11 @@ export function RightSidebar({
       const name = branch.trim()
       if (!cwd || !name) return
       setSwitchingBranch(true)
-      setError(null)
+      setActionError(null)
       try {
         const res = await window.git.createBranch(cwd, name)
         if (!res.ok) {
-          setError(res.error ?? "Create branch failed")
+          setActionError(res.error ?? "Create branch failed")
           return
         }
         await runRefresh()
@@ -362,26 +379,26 @@ export function RightSidebar({
         setSwitchingBranch(false)
       }
     },
-    [cwd, runRefresh],
+    [cwd, runRefresh]
   )
 
   const sync = useCallback(async () => {
     if (!cwd || busy) return
     setBusy(true)
     setCommitting("sync")
-    setError(null)
+    setActionError(null)
     try {
       if (behind > 0) {
         const pullRes = await window.git.pull(cwd)
         if (!pullRes.ok) {
-          setError(pullRes.error ?? "Pull failed")
+          setActionError(pullRes.error ?? "Pull failed")
           return
         }
       }
       if (ahead > 0) {
         const pushRes = await window.git.push(cwd)
         if (!pushRes.ok) {
-          setError(pushRes.error ?? "Push failed")
+          setActionError(pushRes.error ?? "Push failed")
           return
         }
       }
@@ -402,7 +419,7 @@ export function RightSidebar({
     if (!cwd || !isActive) return
     const id = window.setInterval(
       () => void runRefresh(),
-      largeChangeSet ? POLL_INTERVAL_LARGE_MS : POLL_INTERVAL_MS,
+      largeChangeSet ? POLL_INTERVAL_LARGE_MS : POLL_INTERVAL_MS
     )
     return () => window.clearInterval(id)
   }, [cwd, isActive, runRefresh, largeChangeSet])
@@ -422,11 +439,11 @@ export function RightSidebar({
           <TabsList variant="line" className="h-full gap-4 bg-transparent p-0">
             <TabsTrigger
               value="changes"
-              className="!h-full !border-0 gap-1.5 text-xs after:!bottom-[-1px] after:!h-px"
+              className="!h-full gap-1.5 !border-0 text-xs after:!bottom-[-1px] after:!h-px"
             >
               Changes
-              {files.length > 0 && (
-                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-indigo-500 px-1 text-[10px] font-medium leading-none text-white">
+              {hasData && files.length > 0 && (
+                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-indigo-500 px-1 text-[10px] leading-none font-medium text-white">
                   {files.length > 99 ? "99+" : files.length}
                 </span>
               )}
@@ -553,7 +570,8 @@ export function RightSidebar({
                           setBusy(true)
                           setCommitting("push")
                           window.git.push(cwd).then((res) => {
-                            if (!res.ok) setError(res.error ?? "Push failed")
+                            if (!res.ok)
+                              setActionError(res.error ?? "Push failed")
                             setBusy(false)
                             setCommitting(null)
                           })
@@ -678,8 +696,7 @@ function BranchPicker({
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (!open) setQuery("")
-    else requestAnimationFrame(() => inputRef.current?.focus())
+    if (open) requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
 
   const filtered = useMemo(() => {
@@ -695,11 +712,16 @@ function BranchPicker({
   // is a coarse client-side check — the server validates strictly.
   const isValidNewBranchName =
     trimmedQuery.length > 0 && !/[\s~^:?*[\\]/.test(trimmedQuery)
-  const canCreate =
-    isValidNewBranchName && !branches.includes(trimmedQuery)
+  const canCreate = isValidNewBranchName && !branches.includes(trimmedQuery)
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (!nextOpen) setQuery("")
+      }}
+    >
       <DropdownMenuTrigger
         render={
           <Button
@@ -711,9 +733,7 @@ function BranchPicker({
           >
             <span className="flex min-w-0 items-center gap-1.5">
               <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">
-                {current ?? "(detached HEAD)"}
-              </span>
+              <span className="truncate">{current ?? "(detached HEAD)"}</span>
             </span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </Button>
@@ -760,7 +780,8 @@ function BranchPicker({
             >
               <PlusCircle className="size-3.5 shrink-0" />
               <span className="truncate">
-                Create branch <span className="font-medium">{trimmedQuery}</span>
+                Create branch{" "}
+                <span className="font-medium">{trimmedQuery}</span>
               </span>
             </button>
           )}
@@ -777,7 +798,7 @@ function BranchPicker({
               <Check
                 className={cn(
                   "size-3.5 shrink-0",
-                  b === current ? "opacity-100" : "opacity-0",
+                  b === current ? "opacity-100" : "opacity-0"
                 )}
               />
               <span className="truncate">{b}</span>
@@ -812,7 +833,7 @@ function FileGroup({
 }) {
   return (
     <div className="group/section">
-      <div className="flex h-7 items-center gap-2 border-y border-border bg-muted/40 px-3 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="flex h-7 items-center gap-2 border-y border-border bg-muted/40 px-3 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
         <span>{label}</span>
         <span className="text-muted-foreground/70">{count}</span>
         <div className="ml-auto flex items-center gap-0.5">
@@ -892,59 +913,61 @@ function FileRow({
               name={file.path.split("/").pop() ?? file.path}
               className="size-4 shrink-0"
             />
-            <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-      <div className="flex items-center gap-0.5">
-        {onSecondaryAction && secondaryActionLabel && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  disabled={busy}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSecondaryAction()
-                  }}
-                  aria-label={secondaryActionLabel}
-                  className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover/row:opacity-100 disabled:cursor-not-allowed"
-                >
-                  {secondaryActionIcon}
-                </button>
-              }
-            />
-            <TooltipContent>{secondaryActionLabel}</TooltipContent>
-          </Tooltip>
-        )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                disabled={busy}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onAction()
-                }}
-                aria-label={actionLabel}
-                className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover/row:opacity-100 disabled:cursor-not-allowed"
-              >
-                {actionIcon}
-              </button>
-            }
-          />
-          <TooltipContent>{actionLabel}</TooltipContent>
-        </Tooltip>
-      </div>
-      <span
-        className={cn(
-          "w-4 text-center font-mono font-medium",
-          STATUS_STYLES[file.status] ?? "text-muted-foreground",
-        )}
-      >
-        {file.status}
-      </span>
+            <span className="min-w-0 flex-1 truncate font-mono">
+              {file.path}
+            </span>
+            <div className="flex items-center gap-0.5">
+              {onSecondaryAction && secondaryActionLabel && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSecondaryAction()
+                        }}
+                        aria-label={secondaryActionLabel}
+                        className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-colors group-hover/row:opacity-100 hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
+                      >
+                        {secondaryActionIcon}
+                      </button>
+                    }
+                  />
+                  <TooltipContent>{secondaryActionLabel}</TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onAction()
+                      }}
+                      aria-label={actionLabel}
+                      className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-colors group-hover/row:opacity-100 hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
+                    >
+                      {actionIcon}
+                    </button>
+                  }
+                />
+                <TooltipContent>{actionLabel}</TooltipContent>
+              </Tooltip>
+            </div>
+            <span
+              className={cn(
+                "w-4 text-center font-mono font-medium",
+                STATUS_STYLES[file.status] ?? "text-muted-foreground"
+              )}
+            >
+              {file.status}
+            </span>
           </li>
         }
       />

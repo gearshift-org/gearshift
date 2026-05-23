@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { WorkspacePane } from "./WorkspacePane"
 import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
 import { store } from "@/lib/store"
+import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type { Project } from "./types"
 
 const SIDEBAR_DEFAULT_PX = 410
@@ -19,11 +21,7 @@ type Props = {
   activeProjectId: string
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
-  onTerminalTitleChange?: (
-    tabId: string,
-    paneId: string,
-    title: string,
-  ) => void
+  onTerminalTitleChange?: (tabId: string, paneId: string, title: string) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
@@ -52,6 +50,7 @@ export function WorkspaceSplit({
   activeTreeFilePath,
 }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId)
+  const queryClient = useQueryClient()
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = loadSidebarWidth()
     return stored ? clampWidth(stored) : SIDEBAR_DEFAULT_PX
@@ -62,7 +61,7 @@ export function WorkspaceSplit({
         const stored = loadSidebarWidth()
         if (stored) setSidebarWidth(clampWidth(stored))
       }),
-    [],
+    []
   )
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -72,6 +71,16 @@ export function WorkspaceSplit({
     const id = window.setTimeout(() => saveSidebarWidth(sidebarWidth), 250)
     return () => window.clearTimeout(id)
   }, [sidebarWidth])
+
+  useEffect(() => {
+    for (const project of projects) {
+      if (project.id === activeProjectId) continue
+      void queryClient.prefetchQuery({
+        queryKey: gitQueryKey(project.path),
+        queryFn: () => fetchGitQueryData(project.path),
+      })
+    }
+  }, [activeProjectId, projects, queryClient])
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -102,13 +111,13 @@ export function WorkspaceSplit({
   const workspaceSection = (
     <div className="flex h-full flex-col">
       {workspaceTabs}
-      <div className="relative flex-1 min-h-0">
+      <div className="relative min-h-0 flex-1">
         {projects.map((p) => (
           <div
             key={p.id}
             className={cn(
               "absolute inset-0",
-              p.id !== activeProjectId && "invisible pointer-events-none",
+              p.id !== activeProjectId && "pointer-events-none invisible"
             )}
           >
             <WorkspacePane
@@ -136,7 +145,7 @@ export function WorkspaceSplit({
   // toggling unmounts `WorkspacePane`/`TerminalView`, the xterm remeasures
   // before layout settles, and TUIs (Claude Code, etc.) get stuck at cols=1.
   return (
-    <div ref={containerRef} className="flex flex-1 min-h-0">
+    <div ref={containerRef} className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1">{workspaceSection}</div>
       {sidebarOpen && (
         <div
@@ -152,42 +161,21 @@ export function WorkspaceSplit({
         style={{ width: sidebarOpen ? sidebarWidth : 0 }}
         className={cn(
           "relative h-full shrink-0 overflow-hidden",
-          !sidebarOpen && "pointer-events-none",
+          !sidebarOpen && "pointer-events-none"
         )}
         aria-hidden={!sidebarOpen}
       >
-        {projects.map((p) => (
-          <div
-            key={p.id}
-            className={cn(
-              "absolute inset-0",
-              p.id !== activeProjectId && "invisible pointer-events-none",
-            )}
-            style={{ width: sidebarWidth }}
-          >
-            <RightSidebar
-              cwd={p.path}
-              isActive={p.id === activeProjectId}
-              activeTab={rightSidebarTab}
-              onActiveTabChange={onRightSidebarTabChange}
-              activeFilePath={activeTreeFilePath}
-              onOpenDiff={onOpenDiffTab}
-              onOpenFile={onOpenFileTab}
-            />
-          </div>
-        ))}
-        {!activeProject && (
-          <div className="absolute inset-0" style={{ width: sidebarWidth }}>
-            <RightSidebar
-              cwd={null}
-              activeTab={rightSidebarTab}
-              onActiveTabChange={onRightSidebarTabChange}
-              activeFilePath={activeTreeFilePath}
-              onOpenDiff={onOpenDiffTab}
-              onOpenFile={onOpenFileTab}
-            />
-          </div>
-        )}
+        <div className="absolute inset-0" style={{ width: sidebarWidth }}>
+          <RightSidebar
+            cwd={activeProject?.path ?? null}
+            isActive={!!activeProject}
+            activeTab={rightSidebarTab}
+            onActiveTabChange={onRightSidebarTabChange}
+            activeFilePath={activeTreeFilePath}
+            onOpenDiff={onOpenDiffTab}
+            onOpenFile={onOpenFileTab}
+          />
+        </div>
       </div>
     </div>
   )

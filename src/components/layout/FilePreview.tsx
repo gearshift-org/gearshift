@@ -15,6 +15,13 @@ type LoadState =
   | { kind: "binary" }
   | { kind: "error"; message: string }
 
+const HIGHLIGHT_NAME = "gearshift-file-search"
+const HIGHLIGHT_ACTIVE_NAME = "gearshift-file-search-active"
+const HIGHLIGHT_STYLE = `
+::highlight(${HIGHLIGHT_NAME}) { background-color: rgba(250, 204, 21, 0.5); color: inherit; }
+::highlight(${HIGHLIGHT_ACTIVE_NAME}) { background-color: rgb(250, 204, 21); color: black; }
+`
+
 function joinPath(cwd: string, rel: string): string {
   if (rel.startsWith("/")) return rel
   return `${cwd.replace(/\/+$/, "")}/${rel}`
@@ -43,6 +50,7 @@ export function FilePreview({ cwd, path }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const bgRef = useRef<HTMLPreElement>(null)
 
   // Search overlay state.
   const [searchOpen, setSearchOpen] = useState(false)
@@ -76,6 +84,17 @@ export function FilePreview({ cwd, path }: Props) {
     }
   }, [abs])
 
+  // One-time global stylesheet for the highlight names.
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    if (document.head.querySelector("style[data-gearshift-file-search]"))
+      return
+    const s = document.createElement("style")
+    s.dataset.gearshiftFileSearch = "1"
+    s.textContent = HIGHLIGHT_STYLE
+    document.head.appendChild(s)
+  }, [])
+
   const save = async () => {
     if (state.kind !== "ready" || !dirty || saving) return
     setSaving(true)
@@ -95,35 +114,96 @@ export function FilePreview({ cwd, path }: Props) {
   )
   const matchCount = matches.length
 
-  // Reset match index when query/content changes.
   useEffect(() => {
     setMatchIdx(0)
   }, [query])
 
-  const focusMatch = (idx: number) => {
+  // Apply highlights to the bg <pre>'s text node.
+  useEffect(() => {
+    if (
+      typeof CSS === "undefined" ||
+      !("highlights" in CSS) ||
+      typeof Highlight === "undefined"
+    )
+      return
+    const highlights = CSS.highlights as Map<string, Highlight>
+    const pre = bgRef.current
+    const textNode = pre?.firstChild as Text | null | undefined
+    if (!textNode || matchCount === 0 || !query) {
+      highlights.delete(HIGHLIGHT_NAME)
+      highlights.delete(HIGHLIGHT_ACTIVE_NAME)
+      return
+    }
+    const currentIdx = matchIdx >= matchCount ? 0 : matchIdx
+    const restRanges: Range[] = []
+    let activeRange: Range | null = null
+    for (let i = 0; i < matches.length; i++) {
+      const [s, e] = matches[i]
+      const r = document.createRange()
+      try {
+        r.setStart(textNode, s)
+        r.setEnd(textNode, e)
+      } catch {
+        continue
+      }
+      if (i === currentIdx) activeRange = r
+      else restRanges.push(r)
+    }
+    highlights.set(HIGHLIGHT_NAME, new Highlight(...restRanges))
+    if (activeRange) {
+      highlights.set(HIGHLIGHT_ACTIVE_NAME, new Highlight(activeRange))
+    } else {
+      highlights.delete(HIGHLIGHT_ACTIVE_NAME)
+    }
+  }, [matches, matchCount, matchIdx, query, draft])
+
+  // Clean up on unmount.
+  useEffect(() => {
+    return () => {
+      if (typeof CSS !== "undefined" && "highlights" in CSS) {
+        ;(CSS.highlights as Map<string, Highlight>).delete(HIGHLIGHT_NAME)
+        ;(CSS.highlights as Map<string, Highlight>).delete(
+          HIGHLIGHT_ACTIVE_NAME,
+        )
+      }
+    }
+  }, [])
+
+  const scrollMatchIntoView = (idx: number) => {
     if (!matchCount) return
     const [start, end] = matches[((idx % matchCount) + matchCount) % matchCount]
     const ta = textareaRef.current
+    const pre = bgRef.current
     if (!ta) return
-    ta.focus({ preventScroll: false })
+    // setSelectionRange doesn't reliably auto-scroll across browsers, so
+    // compute the line and scroll manually. Keep the bg <pre> in sync.
+    const cs = window.getComputedStyle(ta)
+    const lineHeight =
+      parseFloat(cs.lineHeight) ||
+      parseFloat(cs.fontSize) * 1.4 ||
+      16
+    const linesBefore = draft.slice(0, start).split("\n").length - 1
+    const target = Math.max(
+      0,
+      linesBefore * lineHeight - ta.clientHeight / 2 + lineHeight / 2,
+    )
+    ta.scrollTop = target
+    if (pre) pre.scrollTop = target
+    // Selection (visible even when textarea isn't focused, just muted).
     ta.setSelectionRange(start, end)
-    // Best-effort scroll: textareas auto-scroll selection into view in most
-    // browsers; nudge by re-setting selectionEnd.
-    const tmp = ta.selectionEnd
-    ta.selectionEnd = tmp
   }
 
   const nextMatch = () => {
     if (!matchCount) return
     const next = (matchIdx + 1) % matchCount
     setMatchIdx(next)
-    focusMatch(next)
+    scrollMatchIntoView(next)
   }
   const prevMatch = () => {
     if (!matchCount) return
     const next = (matchIdx - 1 + matchCount) % matchCount
     setMatchIdx(next)
-    focusMatch(next)
+    scrollMatchIntoView(next)
   }
 
   // Cmd/Ctrl+F opens search; Cmd/Ctrl+S saves; Escape closes search.
@@ -180,7 +260,7 @@ export function FilePreview({ cwd, path }: Props) {
       onKeyDown={onKeyDown}
     >
       {searchOpen && (
-        <div className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-popover px-1 py-1 text-xs shadow-md">
+        <div className="absolute right-3 top-2 z-20 flex items-center gap-1 rounded-md border border-border bg-popover px-1 py-1 text-xs shadow-md">
           <input
             ref={searchInputRef}
             value={query}
@@ -245,13 +325,32 @@ export function FilePreview({ cwd, path }: Props) {
           {saveError && <span className="text-red-500">{saveError}</span>}
         </div>
       )}
-      <textarea
-        ref={textareaRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        spellCheck={false}
-        className="flex-1 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed whitespace-pre outline-none"
-      />
+      <div className="relative flex-1 min-h-0">
+        {/* Background: the text rendered as real text nodes so the CSS
+            Highlight API has something to highlight. */}
+        <pre
+          ref={bgRef}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 m-0 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre text-foreground"
+        >
+          {draft}
+        </pre>
+        {/* Foreground: invisible-text textarea that still accepts input and
+            shows the caret. Keep scroll/size identical so highlights line up. */}
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onScroll={(e) => {
+            const pre = bgRef.current
+            if (!pre) return
+            pre.scrollTop = e.currentTarget.scrollTop
+            pre.scrollLeft = e.currentTarget.scrollLeft
+          }}
+          spellCheck={false}
+          className="absolute inset-0 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed whitespace-pre text-transparent caret-foreground outline-none selection:bg-foreground/20 [-webkit-text-fill-color:transparent]"
+        />
+      </div>
     </div>
   )
 }

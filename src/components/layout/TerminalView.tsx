@@ -4,7 +4,9 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { SearchAddon } from "@xterm/addon-search"
 import { WebglAddon } from "@xterm/addon-webgl"
+import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { useTheme } from "@/components/theme-provider"
+import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { cn } from "@/lib/utils"
 import {
   ContextMenu,
@@ -376,14 +378,26 @@ export function TerminalView({
     // Drag & drop: append shell-quoted file paths to the prompt.
     const isFileDrag = (e: DragEvent) =>
       Array.from(e.dataTransfer?.types ?? []).includes("Files")
+    const isPathDrag = (e: DragEvent) => hasPathDragData(e.dataTransfer)
+    const pastePaths = (paths: string[]) => {
+      if (paths.length === 0) return
+      term.paste(paths.map(shellQuote).join(" ") + " ")
+      term.focus()
+    }
     const onDragOver = (e: DragEvent) => {
-      if (!isFileDrag(e)) return
+      if (!isFileDrag(e) && !isPathDrag(e)) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"
     }
     const onDrop = (e: DragEvent) => {
-      if (!isFileDrag(e)) return
+      if (!isFileDrag(e) && !isPathDrag(e)) return
       e.preventDefault()
+      const draggedPaths = getPathDragData(e.dataTransfer)
+      if (draggedPaths.length > 0) {
+        pastePaths(draggedPaths)
+        return
+      }
+
       const files = e.dataTransfer?.files
       if (!files || files.length === 0) return
       const paths: string[] = []
@@ -391,9 +405,7 @@ export function TerminalView({
         const p = window.electronUtils.getPathForFile(files[i])
         if (p) paths.push(p)
       }
-      if (paths.length === 0) return
-      term.paste(paths.map(shellQuote).join(" ") + " ")
-      term.focus()
+      pastePaths(paths)
     }
     container.addEventListener("dragover", onDragOver)
     container.addEventListener("drop", onDrop)
@@ -606,6 +618,7 @@ export function TerminalView({
             if (cwd) await window.shellApi.openInVSCode(cwd)
           }}
         >
+          <VSCodeIcon className="size-3.5" />
           Open in VS Code
         </ContextMenuItem>
       </ContextMenuContent>

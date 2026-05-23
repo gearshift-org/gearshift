@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { setPathDragData } from "@/lib/pathDrag"
 import { cn } from "@/lib/utils"
 
 type Entry = { name: string; isDir: boolean }
@@ -65,6 +66,8 @@ function FolderNode({
       {depth > 0 && (
         <button
           type="button"
+          draggable
+          onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
           onClick={() => setManuallyOpen((v) => !v)}
           className={cn(
             "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
@@ -114,6 +117,7 @@ function FolderNode({
               <FileNode
                 key={childAbs}
                 name={e.name}
+                absPath={childAbs}
                 relPath={childRel}
                 active={childRel === activePath}
                 depth={depth}
@@ -129,12 +133,14 @@ function FolderNode({
 
 function FileNode({
   name,
+  absPath,
   relPath,
   active,
   depth,
   onOpenFile,
 }: {
   name: string
+  absPath: string
   relPath: string
   active: boolean
   depth: number
@@ -151,6 +157,8 @@ function FileNode({
     <button
       ref={ref}
       type="button"
+      draggable
+      onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
       onClick={() => onOpenFile(relPath)}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",

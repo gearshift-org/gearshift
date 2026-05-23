@@ -89,6 +89,12 @@ const fsApi = {
       binary?: boolean
       size?: number
     }>,
+  listAllFiles: (cwd: string) =>
+    ipcRenderer.invoke("fs:listAllFiles", cwd) as Promise<{
+      ok: boolean
+      error?: string
+      files: string[]
+    }>,
 }
 
 type GitFileRaw = {

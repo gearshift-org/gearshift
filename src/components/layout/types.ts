@@ -18,6 +18,8 @@ export type DiffTab = {
   /** Path relative to project root. */
   path: string
   staged: boolean
+  /** True when opened as a "preview" — gets replaced by the next preview open. */
+  preview?: boolean
 }
 
 export type FileTab = {
@@ -26,6 +28,8 @@ export type FileTab = {
   name: string
   /** Path relative to project root. */
   path: string
+  /** True when opened as a "preview" — gets replaced by the next preview open. */
+  preview?: boolean
 }
 
 export type WorkspaceTab = TerminalTab | DiffTab | FileTab

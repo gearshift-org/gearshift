@@ -41,6 +41,7 @@ type Props = {
   onCloseToRight?: (id: string) => void
   onRename?: (id: string, name: string) => void
   onReorder?: (fromId: string, toId: string) => void
+  onPin?: (id: string) => void
   onOpenInVSCode?: () => void
 }
 
@@ -61,6 +62,7 @@ type TabItemProps = {
   onCloseAll?: () => void
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
+  onPin?: (id: string) => void
   onOpenInVSCode?: () => void
 }
 
@@ -86,11 +88,14 @@ function WorkspaceTabItem({
   onCloseAll,
   onCloseOthers,
   onCloseToRight,
+  onPin,
   onOpenInVSCode,
   total,
 }: TabItemProps) {
   const isRenaming = t.id === renamingId
   const isTerminal = t.kind === "terminal"
+  const isPreview =
+    (t.kind === "diff" || t.kind === "file") && t.preview === true
   const {
     attributes,
     listeners,
@@ -120,7 +125,11 @@ function WorkspaceTabItem({
         )}
         onClick={() => onSelect(t.id)}
         onDoubleClick={() => {
-          if (isTerminal) onStartRename(t)
+          if (isTerminal) {
+            onStartRename(t)
+          } else if (isPreview) {
+            onPin?.(t.id)
+          }
         }}
         {...attributes}
         {...listeners}
@@ -141,7 +150,9 @@ function WorkspaceTabItem({
             className="w-full bg-transparent text-xs outline-none"
           />
         ) : (
-          <span className="truncate">{tabDisplayName(t)}</span>
+          <span className={cn("truncate", isPreview && "italic")}>
+            {tabDisplayName(t)}
+          </span>
         )}
         {!isRenaming && (
           <Tooltip>
@@ -175,6 +186,14 @@ function WorkspaceTabItem({
           <>
             <ContextMenuItem onClick={() => onStartRename(t)}>
               Rename
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {isPreview && (
+          <>
+            <ContextMenuItem onClick={() => onPin?.(t.id)}>
+              Keep Open
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>
@@ -220,6 +239,7 @@ export function WorkspaceTabBar({
   onCloseToRight,
   onRename,
   onReorder,
+  onPin,
   onOpenInVSCode,
 }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -282,6 +302,7 @@ export function WorkspaceTabBar({
                 onCloseAll={onCloseAll}
                 onCloseOthers={onCloseOthers}
                 onCloseToRight={onCloseToRight}
+                onPin={onPin}
                 onOpenInVSCode={onOpenInVSCode}
               />
             ))}

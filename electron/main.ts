@@ -418,6 +418,24 @@ app.whenReady().then(() => {
     },
   )
 
+  ipcMain.handle("fs:listAllFiles", async (_event, cwd: string) => {
+    if (!cwd) return { ok: false, files: [] }
+    try {
+      // Tracked + untracked, minus gitignored. Null-separated for safety.
+      const out = await runGit(cwd, [
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ])
+      const files = out.split("\0").filter(Boolean)
+      return { ok: true, files }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message, files: [] }
+    }
+  })
+
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }
     try {

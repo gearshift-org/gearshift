@@ -122,3 +122,22 @@ export function saveSidebarWidth(width: number): void {
     // ignore quota errors
   }
 }
+
+const SIDEBAR_OPEN_KEY = "gearshift.sidebarOpen"
+
+export function loadSidebarOpen(): boolean {
+  try {
+    // Default closed when nothing is stored.
+    return localStorage.getItem(SIDEBAR_OPEN_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+export function saveSidebarOpen(open: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0")
+  } catch {
+    // ignore
+  }
+}

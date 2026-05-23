@@ -3,13 +3,16 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { TitleBar } from "./TitleBar"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
+import { CommandPalette } from "./CommandPalette"
 import type { Project, WorkspaceTab } from "./types"
 import {
   loadProjects,
   loadRecentProjects,
+  loadSidebarOpen,
   pushRecentProject,
   saveActiveProjectId,
   saveProjects,
+  saveSidebarOpen,
   type RecentProject,
 } from "@/lib/projects"
 
@@ -70,7 +73,12 @@ export function AppShell() {
     loadRecentProjects(),
   )
 
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
+
+  useEffect(() => {
+    saveSidebarOpen(sidebarOpen)
+  }, [sidebarOpen])
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   const activeProjectId =
     (routeProjectId && projects.some((p) => p.id === routeProjectId)
@@ -351,11 +359,35 @@ export function AppShell() {
   const openDiffTab = useCallback(
     (path: string, staged: boolean) => {
       if (!activeProject) return
-      const existing = activeProject.tabs.find(
+      // Already open (pinned or preview) for the exact same path/staged — focus.
+      const exact = activeProject.tabs.find(
         (t) => t.kind === "diff" && t.path === path && t.staged === staged,
       )
-      if (existing) {
-        navigateToTab(existing.id)
+      if (exact) {
+        navigateToTab(exact.id)
+        return
+      }
+      // Reuse the existing preview diff tab if any (VS Code-style).
+      const preview = activeProject.tabs.find(
+        (t) => t.kind === "diff" && t.preview,
+      )
+      if (preview) {
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === activeProject.id
+              ? {
+                  ...p,
+                  tabs: p.tabs.map((t) =>
+                    t.id === preview.id && t.kind === "diff"
+                      ? { ...t, path, staged, name: basename(path) }
+                      : t,
+                  ),
+                  activeTabId: preview.id,
+                }
+              : p,
+          ),
+        )
+        navigateToTab(preview.id)
         return
       }
       const id = makeId()
@@ -372,6 +404,7 @@ export function AppShell() {
                     name: basename(path),
                     path,
                     staged,
+                    preview: true,
                   },
                 ],
                 activeTabId: id,
@@ -387,11 +420,34 @@ export function AppShell() {
   const openFileTab = useCallback(
     (path: string) => {
       if (!activeProject) return
-      const existing = activeProject.tabs.find(
+      const exact = activeProject.tabs.find(
         (t) => t.kind === "file" && t.path === path,
       )
-      if (existing) {
-        navigateToTab(existing.id)
+      if (exact) {
+        navigateToTab(exact.id)
+        return
+      }
+      // Reuse the existing preview file tab if any.
+      const preview = activeProject.tabs.find(
+        (t) => t.kind === "file" && t.preview,
+      )
+      if (preview) {
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === activeProject.id
+              ? {
+                  ...p,
+                  tabs: p.tabs.map((t) =>
+                    t.id === preview.id && t.kind === "file"
+                      ? { ...t, path, name: basename(path) }
+                      : t,
+                  ),
+                  activeTabId: preview.id,
+                }
+              : p,
+          ),
+        )
+        navigateToTab(preview.id)
         return
       }
       const id = makeId()
@@ -402,7 +458,13 @@ export function AppShell() {
                 ...p,
                 tabs: [
                   ...p.tabs,
-                  { kind: "file" as const, id, name: basename(path), path },
+                  {
+                    kind: "file" as const,
+                    id,
+                    name: basename(path),
+                    path,
+                    preview: true,
+                  },
                 ],
                 activeTabId: id,
               }
@@ -413,6 +475,24 @@ export function AppShell() {
     },
     [activeProject, navigateToTab],
   )
+
+  /** Pin a preview tab so subsequent file clicks don't replace it. */
+  const pinTab = (id: string) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === activeProjectId
+          ? {
+              ...p,
+              tabs: p.tabs.map((t) =>
+                t.id === id && (t.kind === "diff" || t.kind === "file")
+                  ? { ...t, preview: false }
+                  : t,
+              ),
+            }
+          : p,
+      ),
+    )
+  }
 
   const startingTerminalsRef = useRef(new Set<string>())
 
@@ -620,6 +700,10 @@ export function AppShell() {
         e.preventDefault()
         setSidebarOpen((v) => !v)
       }
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
@@ -627,6 +711,15 @@ export function AppShell() {
 
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        projects={projects}
+        activeProject={activeProject}
+        onSelectProject={selectProject}
+        onSelectTab={selectTab}
+        onOpenFile={openFileTab}
+      />
       <TitleBar
         projects={projects}
         activeProjectId={activeProjectId}
@@ -667,6 +760,7 @@ export function AppShell() {
               onCloseToRight={closeTabsToRight}
               onRename={renameTab}
               onReorder={reorderTabs}
+              onPin={pinTab}
               onOpenInVSCode={() =>
                 void window.shellApi.openInVSCode(activeProject.path)
               }

@@ -1,4 +1,4 @@
-import type { TerminalTab } from "./types"
+import type { TerminalTab, WorkspaceTab } from "./types"
 
 // Strip leading sparkle/asterisk-style glyphs that some TUIs (e.g. Claude Code)
 // prepend to their window title — we already render a dedicated agent icon
@@ -30,4 +30,10 @@ export function formatAutoTitle(title: string | undefined): string | undefined {
 
 export function displayName(t: TerminalTab): string {
   return t.customName?.trim() || formatAutoTitle(t.autoTitle) || t.name
+}
+
+/** Display name for any workspace tab kind. */
+export function tabDisplayName(t: WorkspaceTab): string {
+  if (t.kind === "terminal") return displayName(t)
+  return t.name
 }

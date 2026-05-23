@@ -35,15 +35,15 @@ const projectIndexRoute = createRoute({
   component: () => null,
 })
 
-const terminalRoute = createRoute({
+const tabRoute = createRoute({
   getParentRoute: () => projectRoute,
-  path: "terminals/$terminalId",
+  path: "tabs/$tabId",
   component: () => null,
 })
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  projectRoute.addChildren([projectIndexRoute, terminalRoute]),
+  projectRoute.addChildren([projectIndexRoute, tabRoute]),
 ])
 
 function initialPath(): string {

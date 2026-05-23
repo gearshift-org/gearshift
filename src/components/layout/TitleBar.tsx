@@ -22,8 +22,8 @@ type Props = {
   onCloseProjectsToRight?: (id: string) => void
   onOpenProjectInVSCode?: (id: string) => void
   onReorderProjects?: (fromId: string, toId: string) => void
-  changesPaneOpen?: boolean
-  onToggleChangesPane?: () => void
+  sidebarOpen?: boolean
+  onToggleSidebar?: () => void
 }
 
 export function TitleBar({
@@ -38,8 +38,8 @@ export function TitleBar({
   onCloseProjectsToRight,
   onOpenProjectInVSCode,
   onReorderProjects,
-  changesPaneOpen,
-  onToggleChangesPane,
+  sidebarOpen,
+  onToggleSidebar,
 }: Props) {
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
@@ -59,7 +59,7 @@ export function TitleBar({
       />
       <div className="flex-1" />
       <ThemeToggle />
-      {onToggleChangesPane && (
+      {onToggleSidebar && (
         <div className="flex items-center pr-1 [-webkit-app-region:no-drag]">
           <Tooltip>
             <TooltipTrigger
@@ -67,10 +67,10 @@ export function TitleBar({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={onToggleChangesPane}
-                  aria-pressed={changesPaneOpen}
+                  onClick={onToggleSidebar}
+                  aria-pressed={sidebarOpen}
                   aria-label={
-                    changesPaneOpen ? "Hide changes" : "Show changes"
+                    sidebarOpen ? "Hide sidebar" : "Show sidebar"
                   }
                 >
                   <PanelRight />
@@ -78,7 +78,7 @@ export function TitleBar({
               }
             />
             <TooltipContent>
-              {changesPaneOpen ? "Hide changes" : "Show changes"}
+              {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             </TooltipContent>
           </Tooltip>
         </div>

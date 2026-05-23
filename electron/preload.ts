@@ -74,6 +74,21 @@ const fsApi = {
     ipcRenderer.on("fs:changed", listener)
     return () => ipcRenderer.removeListener("fs:changed", listener)
   },
+  readDir: (absPath: string) =>
+    ipcRenderer.invoke("fs:readDir", absPath) as Promise<{
+      ok: boolean
+      error?: string
+      entries: { name: string; isDir: boolean }[]
+    }>,
+  readFile: (absPath: string) =>
+    ipcRenderer.invoke("fs:readFile", absPath) as Promise<{
+      ok: boolean
+      error?: string
+      content?: string
+      tooLarge?: boolean
+      binary?: boolean
+      size?: number
+    }>,
 }
 
 type GitFileRaw = {
@@ -95,6 +110,37 @@ const gitApi = {
       error?: string
       unstagedPatch: string
       stagedPatch: string
+    }>,
+  diffFile: (cwd: string, path: string, staged: boolean) =>
+    ipcRenderer.invoke("git:diffFile", cwd, path, staged) as Promise<{
+      ok: boolean
+      error?: string
+      patch: string
+    }>,
+  stage: (cwd: string, paths: string[]) =>
+    ipcRenderer.invoke("git:stage", cwd, paths) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  unstage: (cwd: string, paths: string[]) =>
+    ipcRenderer.invoke("git:unstage", cwd, paths) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  commit: (cwd: string, message: string) =>
+    ipcRenderer.invoke("git:commit", cwd, message) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  push: (cwd: string) =>
+    ipcRenderer.invoke("git:push", cwd) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  discard: (cwd: string, paths: string[]) =>
+    ipcRenderer.invoke("git:discard", cwd, paths) as Promise<{
+      ok: boolean
+      error?: string
     }>,
 }
 

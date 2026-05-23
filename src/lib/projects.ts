@@ -101,3 +101,24 @@ export function saveActiveProjectId(id: string): void {
   if (id) localStorage.setItem(ACTIVE_KEY, id)
   else localStorage.removeItem(ACTIVE_KEY)
 }
+
+const SIDEBAR_WIDTH_KEY = "gearshift.sidebarWidth"
+
+export function loadSidebarWidth(): number | null {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY)
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+export function saveSidebarWidth(width: number): void {
+  try {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width)))
+  } catch {
+    // ignore quota errors
+  }
+}

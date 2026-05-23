@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { TitleBar } from "./TitleBar"
-import { TerminalTabBar } from "./TerminalTabBar"
+import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
-import type { Project } from "./types"
+import type { Project, WorkspaceTab } from "./types"
 import {
   loadProjects,
   loadRecentProjects,
@@ -22,40 +22,47 @@ function basename(p: string) {
 }
 
 function serializeProjects(projects: Project[]) {
-  return projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    path: p.path,
-    activeTabId: p.activeTerminalId,
-    tabs: p.terminals.map((t) => ({
-      id: t.id,
-      name: t.name,
-      ...(t.customName ? { customName: t.customName } : {}),
-    })),
-  }))
+  return projects.map((p) => {
+    const terminals = p.tabs.filter((t) => t.kind === "terminal")
+    const activeTerminal = terminals.find((t) => t.id === p.activeTabId)
+    return {
+      id: p.id,
+      name: p.name,
+      path: p.path,
+      // Only persist the active id if it points at a terminal — diff/file tabs
+      // are ephemeral.
+      activeTabId: activeTerminal?.id ?? terminals[0]?.id ?? "",
+      tabs: terminals.map((t) => ({
+        id: t.id,
+        name: t.name,
+        ...(t.customName ? { customName: t.customName } : {}),
+      })),
+    }
+  })
 }
 
 export function AppShell() {
   const navigate = useNavigate()
   const params = useParams({ strict: false }) as {
     projectId?: string
-    terminalId?: string
+    tabId?: string
   }
   const routeProjectId = params.projectId ?? null
-  const routeTerminalId = params.terminalId ?? null
+  const routeTabId = params.tabId ?? null
 
   const [projects, setProjects] = useState<Project[]>(() =>
     loadProjects().map((p) => ({
       id: p.id,
       name: p.name,
       path: p.path,
-      terminals: (p.tabs ?? []).map((t) => ({
+      tabs: (p.tabs ?? []).map((t) => ({
+        kind: "terminal" as const,
         id: t.id,
         name: t.name,
         customName: t.customName,
         pendingStart: true,
       })),
-      activeTerminalId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
+      activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
     })),
   )
 
@@ -63,45 +70,38 @@ export function AppShell() {
     loadRecentProjects(),
   )
 
-  const [changesPaneOpen, setChangesPaneOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  // Resolve current project from the route (with fallback to first project).
   const activeProjectId =
     (routeProjectId && projects.some((p) => p.id === routeProjectId)
       ? routeProjectId
       : projects[0]?.id) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
 
-  // Resolve current terminal: route → project's last-active → first.
-  const activeTerminalId = (() => {
+  const activeTabId = (() => {
     if (!activeProject) return ""
-    if (
-      routeTerminalId &&
-      activeProject.terminals.some((t) => t.id === routeTerminalId)
-    ) {
-      return routeTerminalId
+    if (routeTabId && activeProject.tabs.some((t) => t.id === routeTabId)) {
+      return routeTabId
     }
     if (
-      activeProject.activeTerminalId &&
-      activeProject.terminals.some(
-        (t) => t.id === activeProject.activeTerminalId,
-      )
+      activeProject.activeTabId &&
+      activeProject.tabs.some((t) => t.id === activeProject.activeTabId)
     ) {
-      return activeProject.activeTerminalId
+      return activeProject.activeTabId
     }
-    return activeProject.terminals[0]?.id ?? ""
+    return activeProject.tabs[0]?.id ?? ""
   })()
 
   const navigateToProject = useCallback(
-    (id: string | null, terminalId?: string) => {
+    (id: string | null, tabId?: string) => {
       if (!id) {
         void navigate({ to: "/" })
         return
       }
-      if (terminalId) {
+      if (tabId) {
         void navigate({
-          to: "/projects/$projectId/terminals/$terminalId",
-          params: { projectId: id, terminalId },
+          to: "/projects/$projectId/tabs/$tabId",
+          params: { projectId: id, tabId },
         })
       } else {
         void navigate({
@@ -113,44 +113,38 @@ export function AppShell() {
     [navigate],
   )
 
-  const navigateToTerminal = useCallback(
-    (terminalId: string) => {
-      if (!activeProjectId || !terminalId) return
+  const navigateToTab = useCallback(
+    (tabId: string) => {
+      if (!activeProjectId || !tabId) return
       void navigate({
-        to: "/projects/$projectId/terminals/$terminalId",
-        params: { projectId: activeProjectId, terminalId },
+        to: "/projects/$projectId/tabs/$tabId",
+        params: { projectId: activeProjectId, tabId },
       })
     },
     [navigate, activeProjectId],
   )
 
-  // Persist last-active project id from the route.
   useEffect(() => {
     saveActiveProjectId(activeProjectId)
   }, [activeProjectId])
 
-  // Sync project's stored activeTerminalId with whatever the route shows so
-  // future project switches restore the last terminal the user was on.
   useEffect(() => {
-    if (!activeProjectId || !activeTerminalId) return
+    if (!activeProjectId || !activeTabId) return
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId && p.activeTerminalId !== activeTerminalId
-          ? { ...p, activeTerminalId }
+        p.id === activeProjectId && p.activeTabId !== activeTabId
+          ? { ...p, activeTabId }
           : p,
       ),
     )
-  }, [activeProjectId, activeTerminalId])
+  }, [activeProjectId, activeTabId])
 
-  // If the URL points at a missing project (e.g. after closing one) redirect
-  // to whatever is active now.
   useEffect(() => {
     if (routeProjectId && !projects.some((p) => p.id === routeProjectId)) {
       navigateToProject(activeProjectId || null)
     }
   }, [routeProjectId, projects, activeProjectId, navigateToProject])
 
-  // Seed recents with currently-open projects on first mount.
   useEffect(() => {
     let next = recents
     for (const p of projects) {
@@ -162,7 +156,6 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Persist project list + tabs whenever it changes.
   useEffect(() => {
     saveProjects(serializeProjects(projects))
   }, [projects])
@@ -170,7 +163,7 @@ export function AppShell() {
   // Auto-spawn one terminal only when an active project has no tabs at all.
   useEffect(() => {
     if (!activeProject) return
-    if (activeProject.terminals.length > 0) return
+    if (activeProject.tabs.length > 0) return
     let cancelled = false
     ;(async () => {
       const { id } = await window.term.create({ cwd: activeProject.path })
@@ -183,15 +176,17 @@ export function AppShell() {
           p.id === activeProject.id
             ? {
                 ...p,
-                terminals: [{ id, name: "Terminal 1" }],
-                activeTerminalId: id,
+                tabs: [
+                  { kind: "terminal", id, name: "Terminal 1" },
+                ] as WorkspaceTab[],
+                activeTabId: id,
               }
             : p,
         ),
       )
       void navigate({
-        to: "/projects/$projectId/terminals/$terminalId",
-        params: { projectId: activeProject.id, terminalId: id },
+        to: "/projects/$projectId/tabs/$tabId",
+        params: { projectId: activeProject.id, tabId: id },
         replace: true,
       })
     })()
@@ -203,7 +198,7 @@ export function AppShell() {
   const openProjectByPath = (path: string, name?: string) => {
     const existing = projects.find((p) => p.path === path)
     if (existing) {
-      navigateToProject(existing.id, existing.activeTerminalId || undefined)
+      navigateToProject(existing.id, existing.activeTabId || undefined)
       return
     }
     const id = makeId()
@@ -214,8 +209,8 @@ export function AppShell() {
         id,
         name: resolvedName,
         path,
-        terminals: [],
-        activeTerminalId: "",
+        tabs: [],
+        activeTabId: "",
       },
     ])
     navigateToProject(id)
@@ -234,25 +229,22 @@ export function AppShell() {
 
   const selectProject = (id: string) => {
     const p = projects.find((x) => x.id === id)
-    navigateToProject(id, p?.activeTerminalId || undefined)
+    navigateToProject(id, p?.activeTabId || undefined)
   }
 
   const closeProject = (id: string) => {
     setProjects((prev) => {
       const target = prev.find((p) => p.id === id)
       if (target) {
-        for (const t of target.terminals) {
-          if (!t.pendingStart) window.term.kill(t.id)
+        for (const t of target.tabs) {
+          if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
         }
       }
       const next = prev.filter((p) => p.id !== id)
       if (id === activeProjectId) {
         const nextActive = next[0]
         if (nextActive) {
-          navigateToProject(
-            nextActive.id,
-            nextActive.activeTerminalId || undefined,
-          )
+          navigateToProject(nextActive.id, nextActive.activeTabId || undefined)
         } else {
           navigateToProject(null)
         }
@@ -268,15 +260,15 @@ export function AppShell() {
       const toClose = prev.slice(idx + 1)
       if (toClose.length === 0) return prev
       for (const p of toClose) {
-        for (const t of p.terminals) {
-          if (!t.pendingStart) window.term.kill(t.id)
+        for (const t of p.tabs) {
+          if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
         }
       }
       const closedIds = new Set(toClose.map((p) => p.id))
       const next = prev.filter((p) => !closedIds.has(p.id))
       if (closedIds.has(activeProjectId)) {
         const keep = next.find((p) => p.id === id)
-        navigateToProject(id, keep?.activeTerminalId || undefined)
+        navigateToProject(id, keep?.activeTabId || undefined)
       }
       return next
     })
@@ -301,18 +293,18 @@ export function AppShell() {
     })
   }
 
-  const reorderTerminals = (fromId: string, toId: string) => {
+  const reorderTabs = (fromId: string, toId: string) => {
     if (fromId === toId || !activeProject) return
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProjectId) return p
-        const from = p.terminals.findIndex((t) => t.id === fromId)
-        const to = p.terminals.findIndex((t) => t.id === toId)
+        const from = p.tabs.findIndex((t) => t.id === fromId)
+        const to = p.tabs.findIndex((t) => t.id === toId)
         if (from < 0 || to < 0) return p
-        const terminals = p.terminals.slice()
-        const [moved] = terminals.splice(from, 1)
-        terminals.splice(to, 0, moved)
-        return { ...p, terminals }
+        const tabs = p.tabs.slice()
+        const [moved] = tabs.splice(from, 1)
+        tabs.splice(to, 0, moved)
+        return { ...p, tabs }
       }),
     )
   }
@@ -321,13 +313,13 @@ export function AppShell() {
     setProjects((prev) => {
       for (const p of prev) {
         if (p.id === keepId) continue
-        for (const t of p.terminals) {
-          if (!t.pendingStart) window.term.kill(t.id)
+        for (const t of p.tabs) {
+          if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
         }
       }
       const next = prev.filter((p) => p.id === keepId)
       const keep = next[0]
-      navigateToProject(keepId, keep?.activeTerminalId || undefined)
+      navigateToProject(keepId, keep?.activeTabId || undefined)
       return next
     })
   }
@@ -338,26 +330,98 @@ export function AppShell() {
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProject.id) return p
+        const terminalCount = p.tabs.filter((t) => t.kind === "terminal").length
         return {
           ...p,
-          terminals: [
-            ...p.terminals,
-            { id, name: `Terminal ${p.terminals.length + 1}` },
+          tabs: [
+            ...p.tabs,
+            {
+              kind: "terminal" as const,
+              id,
+              name: `Terminal ${terminalCount + 1}`,
+            },
           ],
-          activeTerminalId: id,
+          activeTabId: id,
         }
       }),
     )
-    navigateToTerminal(id)
+    navigateToTab(id)
   }
+
+  const openDiffTab = useCallback(
+    (path: string, staged: boolean) => {
+      if (!activeProject) return
+      const existing = activeProject.tabs.find(
+        (t) => t.kind === "diff" && t.path === path && t.staged === staged,
+      )
+      if (existing) {
+        navigateToTab(existing.id)
+        return
+      }
+      const id = makeId()
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProject.id
+            ? {
+                ...p,
+                tabs: [
+                  ...p.tabs,
+                  {
+                    kind: "diff" as const,
+                    id,
+                    name: basename(path),
+                    path,
+                    staged,
+                  },
+                ],
+                activeTabId: id,
+              }
+            : p,
+        ),
+      )
+      navigateToTab(id)
+    },
+    [activeProject, navigateToTab],
+  )
+
+  const openFileTab = useCallback(
+    (path: string) => {
+      if (!activeProject) return
+      const existing = activeProject.tabs.find(
+        (t) => t.kind === "file" && t.path === path,
+      )
+      if (existing) {
+        navigateToTab(existing.id)
+        return
+      }
+      const id = makeId()
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProject.id
+            ? {
+                ...p,
+                tabs: [
+                  ...p.tabs,
+                  { kind: "file" as const, id, name: basename(path), path },
+                ],
+                activeTabId: id,
+              }
+            : p,
+        ),
+      )
+      navigateToTab(id)
+    },
+    [activeProject, navigateToTab],
+  )
 
   const startingTerminalsRef = useRef(new Set<string>())
 
   const startTerminal = useCallback(
     async (projectId: string, tabId: string) => {
       const project = projects.find((p) => p.id === projectId)
-      const tab = project?.terminals.find((t) => t.id === tabId)
-      if (!project || !tab?.pendingStart) return
+      const tab = project?.tabs.find((t) => t.id === tabId)
+      if (!project || !tab || tab.kind !== "terminal" || !tab.pendingStart)
+        return
 
       const startKey = `${projectId}:${tabId}`
       if (startingTerminalsRef.current.has(startKey)) return
@@ -370,23 +434,23 @@ export function AppShell() {
             if (p.id !== projectId) return p
             return {
               ...p,
-              terminals: p.terminals.map((t) =>
-                t.id === tabId ? { ...t, id: newId, pendingStart: false } : t,
+              tabs: p.tabs.map((t) =>
+                t.id === tabId && t.kind === "terminal"
+                  ? { ...t, id: newId, pendingStart: false }
+                  : t,
               ),
-              activeTerminalId:
-                p.activeTerminalId === tabId ? newId : p.activeTerminalId,
+              activeTabId: p.activeTabId === tabId ? newId : p.activeTabId,
             }
           }),
         )
-        // If the URL pointed at the placeholder, update it to the real id.
         if (
           routeProjectId === projectId &&
-          routeTerminalId === tabId &&
+          routeTabId === tabId &&
           tabId !== newId
         ) {
           void navigate({
-            to: "/projects/$projectId/terminals/$terminalId",
-            params: { projectId, terminalId: newId },
+            to: "/projects/$projectId/tabs/$tabId",
+            params: { projectId, tabId: newId },
             replace: true,
           })
         }
@@ -394,31 +458,29 @@ export function AppShell() {
         startingTerminalsRef.current.delete(startKey)
       }
     },
-    [projects, navigate, routeProjectId, routeTerminalId],
+    [projects, navigate, routeProjectId, routeTabId],
   )
 
   useEffect(() => {
-    if (!activeProject || !activeTerminalId) return
-    const activeTab = activeProject.terminals.find(
-      (t) => t.id === activeTerminalId,
-    )
-    if (activeTab?.pendingStart) {
+    if (!activeProject || !activeTabId) return
+    const activeTab = activeProject.tabs.find((t) => t.id === activeTabId)
+    if (activeTab?.kind === "terminal" && activeTab.pendingStart) {
       void startTerminal(activeProject.id, activeTab.id)
     }
-  }, [activeProject, activeTerminalId, startTerminal])
+  }, [activeProject, activeTabId, startTerminal])
 
-  const selectTerminal = (id: string) => {
-    navigateToTerminal(id)
-  }
+  const selectTab = (id: string) => navigateToTab(id)
 
-  const setTerminalTitle = (terminalId: string, title: string) => {
+  const setTerminalTitle = (tabId: string, title: string) => {
     setProjects((prev) => {
       const next = prev.map((p) =>
-        p.terminals.some((t) => t.id === terminalId)
+        p.tabs.some((t) => t.id === tabId)
           ? {
               ...p,
-              terminals: p.terminals.map((t) =>
-                t.id === terminalId ? { ...t, autoTitle: title } : t,
+              tabs: p.tabs.map((t) =>
+                t.id === tabId && t.kind === "terminal"
+                  ? { ...t, autoTitle: title }
+                  : t,
               ),
             }
           : p,
@@ -428,14 +490,14 @@ export function AppShell() {
     })
   }
 
-  const renameTerminal = (terminalId: string, name: string) => {
+  const renameTab = (tabId: string, name: string) => {
     setProjects((prev) =>
       prev.map((p) =>
         p.id === activeProjectId
           ? {
               ...p,
-              terminals: p.terminals.map((t) =>
-                t.id === terminalId
+              tabs: p.tabs.map((t) =>
+                t.id === tabId && t.kind === "terminal"
                   ? { ...t, customName: name || undefined }
                   : t,
               ),
@@ -445,115 +507,122 @@ export function AppShell() {
     )
   }
 
-  const closeTerminal = (id: string) => {
-    const tab = activeProject?.terminals.find((t) => t.id === id)
-    if (tab && !tab.pendingStart) window.term.kill(id)
+  const closeTab = (id: string) => {
+    const tab = activeProject?.tabs.find((t) => t.id === id)
+    if (tab?.kind === "terminal" && !tab.pendingStart) window.term.kill(id)
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProjectId) return p
-        const closingIdx = p.terminals.findIndex((t) => t.id === id)
-        const terminals = p.terminals.filter((t) => t.id !== id)
-        let nextActive = p.activeTerminalId
-        if (p.activeTerminalId === id) {
+        const closingIdx = p.tabs.findIndex((t) => t.id === id)
+        const tabs = p.tabs.filter((t) => t.id !== id)
+        let nextActive = p.activeTabId
+        if (p.activeTabId === id) {
           const nextIdx = Math.max(0, closingIdx - 1)
-          nextActive = terminals[nextIdx]?.id ?? ""
+          nextActive = tabs[nextIdx]?.id ?? ""
         }
-        return { ...p, terminals, activeTerminalId: nextActive }
+        return { ...p, tabs, activeTabId: nextActive }
       }),
     )
-    if (id === activeTerminalId) {
-      const closingIdx =
-        activeProject?.terminals.findIndex((t) => t.id === id) ?? -1
-      const remaining =
-        activeProject?.terminals.filter((t) => t.id !== id) ?? []
+    if (id === activeTabId) {
+      const closingIdx = activeProject?.tabs.findIndex((t) => t.id === id) ?? -1
+      const remaining = activeProject?.tabs.filter((t) => t.id !== id) ?? []
       const nextIdx = Math.max(0, closingIdx - 1)
       const next = remaining[nextIdx]?.id
-      if (next) navigateToTerminal(next)
+      if (next) navigateToTab(next)
       else if (activeProjectId) navigateToProject(activeProjectId)
     }
   }
 
-  const closeTerminalsToRight = (id: string) => {
+  const closeTabsToRight = (id: string) => {
     if (!activeProject) return
-    const idx = activeProject.terminals.findIndex((t) => t.id === id)
+    const idx = activeProject.tabs.findIndex((t) => t.id === id)
     if (idx < 0) return
-    const toClose = activeProject.terminals.slice(idx + 1)
+    const toClose = activeProject.tabs.slice(idx + 1)
     if (toClose.length === 0) return
     for (const t of toClose) {
-      if (!t.pendingStart) window.term.kill(t.id)
+      if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
     }
     const closedIds = new Set(toClose.map((t) => t.id))
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProjectId) return p
-        const terminals = p.terminals.filter((t) => !closedIds.has(t.id))
-        const nextActive = closedIds.has(p.activeTerminalId)
-          ? terminals[terminals.length - 1]?.id ?? ""
-          : p.activeTerminalId
-        return { ...p, terminals, activeTerminalId: nextActive }
+        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
+        const nextActive = closedIds.has(p.activeTabId)
+          ? tabs[tabs.length - 1]?.id ?? ""
+          : p.activeTabId
+        return { ...p, tabs, activeTabId: nextActive }
       }),
     )
-    if (closedIds.has(activeTerminalId)) navigateToTerminal(id)
+    if (closedIds.has(activeTabId)) navigateToTab(id)
   }
 
-  const closeOtherTerminals = (keepId: string) => {
+  const closeOtherTabs = (keepId: string) => {
     if (!activeProject) return
-    const toClose = activeProject.terminals.filter((t) => t.id !== keepId)
+    const toClose = activeProject.tabs.filter((t) => t.id !== keepId)
     if (toClose.length === 0) return
     for (const t of toClose) {
-      if (!t.pendingStart) window.term.kill(t.id)
+      if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
     }
-    const keep = activeProject.terminals.find((t) => t.id === keepId)
+    const keep = activeProject.tabs.find((t) => t.id === keepId)
     setProjects((prev) =>
       prev.map((p) =>
         p.id === activeProjectId
           ? {
               ...p,
-              terminals: keep ? [keep] : [],
-              activeTerminalId: keep ? keep.id : "",
+              tabs: keep ? [keep] : [],
+              activeTabId: keep ? keep.id : "",
             }
           : p,
       ),
     )
-    if (activeTerminalId !== keepId) navigateToTerminal(keepId)
+    if (activeTabId !== keepId) navigateToTab(keepId)
   }
 
-  const closeAllTerminals = () => {
+  const closeAllTabs = () => {
     if (!activeProject) return
-    for (const t of activeProject.terminals) {
-      if (!t.pendingStart) window.term.kill(t.id)
+    for (const t of activeProject.tabs) {
+      if (t.kind === "terminal" && !t.pendingStart) window.term.kill(t.id)
     }
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId
-          ? { ...p, terminals: [], activeTerminalId: "" }
-          : p,
+        p.id === activeProjectId ? { ...p, tabs: [], activeTabId: "" } : p,
       ),
     )
     navigateToProject(activeProjectId)
   }
 
-  // Stable refs so the window-level keydown listener always has the latest handlers.
   const addTerminalRef = useRef<() => void>(() => undefined)
-  const closeActiveTerminalRef = useRef<() => void>(() => undefined)
+  const closeActiveTabRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     addTerminalRef.current = addTerminal
-    closeActiveTerminalRef.current = () => {
-      if (!activeTerminalId) return
-      closeTerminal(activeTerminalId)
+    closeActiveTabRef.current = () => {
+      if (!activeTabId) return
+      closeTab(activeTabId)
     }
   })
 
   useEffect(() => {
     const offNew = window.appApi.onNewTerminal(() => addTerminalRef.current())
     const offClose = window.appApi.onCloseTerminal(() =>
-      closeActiveTerminalRef.current(),
+      closeActiveTabRef.current(),
     )
     return () => {
       offNew()
       offClose()
     }
+  }, [])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && !e.shiftKey && !e.altKey && e.key === "2") {
+        e.preventDefault()
+        setSidebarOpen((v) => !v)
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
   return (
@@ -572,30 +641,32 @@ export function AppShell() {
         onCloseProjectsToRight={closeProjectsToRight}
         onOpenProjectInVSCode={openProjectInVSCode}
         onReorderProjects={reorderProjects}
-        changesPaneOpen={changesPaneOpen}
-        onToggleChangesPane={() => setChangesPaneOpen((v) => !v)}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
       />
       {activeProject ? (
         <WorkspaceSplit
           projects={projects}
           activeProjectId={activeProjectId}
-          changesPaneOpen={changesPaneOpen}
+          sidebarOpen={sidebarOpen}
           onTerminalTitleChange={setTerminalTitle}
           onStartTerminal={(tabId) => {
             void startTerminal(activeProject.id, tabId)
           }}
-          terminalTabs={
-            <TerminalTabBar
-              terminals={activeProject.terminals}
-              activeId={activeTerminalId}
-              onSelect={selectTerminal}
+          onOpenDiffTab={openDiffTab}
+          onOpenFileTab={openFileTab}
+          workspaceTabs={
+            <WorkspaceTabBar
+              tabs={activeProject.tabs}
+              activeId={activeTabId}
+              onSelect={selectTab}
               onAdd={addTerminal}
-              onClose={closeTerminal}
-              onCloseAll={closeAllTerminals}
-              onCloseOthers={closeOtherTerminals}
-              onCloseToRight={closeTerminalsToRight}
-              onRename={renameTerminal}
-              onReorder={reorderTerminals}
+              onClose={closeTab}
+              onCloseAll={closeAllTabs}
+              onCloseOthers={closeOtherTabs}
+              onCloseToRight={closeTabsToRight}
+              onRename={renameTab}
+              onReorder={reorderTabs}
               onOpenInVSCode={() =>
                 void window.shellApi.openInVSCode(activeProject.path)
               }

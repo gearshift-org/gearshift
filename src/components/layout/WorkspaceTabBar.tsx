@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Plus, X } from "lucide-react"
+import { FileDiff, FileText, Plus, TerminalSquare, X } from "lucide-react"
 import {
   DndContext,
   PointerSensor,
@@ -15,8 +15,8 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
-import { displayName } from "./terminalName"
-import type { TerminalTab } from "./types"
+import { displayName, tabDisplayName } from "./terminalName"
+import type { TerminalTab, WorkspaceTab } from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -30,10 +30,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-const BUTTON_TOOLTIP_DELAY = 800
-
 type Props = {
-  terminals: TerminalTab[]
+  tabs: WorkspaceTab[]
   activeId: string
   onSelect: (id: string) => void
   onAdd: () => void
@@ -47,10 +45,9 @@ type Props = {
 }
 
 type TabItemProps = {
-  terminal: TerminalTab
+  tab: WorkspaceTab
   isActive: boolean
   hasTabsToRight: boolean
-  canShowClose: boolean
   total: number
   renamingId: string | null
   draft: string
@@ -67,11 +64,16 @@ type TabItemProps = {
   onOpenInVSCode?: () => void
 }
 
-function TerminalTabItem({
-  terminal: t,
+function TabIcon({ tab }: { tab: WorkspaceTab }) {
+  if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
+  if (tab.kind === "file") return <FileText className="size-3.5 shrink-0" />
+  return <TerminalSquare className="size-3.5 shrink-0" />
+}
+
+function WorkspaceTabItem({
+  tab: t,
   isActive,
   hasTabsToRight,
-  canShowClose,
   renamingId,
   draft,
   inputRef,
@@ -88,6 +90,7 @@ function TerminalTabItem({
   total,
 }: TabItemProps) {
   const isRenaming = t.id === renamingId
+  const isTerminal = t.kind === "terminal"
   const {
     attributes,
     listeners,
@@ -116,11 +119,14 @@ function TerminalTabItem({
           isDragging && "opacity-80 shadow-lg",
         )}
         onClick={() => onSelect(t.id)}
-        onDoubleClick={() => onStartRename(t)}
+        onDoubleClick={() => {
+          if (isTerminal) onStartRename(t)
+        }}
         {...attributes}
         {...listeners}
       >
-        {isRenaming ? (
+        <TabIcon tab={t} />
+        {isRenaming && isTerminal ? (
           <input
             ref={inputRef}
             value={draft}
@@ -135,10 +141,10 @@ function TerminalTabItem({
             className="w-full bg-transparent text-xs outline-none"
           />
         ) : (
-          <span className="truncate">{displayName(t)}</span>
+          <span className="truncate">{tabDisplayName(t)}</span>
         )}
-        {canShowClose && !isRenaming && (
-          <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+        {!isRenaming && (
+          <Tooltip>
             <TooltipTrigger
               render={
                 <span
@@ -158,15 +164,21 @@ function TerminalTabItem({
                 </span>
               }
             />
-            <TooltipContent>Close terminal</TooltipContent>
+            <TooltipContent>
+              {t.kind === "terminal" ? "Close terminal" : "Close tab"}
+            </TooltipContent>
           </Tooltip>
         )}
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
-        <ContextMenuItem onClick={() => onStartRename(t)}>
-          Rename
-        </ContextMenuItem>
-        <ContextMenuSeparator />
+        {isTerminal && (
+          <>
+            <ContextMenuItem onClick={() => onStartRename(t)}>
+              Rename
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem onClick={() => onClose?.(t.id)}>Close</ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseToRight?.(t.id)}
@@ -197,8 +209,8 @@ function TerminalTabItem({
   )
 }
 
-export function TerminalTabBar({
-  terminals,
+export function WorkspaceTabBar({
+  tabs,
   activeId,
   onSelect,
   onAdd,
@@ -248,17 +260,16 @@ export function TerminalTabBar({
       <div className="terminal-tabs-scroll flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden">
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
-            items={terminals.map((t) => t.id)}
+            items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            {terminals.map((t, i) => (
-              <TerminalTabItem
+            {tabs.map((t, i) => (
+              <WorkspaceTabItem
                 key={t.id}
-                terminal={t}
+                tab={t}
                 isActive={t.id === activeId}
-                hasTabsToRight={i < terminals.length - 1}
-                canShowClose={!!onClose && terminals.length > 1}
-                total={terminals.length}
+                hasTabsToRight={i < tabs.length - 1}
+                total={tabs.length}
                 renamingId={renamingId}
                 draft={draft}
                 inputRef={inputRef}
@@ -276,12 +287,12 @@ export function TerminalTabBar({
             ))}
           </SortableContext>
         </DndContext>
-        <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+        <Tooltip>
           <TooltipTrigger
             render={
               <button
                 onClick={onAdd}
-                aria-label="Add terminal"
+                aria-label="New terminal"
                 className="group/add sticky right-0 grid h-full w-10 shrink-0 place-items-center bg-background text-muted-foreground"
               >
                 <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">

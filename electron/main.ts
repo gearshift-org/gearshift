@@ -183,10 +183,13 @@ function queueProjectWatchEvent(watchId: string, filePath?: string | Buffer | nu
 function parseGitStatus(raw: string) {
   const staged: Array<{ path: string; status: string }> = []
   const unstaged: Array<{ path: string; status: string }> = []
-  const entries = raw.split("\0").filter(Boolean)
+  // -z output is NUL-separated. Rename/copy entries take TWO tokens
+  // (newpath\0oldpath) and we need to advance the cursor past the second one.
+  const tokens = raw.split("\0")
 
-  for (const entry of entries) {
-    if (entry.length < 3) continue
+  for (let i = 0; i < tokens.length; i++) {
+    const entry = tokens[i]
+    if (!entry || entry.length < 3) continue
     const x = entry[0]
     const y = entry[1]
     const filePath = entry.slice(3)
@@ -197,6 +200,8 @@ function parseGitStatus(raw: string) {
     }
     if (x !== " " && x !== "?") staged.push({ path: filePath, status: x })
     if (y !== " " && y !== "?") unstaged.push({ path: filePath, status: y })
+    // Rename/copy: consume the oldpath token that follows.
+    if (x === "R" || x === "C" || y === "R" || y === "C") i++
   }
 
   return { staged, unstaged }
@@ -348,6 +353,209 @@ app.whenReady().then(() => {
       }
     }
   })
+
+  ipcMain.handle(
+    "fs:readDir",
+    async (_event, absPath: string) => {
+      if (!absPath) return { ok: false, error: "no-path", entries: [] }
+      try {
+        const dirents = await fs.readdir(absPath, { withFileTypes: true })
+        // Always hide .git; everything else is filtered by git check-ignore.
+        const candidates = dirents
+          .filter((d) => d.name !== ".git")
+          .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
+        if (candidates.length === 0) return { ok: true, entries: [] }
+
+        // Find the enclosing repo root so check-ignore has a consistent cwd
+        // (works for subdirectories too). Fall back to no filtering if not a repo.
+        let repoRoot: string | null = null
+        try {
+          repoRoot = (
+            await runGit(absPath, ["rev-parse", "--show-toplevel"])
+          ).trim()
+        } catch {
+          repoRoot = null
+        }
+
+        if (!repoRoot) {
+          return { ok: true, entries: candidates }
+        }
+
+        const relPaths = candidates.map((c) => {
+          const full = path.join(absPath, c.name)
+          const rel = path.relative(repoRoot!, full)
+          return c.isDir ? `${rel}/` : rel
+        })
+
+        // git check-ignore exits 1 when nothing matches; 0 when matches; >1 on error.
+        const ignored = new Set<string>()
+        await new Promise<void>((resolve) => {
+          const child = spawn("git", ["check-ignore", "--stdin", "-z"], {
+            cwd: repoRoot!,
+          })
+          let buf = ""
+          child.stdout.on("data", (d) => (buf += d.toString()))
+          child.on("close", () => {
+            for (const line of buf.split("\0")) {
+              if (line) ignored.add(line.replace(/\/$/, ""))
+            }
+            resolve()
+          })
+          child.on("error", () => resolve())
+          child.stdin.write(relPaths.join("\0"))
+          child.stdin.end()
+        })
+
+        const entries = candidates.filter((c) => {
+          const full = path.join(absPath, c.name)
+          const rel = path.relative(repoRoot!, full)
+          return !ignored.has(rel)
+        })
+        return { ok: true, entries }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message, entries: [] }
+      }
+    },
+  )
+
+  ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path" }
+    try {
+      const stat = await fs.stat(absPath)
+      const MAX = 2 * 1024 * 1024
+      if (stat.size > MAX) {
+        return { ok: true, tooLarge: true, size: stat.size }
+      }
+      const buf = await fs.readFile(absPath)
+      if (isProbablyBinaryBuffer(buf)) {
+        return { ok: true, binary: true, size: stat.size }
+      }
+      return { ok: true, content: buf.toString("utf8"), size: stat.size }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    "git:stage",
+    async (_event, cwd: string, paths: string[]) => {
+      if (!cwd || !paths?.length) return { ok: false, error: "no-paths" }
+      try {
+        await runGit(cwd, ["add", "--", ...paths])
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "git:unstage",
+    async (_event, cwd: string, paths: string[]) => {
+      if (!cwd || !paths?.length) return { ok: false, error: "no-paths" }
+      try {
+        // `git reset HEAD --` works on any commit state, including initial commit.
+        await runGitAllowExit1(cwd, ["reset", "HEAD", "--", ...paths])
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "git:commit",
+    async (_event, cwd: string, message: string) => {
+      if (!cwd) return { ok: false, error: "no-cwd" }
+      const trimmed = (message ?? "").trim()
+      if (!trimmed) return { ok: false, error: "empty-message" }
+      try {
+        await runGit(cwd, ["commit", "-m", trimmed])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return { ok: false, error: e.stderr || e.message || "commit failed" }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "git:discard",
+    async (_event, cwd: string, paths: string[]) => {
+      if (!cwd || !paths?.length) return { ok: false, error: "no-paths" }
+      try {
+        for (const rel of paths) {
+          if (!rel) continue
+          // Tracked? `ls-files --error-unmatch` exits 0 when present in index.
+          let tracked = false
+          try {
+            await runGit(cwd, ["ls-files", "--error-unmatch", "--", rel])
+            tracked = true
+          } catch {
+            tracked = false
+          }
+          if (tracked) {
+            // Drop unstaged changes by restoring from index.
+            await runGit(cwd, ["checkout", "--", rel])
+          } else {
+            // Untracked file — delete it (best-effort).
+            const full = path.resolve(cwd, rel)
+            if (isPathInside(cwd, full)) {
+              try {
+                await fs.unlink(full)
+              } catch {
+                // ignore; may already be gone
+              }
+            }
+          }
+        }
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "discard failed",
+        }
+      }
+    },
+  )
+
+  ipcMain.handle("git:push", async (_event, cwd: string) => {
+    if (!cwd) return { ok: false, error: "no-cwd" }
+    try {
+      await runGit(cwd, ["push"])
+      return { ok: true }
+    } catch (err) {
+      const e = err as { stderr?: string; message?: string }
+      return { ok: false, error: e.stderr || e.message || "push failed" }
+    }
+  })
+
+  ipcMain.handle(
+    "git:diffFile",
+    async (
+      _event,
+      cwd: string,
+      filePath: string,
+      staged: boolean,
+    ) => {
+      if (!cwd || !filePath) return { ok: false, error: "no-path", patch: "" }
+      try {
+        const args = ["diff", "--no-color", "--text"]
+        if (staged) args.push("--cached")
+        args.push("--", filePath)
+        let patch = await runGitAllowExit1(cwd, args)
+        // Empty result for an unstaged path may mean an untracked new file —
+        // synthesize a diff vs /dev/null the way diffAll does.
+        if (!patch.trim() && !staged) {
+          patch = await buildUntrackedPatch(cwd, [filePath])
+        }
+        return { ok: true, patch }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message, patch: "" }
+      }
+    },
+  )
 
   ipcMain.handle("git:diffAll", async (_event, cwd: string) => {
     if (!cwd) {

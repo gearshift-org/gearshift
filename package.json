@@ -18,7 +18,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.netlinkvoice.gearshift-v2",
+    "appId": "com.gearshift.v2",
     "productName": "GearShift V2",
     "directories": {
       "output": "release"

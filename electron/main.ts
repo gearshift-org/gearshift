@@ -24,6 +24,13 @@ const execFileP = promisify(execFile)
 
 if (VITE_DEV_SERVER_URL) {
   app.setPath("userData", path.join(app.getPath("appData"), "gearshift-v2-dev"))
+} else {
+  // Use the bundle id as the userData folder name so uninstallers
+  // (Raycast, AppCleaner, etc.) can correlate leftover state to the app.
+  app.setPath(
+    "userData",
+    path.join(app.getPath("appData"), "com.gearshift.v2"),
+  )
 }
 
 const ptys = new Map<string, pty.IPty>()

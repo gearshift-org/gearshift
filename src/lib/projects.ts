@@ -218,3 +218,12 @@ export function getProjectColor(path: string): string {
   saveProjectColors(map)
   return color
 }
+
+export function randomizeProjectColor(path: string): string {
+  if (!path) return "#888888"
+  const map = loadProjectColors()
+  const color = randomHexColor()
+  map[path] = color
+  saveProjectColors(map)
+  return color
+}

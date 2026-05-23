@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { X } from "lucide-react"
 import {
   DndContext,
@@ -27,7 +28,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { AddProjectMenu } from "./AddProjectMenu"
-import { getProjectColor, type RecentProject } from "@/lib/projects"
+import {
+  getProjectColor,
+  randomizeProjectColor,
+  type RecentProject,
+} from "@/lib/projects"
 import type { Project } from "./types"
 
 function projectInitials(name: string): string {
@@ -92,6 +97,7 @@ function ProjectTabItem({
   onAdd,
   onOpenInVSCode,
 }: TabItemProps) {
+  const [, setColorVersion] = useState(0)
   const {
     attributes,
     listeners,
@@ -105,6 +111,11 @@ function ProjectTabItem({
     transform: CSS.Translate.toString(transform),
     transition,
     zIndex: isDragging ? 30 : undefined,
+  }
+
+  const randomizeAvatarColor = () => {
+    randomizeProjectColor(p.path)
+    setColorVersion((v) => v + 1)
   }
 
   return (
@@ -176,6 +187,10 @@ function ProjectTabItem({
           disabled={total <= 1}
         >
           Close Others
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={randomizeAvatarColor}>
+          Randomize Avatar Color
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={onAdd}>New Project</ContextMenuItem>

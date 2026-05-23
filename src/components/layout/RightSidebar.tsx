@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ChevronDown, Minus, Plus, Undo2 } from "lucide-react"
+import { ChevronDown, Loader2, Minus, Plus, Undo2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
@@ -60,6 +60,7 @@ export function RightSidebar({
   const [error, setError] = useState<string | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
   const [busy, setBusy] = useState(false)
+  const [committing, setCommitting] = useState<null | "commit" | "push">(null)
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
@@ -257,6 +258,7 @@ export function RightSidebar({
         return
       }
       setBusy(true)
+      setCommitting("commit")
       setError(null)
       try {
         const res = await window.git.commit(cwd, message)
@@ -266,6 +268,7 @@ export function RightSidebar({
         }
         setCommitMessage("")
         if (opts?.push) {
+          setCommitting("push")
           const pushRes = await window.git.push(cwd)
           if (!pushRes.ok) {
             setError(pushRes.error ?? "Push failed")
@@ -274,6 +277,7 @@ export function RightSidebar({
         await runRefresh()
       } finally {
         setBusy(false)
+        setCommitting(null)
       }
     },
     [cwd, busy, commitMessage, stagedFiles.length, runRefresh],

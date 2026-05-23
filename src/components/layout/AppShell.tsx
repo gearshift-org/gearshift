@@ -494,6 +494,28 @@ export function AppShell() {
     if (closedIds.has(activeTerminalId)) navigateToTerminal(id)
   }
 
+  const closeOtherTerminals = (keepId: string) => {
+    if (!activeProject) return
+    const toClose = activeProject.terminals.filter((t) => t.id !== keepId)
+    if (toClose.length === 0) return
+    for (const t of toClose) {
+      if (!t.pendingStart) window.term.kill(t.id)
+    }
+    const keep = activeProject.terminals.find((t) => t.id === keepId)
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === activeProjectId
+          ? {
+              ...p,
+              terminals: keep ? [keep] : [],
+              activeTerminalId: keep ? keep.id : "",
+            }
+          : p,
+      ),
+    )
+    if (activeTerminalId !== keepId) navigateToTerminal(keepId)
+  }
+
   const closeAllTerminals = () => {
     if (!activeProject) return
     for (const t of activeProject.terminals) {
@@ -556,6 +578,7 @@ export function AppShell() {
         onAdd={addTerminal}
         onClose={closeTerminal}
         onCloseAll={closeAllTerminals}
+        onCloseOthers={closeOtherTerminals}
         onCloseToRight={closeTerminalsToRight}
         onRename={renameTerminal}
         onReorder={reorderTerminals}

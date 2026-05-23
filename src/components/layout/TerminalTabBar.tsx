@@ -39,6 +39,7 @@ type Props = {
   onAdd: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
+  onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onRename?: (id: string, name: string) => void
   onReorder?: (fromId: string, toId: string) => void
@@ -50,6 +51,7 @@ type TabItemProps = {
   isActive: boolean
   hasTabsToRight: boolean
   canShowClose: boolean
+  total: number
   renamingId: string | null
   draft: string
   inputRef: React.RefObject<HTMLInputElement | null>
@@ -60,6 +62,7 @@ type TabItemProps = {
   onCancelRename: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
+  onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onOpenInVSCode?: () => void
 }
@@ -79,8 +82,10 @@ function TerminalTabItem({
   onCancelRename,
   onClose,
   onCloseAll,
+  onCloseOthers,
   onCloseToRight,
   onOpenInVSCode,
+  total,
 }: TabItemProps) {
   const isRenaming = t.id === renamingId
   const {
@@ -169,6 +174,12 @@ function TerminalTabItem({
         >
           Close to the Right
         </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => onCloseOthers?.(t.id)}
+          disabled={total <= 1}
+        >
+          Close Other Tabs
+        </ContextMenuItem>
         <ContextMenuItem onClick={() => onCloseAll?.()}>
           Close All Tabs
         </ContextMenuItem>
@@ -193,6 +204,7 @@ export function TerminalTabBar({
   onAdd,
   onClose,
   onCloseAll,
+  onCloseOthers,
   onCloseToRight,
   onRename,
   onReorder,
@@ -245,6 +257,7 @@ export function TerminalTabBar({
               isActive={t.id === activeId}
               hasTabsToRight={i < terminals.length - 1}
               canShowClose={!!onClose && terminals.length > 1}
+              total={terminals.length}
               renamingId={renamingId}
               draft={draft}
               inputRef={inputRef}
@@ -255,6 +268,7 @@ export function TerminalTabBar({
               onCancelRename={() => setRenamingId(null)}
               onClose={onClose}
               onCloseAll={onCloseAll}
+              onCloseOthers={onCloseOthers}
               onCloseToRight={onCloseToRight}
               onOpenInVSCode={onOpenInVSCode}
             />

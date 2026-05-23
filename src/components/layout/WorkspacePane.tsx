@@ -14,6 +14,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
 import type {
   Project,
@@ -196,12 +197,16 @@ export function WorkspacePane({
   const isTerminalActive = activeTab?.kind === "terminal"
   const isDiffActive = activeTab?.kind === "diff"
 
-  // Per-diff-tab view mode, remembered while the tab exists.
+  // Per-diff-tab view mode, remembered while the tab exists; defaults to the
+  // last-persisted mode so the user's choice survives restarts.
+  const [defaultDiffMode, setDefaultDiffMode] = useState<"unified" | "split">(
+    () => loadDiffViewMode(),
+  )
   const [diffViewModes, setDiffViewModes] = useState<
     Record<string, "unified" | "split">
   >({})
   const activeDiffMode =
-    (activeTab && diffViewModes[activeTab.id]) || "unified"
+    (activeTab && diffViewModes[activeTab.id]) || defaultDiffMode
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -219,15 +224,16 @@ export function WorkspacePane({
               render={
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
+                    const next =
+                      activeDiffMode === "unified" ? "split" : "unified"
                     setDiffViewModes((prev) => ({
                       ...prev,
-                      [activeTab.id]:
-                        (prev[activeTab.id] ?? "unified") === "unified"
-                          ? "split"
-                          : "unified",
+                      [activeTab.id]: next,
                     }))
-                  }
+                    setDefaultDiffMode(next)
+                    saveDiffViewMode(next)
+                  }}
                   aria-label={
                     activeDiffMode === "unified"
                       ? "Switch to split diff"
@@ -279,7 +285,7 @@ export function WorkspacePane({
               tab={t}
               project={project}
               isActive={isActive && t.id === project.activeTabId}
-              diffViewMode={diffViewModes[t.id] ?? "unified"}
+              diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
               onTitleChange={onTitleChange}
               onStartTerminal={onStartTerminal}
               onSplitTerminal={onSplitTerminal}

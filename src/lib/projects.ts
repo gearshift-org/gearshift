@@ -141,3 +141,23 @@ export function saveSidebarOpen(open: boolean): void {
     // ignore
   }
 }
+
+const DIFF_VIEW_MODE_KEY = "gearshift.diffViewMode"
+
+export function loadDiffViewMode(): "unified" | "split" {
+  try {
+    return localStorage.getItem(DIFF_VIEW_MODE_KEY) === "split"
+      ? "split"
+      : "unified"
+  } catch {
+    return "unified"
+  }
+}
+
+export function saveDiffViewMode(mode: "unified" | "split"): void {
+  try {
+    localStorage.setItem(DIFF_VIEW_MODE_KEY, mode)
+  } catch {
+    // ignore
+  }
+}

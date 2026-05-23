@@ -52,12 +52,12 @@ const DARK_THEME = {
   brightWhite: "#fafafa",
 }
 const LIGHT_THEME = {
-  background: "#ffffff",
-  foreground: "#171717",
-  cursor: "#171717",
-  selectionBackground: "#3b82f655",
-  selectionForeground: "#171717",
-  selectionInactiveBackground: "#3b82f630",
+  background: "#f7f7f8",
+  foreground: "#2f3033",
+  cursor: "#2f3033",
+  selectionBackground: "#d8d7de",
+  selectionForeground: "#2f3033",
+  selectionInactiveBackground: "#e5e4e9",
   black: "#171717",
   red: "#dc2626",
   green: "#16a34a",
@@ -85,7 +85,7 @@ const SEARCH_DECORATIONS = {
   activeMatchColorOverviewRuler: "#facc15",
 }
 
-const WRAPPER_BG = "[--xterm-bg:#ffffff] dark:[--xterm-bg:#151515]"
+const WRAPPER_BG = "[--xterm-bg:#f7f7f8] dark:[--xterm-bg:#151515]"
 const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 2500
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000

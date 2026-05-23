@@ -275,6 +275,15 @@ export function TerminalView({
         return false
       }
 
+      // ⇧⏎ / ⌘⇧⏎ — insert newline in TUI prompts (Claude Code, Codex,
+      // OpenCode). Terminals send CR (\r) on Enter; ESC+CR is the conventional
+      // "alt+enter" sequence these CLIs treat as a literal newline.
+      if (key === "enter" && shift && !ctrl && !alt) {
+        e.preventDefault()
+        window.term.write(sessionId, "\x1b\r")
+        return false
+      }
+
       return true
     })
 

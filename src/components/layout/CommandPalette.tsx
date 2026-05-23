@@ -44,13 +44,20 @@ export function CommandPalette({
 }: Props) {
   const [files, setFiles] = useState<string[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
+  const projectPath = activeProject?.path
 
-  // Lazy-load the project file list on first open / project change.
+  // Lazy-load the project file list on first open / project change. Clear
+  // stale results synchronously so switching projects never flashes the prior
+  // project's files in the palette.
   useEffect(() => {
-    if (!open || !activeProject) return
+    if (!open || !projectPath) {
+      setFiles([])
+      return
+    }
     let cancelled = false
+    setFiles([])
     setFilesLoading(true)
-    window.fsApi.listAllFiles(activeProject.path).then((res) => {
+    window.fsApi.listAllFiles(projectPath).then((res) => {
       if (cancelled) return
       setFiles(res.ok ? res.files : [])
       setFilesLoading(false)
@@ -58,7 +65,7 @@ export function CommandPalette({
     return () => {
       cancelled = true
     }
-  }, [open, activeProject])
+  }, [open, projectPath])
 
   const run = (fn: () => void) => {
     fn()

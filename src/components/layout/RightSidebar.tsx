@@ -355,7 +355,19 @@ export function RightSidebar({
                   onClick={() => void commit()}
                   className="flex-1 rounded-r-none"
                 >
-                  Commit
+                  {committing === "commit" ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Committing…
+                    </>
+                  ) : committing === "push" ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Pushing…
+                    </>
+                  ) : (
+                    "Commit"
+                  )}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -383,9 +395,11 @@ export function RightSidebar({
                       onClick={() => {
                         if (!cwd) return
                         setBusy(true)
+                        setCommitting("push")
                         window.git.push(cwd).then((res) => {
                           if (!res.ok) setError(res.error ?? "Push failed")
                           setBusy(false)
+                          setCommitting(null)
                         })
                       }}
                     >

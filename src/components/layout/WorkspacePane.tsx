@@ -83,14 +83,12 @@ function TerminalTabContent({
   isActive,
   onTitleChange,
   onStartTerminal,
-  onClosePane,
   onFocusPane,
 }: {
   tab: TerminalTab
   isActive: boolean
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
-  onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
 }) {
   const multi = tab.panes.length > 1
@@ -125,7 +123,6 @@ function TerminalTabContent({
           {idx > 0 && <ResizableHandle />}
           <ResizablePanel
             id={pane.id}
-            order={idx}
             minSize={10}
             defaultSize={100 / tab.panes.length}
           >
@@ -144,8 +141,6 @@ function PaneContent({
   diffViewMode,
   onTitleChange,
   onStartTerminal,
-  onSplitTerminal,
-  onClosePane,
   onFocusPane,
   onOpenFile,
 }: {
@@ -155,8 +150,6 @@ function PaneContent({
   diffViewMode: "unified" | "split"
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
-  onSplitTerminal?: (tabId: string) => void
-  onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
 }) {
@@ -167,7 +160,6 @@ function PaneContent({
         isActive={isActive}
         onTitleChange={onTitleChange}
         onStartTerminal={onStartTerminal}
-        onClosePane={onClosePane}
         onFocusPane={onFocusPane}
       />
     )
@@ -192,7 +184,6 @@ export function WorkspacePane({
   onTitleChange,
   onStartTerminal,
   onSplitTerminal,
-  onClosePane,
   onFocusPane,
   onOpenFile,
 }: Props) {
@@ -291,8 +282,6 @@ export function WorkspacePane({
               diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
               onTitleChange={onTitleChange}
               onStartTerminal={onStartTerminal}
-              onSplitTerminal={onSplitTerminal}
-              onClosePane={onClosePane}
               onFocusPane={onFocusPane}
               onOpenFile={onOpenFile}
             />

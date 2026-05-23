@@ -30,8 +30,6 @@ import { AddProjectMenu } from "./AddProjectMenu"
 import { getProjectColor, type RecentProject } from "@/lib/projects"
 import type { Project } from "./types"
 
-const BUTTON_TOOLTIP_DELAY = 800
-
 function projectInitials(name: string): string {
   const cleaned = name.replace(/[._-]+/g, " ").trim()
   if (!cleaned) return "?"
@@ -139,7 +137,7 @@ function ProjectTabItem({
         })()}
         <span className="truncate">{p.name}</span>
         {canClose && (
-          <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+          <Tooltip>
             <TooltipTrigger
               render={
                 <span

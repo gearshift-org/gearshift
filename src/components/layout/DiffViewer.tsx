@@ -100,7 +100,7 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
       onCollapsedStateChange({ collapsed: count, total: files.length })
     }, [collapsed, files, onCollapsedStateChange])
 
-    const handleRef = useRef<CodeViewHandle | null>(null)
+    const handleRef = useRef<CodeViewHandle<unknown> | null>(null)
 
     // Map file path → first matching item id so external callers can
     // jump to "src/foo.ts" without knowing the internal index suffix.

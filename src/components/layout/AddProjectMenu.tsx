@@ -15,8 +15,6 @@ import {
 } from "@/components/ui/tooltip"
 import type { RecentProject } from "@/lib/projects"
 
-const BUTTON_TOOLTIP_DELAY = 800
-
 type Props = {
   recents: RecentProject[]
   onPickRecent: (recent: RecentProject) => void
@@ -40,7 +38,7 @@ export function AddProjectMenu({
 }: Props) {
   return (
     <DropdownMenu>
-      <Tooltip delay={BUTTON_TOOLTIP_DELAY}>
+      <Tooltip>
         <TooltipTrigger
           render={
             <DropdownMenuTrigger

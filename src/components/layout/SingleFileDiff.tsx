@@ -163,7 +163,9 @@ export function SingleFileDiff({
         if (res.ok) setPatch(res.patch || "")
       })
     })
-    return off
+    return () => {
+      off()
+    }
   }, [cwd, path, staged])
 
   // Ensure a top-level <style> for the highlight names exists once.

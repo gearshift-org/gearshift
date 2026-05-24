@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelRight } from "lucide-react"
+import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { TitleBar } from "./TitleBar"
 import { ThemeToggle } from "./ThemeToggle"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
@@ -44,7 +45,8 @@ function hydrateProjects(): Project[] {
     name: p.name,
     path: p.path,
     tabs: (p.tabs ?? []).map((t) => {
-      const storedPanes = t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
+      const storedPanes =
+        t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
       const panes = storedPanes.map((sp) => ({
         id: sp.id,
         pendingStart: true,
@@ -96,7 +98,7 @@ function serializeProjects(projects: Project[]) {
   return projects.map((p) => {
     const terminals = p.tabs.filter(
       (t): t is Extract<WorkspaceTab, { kind: "terminal" }> =>
-        t.kind === "terminal",
+        t.kind === "terminal"
     )
     const activeTerminal = terminals.find((t) => t.id === p.activeTabId)
     return {
@@ -162,14 +164,14 @@ export function AppShell() {
 
   const [projects, setProjects] = useState<Project[]>(() => hydrateProjects())
   const [recents, setRecents] = useState<RecentProject[]>(() =>
-    loadRecentProjects(),
+    loadRecentProjects()
   )
   const [paletteRecents, setPaletteRecents] = useState<PaletteRecents>(() =>
-    loadPaletteRecents(),
+    loadPaletteRecents()
   )
   const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
-    loadRightSidebarTab(),
+    loadRightSidebarTab()
   )
   const [stateRestored, setStateRestored] = useState(() => store.isReady())
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
@@ -213,7 +215,7 @@ export function AppShell() {
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    []
   )
   // Forward reference: closePane (defined below) calls closeTab when the last
   // pane is being closed. Wired via effect once both are defined.
@@ -274,7 +276,7 @@ export function AppShell() {
         })
       }
     },
-    [navigate, stateRestored],
+    [navigate, stateRestored]
   )
 
   const navigateToTab = useCallback(
@@ -285,7 +287,7 @@ export function AppShell() {
         params: { projectId: activeProjectId, tabId },
       })
     },
-    [navigate, activeProjectId],
+    [navigate, activeProjectId]
   )
 
   useEffect(() => {
@@ -301,10 +303,8 @@ export function AppShell() {
     if (!activeProject?.agentDone) return
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId && p.agentDone
-          ? { ...p, agentDone: false }
-          : p,
-      ),
+        p.id === activeProjectId && p.agentDone ? { ...p, agentDone: false } : p
+      )
     )
   }, [activeProjectId, projects])
 
@@ -319,8 +319,8 @@ export function AppShell() {
       prev.map((p) =>
         p.id === activeProjectId && p.activeTabId !== activeTabId
           ? { ...p, activeTabId }
-          : p,
-      ),
+          : p
+      )
     )
   }, [activeProjectId, activeTabId])
 
@@ -394,8 +394,8 @@ export function AppShell() {
       prev.map((project) =>
         project.id === id && project.agentDone
           ? { ...project, agentDone: false }
-          : project,
-      ),
+          : project
+      )
     )
     navigateToProject(id, p?.activeTabId || undefined)
   }
@@ -429,9 +429,9 @@ export function AppShell() {
         const tabs = p.tabs.filter((t) => t.kind !== "terminal")
         const activeTabId = tabs.some((t) => t.id === p.activeTabId)
           ? p.activeTabId
-          : tabs[0]?.id ?? ""
+          : (tabs[0]?.id ?? "")
         return { ...p, tabs, activeTabId }
-      }),
+      })
     )
     if (id === activeProjectId) {
       const project = projects.find((p) => p.id === id)
@@ -493,7 +493,7 @@ export function AppShell() {
         const [moved] = tabs.splice(from, 1)
         tabs.splice(to, 0, moved)
         return { ...p, tabs }
-      }),
+      })
     )
   }
 
@@ -532,7 +532,7 @@ export function AppShell() {
           ],
           activeTabId: tabId,
         }
-      }),
+      })
     )
     navigateToTab(tabId)
   }
@@ -555,20 +555,17 @@ export function AppShell() {
                   t.id === tabId && t.kind === "terminal"
                     ? {
                         ...t,
-                        panes: [
-                          ...t.panes,
-                          { id: paneId, sessionId: paneId },
-                        ],
+                        panes: [...t.panes, { id: paneId, sessionId: paneId }],
                         activePaneId: paneId,
                       }
-                    : t,
+                    : t
                 ),
               }
-            : p,
-        ),
+            : p
+        )
       )
     },
-    [activeProject],
+    [activeProject]
   )
 
   /** Close a single pane within a terminal tab. Closes the tab if it was the last. */
@@ -600,15 +597,15 @@ export function AppShell() {
               const panes = t.panes.filter((pp) => pp.id !== paneId)
               const nextActive =
                 t.activePaneId === paneId
-                  ? panes[panes.length - 1]?.id ?? ""
+                  ? (panes[panes.length - 1]?.id ?? "")
                   : t.activePaneId
               return { ...t, panes, activePaneId: nextActive }
             }),
           }
-        }),
+        })
       )
     },
-    [activeProject, activeProjectId],
+    [activeProject, activeProjectId]
   )
 
   const setActivePane = useCallback(
@@ -621,14 +618,14 @@ export function AppShell() {
                 tabs: p.tabs.map((t) =>
                   t.id === tabId && t.kind === "terminal"
                     ? { ...t, activePaneId: paneId }
-                    : t,
+                    : t
                 ),
               }
-            : p,
-        ),
+            : p
+        )
       )
     },
-    [activeProjectId],
+    [activeProjectId]
   )
 
   const openAgentDoneTarget = useCallback(
@@ -636,7 +633,7 @@ export function AppShell() {
       projectId: string,
       tabId: string,
       paneId: string,
-      toastId?: string | number,
+      toastId?: string | number
     ) => {
       if (toastId !== undefined) toast.dismiss(toastId)
       setProjects((prev) =>
@@ -649,15 +646,15 @@ export function AppShell() {
                 tabs: p.tabs.map((t) =>
                   t.id === tabId && t.kind === "terminal"
                     ? { ...t, activePaneId: paneId }
-                    : t,
+                    : t
                 ),
               }
-            : p,
-        ),
+            : p
+        )
       )
       navigateToProject(projectId, tabId)
     },
-    [navigateToProject],
+    [navigateToProject]
   )
 
   const openDiffTab = useCallback(
@@ -665,7 +662,7 @@ export function AppShell() {
       if (!activeProject) return
       // Already open (pinned or preview) for the exact same path/staged — focus.
       const exact = activeProject.tabs.find(
-        (t) => t.kind === "diff" && t.path === path && t.staged === staged,
+        (t) => t.kind === "diff" && t.path === path && t.staged === staged
       )
       if (exact) {
         navigateToTab(exact.id)
@@ -673,7 +670,7 @@ export function AppShell() {
       }
       // Reuse the existing preview diff tab if any (VS Code-style).
       const preview = activeProject.tabs.find(
-        (t) => t.kind === "diff" && t.preview,
+        (t) => t.kind === "diff" && t.preview
       )
       if (preview) {
         setProjects((prev) =>
@@ -684,12 +681,12 @@ export function AppShell() {
                   tabs: p.tabs.map((t) =>
                     t.id === preview.id && t.kind === "diff"
                       ? { ...t, path, staged, name: basename(path) }
-                      : t,
+                      : t
                   ),
                   activeTabId: preview.id,
                 }
-              : p,
-          ),
+              : p
+          )
         )
         navigateToTab(preview.id)
         return
@@ -713,12 +710,12 @@ export function AppShell() {
                 ],
                 activeTabId: id,
               }
-            : p,
-        ),
+            : p
+        )
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab],
+    [activeProject, navigateToTab]
   )
 
   const openFileTab = useCallback(
@@ -727,7 +724,7 @@ export function AppShell() {
       setActiveTreeFilePath(path)
       setPaletteRecents(pushRecentPaletteFile(activeProject.path, path))
       const exact = activeProject.tabs.find(
-        (t) => t.kind === "file" && t.path === path,
+        (t) => t.kind === "file" && t.path === path
       )
       if (exact) {
         navigateToTab(exact.id)
@@ -735,7 +732,7 @@ export function AppShell() {
       }
       // Reuse the existing preview file tab if any.
       const preview = activeProject.tabs.find(
-        (t) => t.kind === "file" && t.preview,
+        (t) => t.kind === "file" && t.preview
       )
       if (preview) {
         setProjects((prev) =>
@@ -746,12 +743,12 @@ export function AppShell() {
                   tabs: p.tabs.map((t) =>
                     t.id === preview.id && t.kind === "file"
                       ? { ...t, path, name: basename(path) }
-                      : t,
+                      : t
                   ),
                   activeTabId: preview.id,
                 }
-              : p,
-          ),
+              : p
+          )
         )
         navigateToTab(preview.id)
         return
@@ -774,12 +771,12 @@ export function AppShell() {
                 ],
                 activeTabId: id,
               }
-            : p,
-        ),
+            : p
+        )
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab],
+    [activeProject, navigateToTab]
   )
 
   /** Pin a preview tab so subsequent file clicks don't replace it. */
@@ -792,11 +789,11 @@ export function AppShell() {
               tabs: p.tabs.map((t) =>
                 t.id === id && (t.kind === "diff" || t.kind === "file")
                   ? { ...t, preview: false }
-                  : t,
+                  : t
               ),
             }
-          : p,
-      ),
+          : p
+      )
     )
   }
 
@@ -851,19 +848,19 @@ export function AppShell() {
                           pendingSessionId: undefined,
                           pendingStart: false,
                         }
-                      : pp,
+                      : pp
                   ),
                   activePaneId: t.activePaneId,
                 }
               }),
             }
-          }),
+          })
         )
       } finally {
         startingTerminalsRef.current.delete(startKey)
       }
     },
-    [projects],
+    [projects]
   )
 
   // Subscribe to onExit for every running pane so that when the daemon
@@ -896,12 +893,12 @@ export function AppShell() {
                               pendingSessionId: undefined,
                               pendingStart: true,
                             }
-                          : pp,
+                          : pp
                       ),
                     }
                   }),
                 }
-              }),
+              })
             )
           })
           offs.push(off)
@@ -933,7 +930,7 @@ export function AppShell() {
       setActiveTreeFilePath(path)
       openFileTab(path)
     },
-    [openFileTab],
+    [openFileTab]
   )
 
   const commandPaletteRecents = useMemo<PaletteRecents>(() => {
@@ -948,7 +945,7 @@ export function AppShell() {
       tabsByProject[activeProjectPath] = [
         activeTabId,
         ...(tabsByProject[activeProjectPath] ?? []).filter(
-          (id) => id !== activeTabId,
+          (id) => id !== activeTabId
         ),
       ]
     }
@@ -970,13 +967,13 @@ export function AppShell() {
                   ? {
                       ...t,
                       panes: t.panes.map((pp) =>
-                        pp.id === paneId ? { ...pp, autoTitle: title } : pp,
+                        pp.id === paneId ? { ...pp, autoTitle: title } : pp
                       ),
                     }
-                  : t,
+                  : t
               ),
             }
-          : p,
+          : p
       )
       saveProjects(serializeProjects(next))
       return next
@@ -986,14 +983,14 @@ export function AppShell() {
   const setTerminalAgentStatus = (
     tabId: string,
     paneId: string,
-    status: TerminalAgentStatus,
+    status: TerminalAgentStatus
   ) => {
     const key = `${tabId}:${paneId}`
     const previousStatus = terminalAgentStatusRef.current.get(key)
     terminalAgentStatusRef.current.set(key, status)
 
     const targetProject = projects.find((p) =>
-      p.tabs.some((t) => t.id === tabId),
+      p.tabs.some((t) => t.id === tabId)
     )
     const targetTab = targetProject?.tabs.find((t) => t.id === tabId)
     const fallbackPane =
@@ -1018,7 +1015,7 @@ export function AppShell() {
           return {
             ...t,
             panes: t.panes.map((pp) =>
-              pp.id === paneId ? { ...pp, agentStatus: status } : pp,
+              pp.id === paneId ? { ...pp, agentStatus: status } : pp
             ),
           }
         })
@@ -1033,10 +1030,14 @@ export function AppShell() {
                 ? true
                 : p.agentDone,
         }
-      }),
+      })
     )
 
-    if (finishedAwayFromAttention && targetProject && targetTab?.kind === "terminal") {
+    if (
+      finishedAwayFromAttention &&
+      targetProject &&
+      targetTab?.kind === "terminal"
+    ) {
       playAgentCompleteSound()
       const terminalName = tabDisplayName(targetTab)
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
@@ -1069,7 +1070,7 @@ export function AppShell() {
           {
             id: toastId,
             duration: Infinity,
-          },
+          }
         )
       } else {
         console.info("Agent complete: showing desktop notification")
@@ -1080,7 +1081,7 @@ export function AppShell() {
               {
                 body: `Agent finished in ${terminalName}`,
                 silent: true,
-              },
+              }
             )
             notification.onclick = () => {
               openAgentDoneTarget(targetProject.id, tabId, paneId)
@@ -1102,11 +1103,11 @@ export function AppShell() {
               tabs: p.tabs.map((t) =>
                 t.id === tabId && t.kind === "terminal"
                   ? { ...t, customName: name || undefined }
-                  : t,
+                  : t
               ),
             }
-          : p,
-      ),
+          : p
+      )
     )
   }
 
@@ -1124,7 +1125,7 @@ export function AppShell() {
           nextActive = tabs[nextIdx]?.id ?? ""
         }
         return { ...p, tabs, activeTabId: nextActive }
-      }),
+      })
     )
     if (id === activeTabId) {
       const closingIdx = activeProject?.tabs.findIndex((t) => t.id === id) ?? -1
@@ -1149,10 +1150,10 @@ export function AppShell() {
         if (p.id !== activeProjectId) return p
         const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
         const nextActive = closedIds.has(p.activeTabId)
-          ? tabs[tabs.length - 1]?.id ?? ""
+          ? (tabs[tabs.length - 1]?.id ?? "")
           : p.activeTabId
         return { ...p, tabs, activeTabId: nextActive }
-      }),
+      })
     )
     if (closedIds.has(activeTabId)) navigateToTab(id)
   }
@@ -1171,8 +1172,8 @@ export function AppShell() {
               tabs: keep ? [keep] : [],
               activeTabId: keep ? keep.id : "",
             }
-          : p,
-      ),
+          : p
+      )
     )
     if (activeTabId !== keepId) navigateToTab(keepId)
   }
@@ -1182,8 +1183,8 @@ export function AppShell() {
     for (const t of activeProject.tabs) killAllPanes(t)
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId ? { ...p, tabs: [], activeTabId: "" } : p,
-      ),
+        p.id === activeProjectId ? { ...p, tabs: [], activeTabId: "" } : p
+      )
     )
     navigateToProject(activeProjectId)
   }
@@ -1219,7 +1220,7 @@ export function AppShell() {
   useEffect(() => {
     const offNew = window.appApi.onNewTerminal(() => addTerminalRef.current())
     const offClose = window.appApi.onCloseTerminal(() =>
-      closeActiveTabRef.current(),
+      closeActiveTabRef.current()
     )
     return () => {
       offNew()
@@ -1273,12 +1274,16 @@ export function AppShell() {
       />
       {(() => {
         const toggleSidebar = () => setSidebarOpen((v) => !v)
+        const openChanges = () => {
+          setRightSidebarTab("changes")
+          setSidebarOpen(true)
+        }
         const titleBar = (
           <TitleBar
             projects={projects}
             activeProjectId={activeProjectId}
             recents={recents.filter(
-              (r) => !projects.some((p) => p.path === r.path),
+              (r) => !projects.some((p) => p.path === r.path)
             )}
             onSelectProject={selectProject}
             onAddProject={addProject}
@@ -1291,11 +1296,16 @@ export function AppShell() {
             onReorderProjects={reorderProjects}
             sidebarOpen={sidebarOpen}
             onToggleSidebar={toggleSidebar}
+            onOpenChanges={openChanges}
             showRightControls={!sidebarOpen || !activeProject}
           />
         )
         const sidebarTopActions = (
           <div className="flex items-center pr-1">
+            <ProjectGitStatusBadge
+              cwd={activeProject.path}
+              onOpenChanges={openChanges}
+            />
             <ThemeToggle />
             <Tooltip>
               <TooltipTrigger
@@ -1335,45 +1345,45 @@ export function AppShell() {
           )
         }
         return (
-        <WorkspaceSplit
-          projects={projects}
-          activeProjectId={activeProjectId}
-          sidebarOpen={sidebarOpen}
-          titleBar={titleBar}
-          sidebarTopActions={sidebarTopActions}
-          onTerminalTitleChange={setTerminalTitle}
-          onTerminalAgentStatusChange={setTerminalAgentStatus}
-          onStartTerminal={(tabId, paneId) => {
-            void startTerminalPane(activeProject.id, tabId, paneId)
-          }}
-          onAddTerminal={() => void addTerminal()}
-          onSplitTerminal={(tabId) => void splitTerminalPane(tabId)}
-          onClosePane={closePane}
-          onFocusPane={setActivePane}
-          onOpenDiffTab={openDiffTab}
-          onOpenFileTab={openFileTab}
-          rightSidebarTab={rightSidebarTab}
-          onRightSidebarTabChange={setRightSidebarTab}
-          activeTreeFilePath={activeTreeFilePath}
-          workspaceTabs={
-            <WorkspaceTabBar
-              tabs={activeProject.tabs}
-              activeId={activeTabId}
-              onSelect={selectTab}
-              onAdd={addTerminal}
-              onClose={closeTab}
-              onCloseAll={closeAllTabs}
-              onCloseOthers={closeOtherTabs}
-              onCloseToRight={closeTabsToRight}
-              onRename={renameTab}
-              onReorder={reorderTabs}
-              onPin={pinTab}
-              onOpenInVSCode={() =>
-                void window.shellApi.openInVSCode(activeProject.path)
-              }
-            />
-          }
-        />
+          <WorkspaceSplit
+            projects={projects}
+            activeProjectId={activeProjectId}
+            sidebarOpen={sidebarOpen}
+            titleBar={titleBar}
+            sidebarTopActions={sidebarTopActions}
+            onTerminalTitleChange={setTerminalTitle}
+            onTerminalAgentStatusChange={setTerminalAgentStatus}
+            onStartTerminal={(tabId, paneId) => {
+              void startTerminalPane(activeProject.id, tabId, paneId)
+            }}
+            onAddTerminal={() => void addTerminal()}
+            onSplitTerminal={(tabId) => void splitTerminalPane(tabId)}
+            onClosePane={closePane}
+            onFocusPane={setActivePane}
+            onOpenDiffTab={openDiffTab}
+            onOpenFileTab={openFileTab}
+            rightSidebarTab={rightSidebarTab}
+            onRightSidebarTabChange={setRightSidebarTab}
+            activeTreeFilePath={activeTreeFilePath}
+            workspaceTabs={
+              <WorkspaceTabBar
+                tabs={activeProject.tabs}
+                activeId={activeTabId}
+                onSelect={selectTab}
+                onAdd={addTerminal}
+                onClose={closeTab}
+                onCloseAll={closeAllTabs}
+                onCloseOthers={closeOtherTabs}
+                onCloseToRight={closeTabsToRight}
+                onRename={renameTab}
+                onReorder={reorderTabs}
+                onPin={pinTab}
+                onOpenInVSCode={() =>
+                  void window.shellApi.openInVSCode(activeProject.path)
+                }
+              />
+            }
+          />
         )
       })()}
     </div>

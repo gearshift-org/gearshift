@@ -1,4 +1,5 @@
 import { PanelRight } from "lucide-react"
+import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { ProjectTabs } from "./ProjectTabs"
 import { ThemeToggle } from "./ThemeToggle"
 import {
@@ -24,6 +25,7 @@ type Props = {
   onReorderProjects?: (fromId: string, toId: string) => void
   sidebarOpen?: boolean
   onToggleSidebar?: () => void
+  onOpenChanges?: () => void
   showRightControls?: boolean
 }
 
@@ -42,8 +44,13 @@ export function TitleBar({
   onReorderProjects,
   sidebarOpen,
   onToggleSidebar,
+  onOpenChanges,
   showRightControls = true,
 }: Props) {
+  const activeProject = projects.find(
+    (project) => project.id === activeProjectId
+  )
+
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
       <div className="w-[88px] shrink-0" />
@@ -64,6 +71,12 @@ export function TitleBar({
       <div className="flex-1" />
       {showRightControls && (
         <>
+          {onOpenChanges && (
+            <ProjectGitStatusBadge
+              cwd={activeProject?.path ?? null}
+              onOpenChanges={onOpenChanges}
+            />
+          )}
           <ThemeToggle />
           {onToggleSidebar && (
             <div className="flex items-center pr-4 [-webkit-app-region:no-drag]">
@@ -74,9 +87,7 @@ export function TitleBar({
                       type="button"
                       onClick={onToggleSidebar}
                       aria-pressed={sidebarOpen}
-                      aria-label={
-                        sidebarOpen ? "Hide sidebar" : "Show sidebar"
-                      }
+                      aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                       className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
                     >
                       <PanelRight className="size-3.5" />

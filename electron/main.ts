@@ -8,7 +8,6 @@ import {
   shell,
 } from "electron"
 import path from "node:path"
-import net from "node:net"
 import { fileURLToPath } from "node:url"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
@@ -18,6 +17,13 @@ import parcelWatcher from "@parcel/watcher"
 import { ensureDaemonRunning } from "./daemonSupervisor"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
+import {
+  hookEnv,
+  installAgentHooks,
+  startAgentHookServer,
+  type AgentHookEvent,
+  type TerminalAgentName,
+} from "./agentHooks"
 
 type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 
@@ -32,17 +38,9 @@ type PullRequestInfo = {
   url: string
 }
 
-type TerminalAgentName = "claude" | "codex" | "opencode" | "pi" | "gemini"
-
 type AgentStatusInfo = {
   running: boolean
   agentName?: TerminalAgentName
-}
-
-type AgentHookEvent = {
-  agentName: TerminalAgentName
-  event: "stop" | "notification"
-  body?: string
 }
 
 app.setName("GearShift V2")
@@ -55,10 +53,7 @@ if (VITE_DEV_SERVER_URL) {
 } else {
   // Use the bundle id as the userData folder name so uninstallers
   // (Raycast, AppCleaner, etc.) can correlate leftover state to the app.
-  app.setPath(
-    "userData",
-    path.join(app.getPath("appData"), "com.gearshift.v2"),
-  )
+  app.setPath("userData", path.join(app.getPath("appData"), "com.gearshift.v2"))
 }
 
 let daemonClient: DaemonClient | null = null
@@ -93,25 +88,6 @@ async function getDaemonClient(): Promise<DaemonClient> {
 // and exit events back to the window that opened/adopted the session, even
 // when multiple windows are open.
 const sessionOwners = new Map<string, number>()
-let agentHookServer: net.Server | null = null
-
-const AGENT_HOOK_SOCKET_FILENAME = "gearshift-agent-hooks.sock"
-const AGENT_HOOK_SCRIPT_FILENAME = "gearshift-agent-hook.sh"
-const OPENCODE_PLUGIN_FILENAME = "gearshift-notify.js"
-const AGENT_HOOK_MARKER = "gearshift-agent-hook"
-const AGENT_EVENT_MAX_BYTES = 64 * 1024
-
-function agentHookSocketPath(): string {
-  return path.join(app.getPath("userData"), AGENT_HOOK_SOCKET_FILENAME)
-}
-
-function agentHookScriptPath(): string {
-  return path.join(app.getPath("userData"), AGENT_HOOK_SCRIPT_FILENAME)
-}
-
-function opencodePluginSourcePath(): string {
-  return path.join(app.getPath("userData"), OPENCODE_PLUGIN_FILENAME)
-}
 
 function getOwnerWebContents(sessionId: string) {
   const id = sessionOwners.get(sessionId)
@@ -126,79 +102,6 @@ function sendAgentHookEvent(sessionId: string, event: AgentHookEvent) {
   const sender = getOwnerWebContents(sessionId)
   if (!sender || sender.isDestroyed()) return
   sender.send(`term:agentEvent:${sessionId}`, event)
-}
-
-function parseAgentHookPayload(raw: string):
-  | { sessionId: string; event: AgentHookEvent }
-  | null {
-  const [agentRaw, sessionIdRaw, eventRaw, ...bodyParts] = raw
-    .replace(/\0/g, "")
-    .trim()
-    .split("|")
-  const agentName = agentRaw as TerminalAgentName
-  if (!["claude", "codex", "opencode", "pi", "gemini"].includes(agentName)) {
-    return null
-  }
-  const event = eventRaw === "notification" ? "notification" : "stop"
-  const sessionId = sessionIdRaw?.trim()
-  if (!sessionId) return null
-  const body = bodyParts.join("|").replace(/[\r\n]+/g, " ").trim().slice(0, 500)
-  return {
-    sessionId,
-    event: {
-      agentName,
-      event,
-      ...(body ? { body } : {}),
-    },
-  }
-}
-
-async function startAgentHookServer(): Promise<void> {
-  if (agentHookServer) return
-  const socketPath = agentHookSocketPath()
-  try {
-    await fs.unlink(socketPath)
-  } catch {
-    // not there
-  }
-  await fs.mkdir(path.dirname(socketPath), { recursive: true })
-  agentHookServer = net.createServer((socket) => {
-    let raw = ""
-    socket.on("data", (chunk) => {
-      raw += chunk.toString("utf8")
-      if (Buffer.byteLength(raw) > AGENT_EVENT_MAX_BYTES) {
-        socket.destroy()
-      }
-    })
-    socket.on("end", () => {
-      const parsed = parseAgentHookPayload(raw)
-      if (!parsed) return
-      sendAgentHookEvent(parsed.sessionId, parsed.event)
-    })
-    socket.on("error", () => {
-      // fire-and-forget hook clients may disconnect early
-    })
-  })
-  await new Promise<void>((resolve, reject) => {
-    agentHookServer?.once("error", reject)
-    agentHookServer?.listen(socketPath, () => {
-      agentHookServer?.off("error", reject)
-      resolve()
-    })
-  })
-  try {
-    await fs.chmod(socketPath, 0o600)
-  } catch {
-    // best effort
-  }
-}
-
-function hookEnv(sessionId: string): Record<string, string> {
-  return {
-    GEARSHIFT_SESSION_ID: sessionId,
-    GEARSHIFT_AGENT_SOCKET: agentHookSocketPath(),
-    GEARSHIFT_AGENT_HOOKS: "1",
-  }
 }
 
 function wireSessionEvents(client: DaemonClient, sessionId: string) {
@@ -282,10 +185,7 @@ const projectWatchers = new Map<
   }
 >()
 
-const WATCHER_IGNORE_BASE = [
-  "**/.git/**",
-  "**/.DS_Store",
-]
+const WATCHER_IGNORE_BASE = ["**/.git/**", "**/.DS_Store"]
 
 function gitignoreToGlobs(line: string): string[] {
   let p = line.trim()
@@ -312,19 +212,55 @@ async function readGitignoreGlobs(cwd: string): Promise<string[]> {
 }
 
 function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
-  const tokens = command.trim().split(/\s+/)
+  const lower = command.toLowerCase()
+  const tokens = lower.trim().split(/\s+/)
   const basenames = tokens.map((token) =>
-    path.basename(token).toLowerCase().replace(/\.js$/, ""),
+    path.basename(token).replace(/\.(js|ts|mjs|cjs)$/, "")
   )
-  if (basenames.some((base) => base === "claude" || base === "claude-code")) {
+
+  // Path-component matches let us recognize agents launched via their node/bun
+  // wrappers, where the executable basename is just "node"/"bun" and only the
+  // script path identifies the agent (e.g. node /…/@anthropic-ai/claude-code/cli.js).
+  const hasPathSegment = (segment: string) =>
+    tokens.some(
+      (token) => token.includes(`/${segment}/`) || token.endsWith(`/${segment}`)
+    )
+
+  if (
+    basenames.some((base) => base === "claude" || base === "claude-code") ||
+    hasPathSegment("claude-code") ||
+    hasPathSegment("@anthropic-ai/claude-code")
+  ) {
     return "claude"
   }
-  if (basenames.some((base) => base === "codex" || base === "codex-cli")) {
+  if (
+    basenames.some((base) => base === "codex" || base === "codex-cli") ||
+    hasPathSegment("codex") ||
+    hasPathSegment("codex-cli") ||
+    hasPathSegment("@openai/codex")
+  ) {
     return "codex"
   }
-  if (basenames.some((base) => base === "opencode")) return "opencode"
-  if (basenames.some((base) => base === "pi")) return "pi"
-  if (basenames.some((base) => base === "gemini" || base === "gemini-cli")) {
+  if (
+    basenames.some((base) => base === "opencode") ||
+    hasPathSegment("opencode") ||
+    hasPathSegment("@opencode/cli") ||
+    hasPathSegment("sst/opencode")
+  ) {
+    return "opencode"
+  }
+  if (
+    basenames.some((base) => base === "pi") ||
+    hasPathSegment("pi-coding-agent") ||
+    hasPathSegment("@mariozechner/pi-coding-agent")
+  ) {
+    return "pi"
+  }
+  if (
+    basenames.some((base) => base === "gemini" || base === "gemini-cli") ||
+    hasPathSegment("gemini-cli") ||
+    hasPathSegment("@google/gemini-cli")
+  ) {
     return "gemini"
   }
   return undefined
@@ -338,7 +274,10 @@ async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
       "-axo",
       "pid=,ppid=,command=",
     ])
-    const childrenByParent = new Map<number, Array<{ pid: number; command: string }>>()
+    const childrenByParent = new Map<
+      number,
+      Array<{ pid: number; command: string }>
+    >()
 
     for (const line of stdout.split("\n")) {
       const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
@@ -369,254 +308,6 @@ async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
   return { running: false }
 }
 
-function shellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
-}
-
-async function readJsonObject(filePath: string): Promise<Record<string, unknown>> {
-  try {
-    const raw = await fs.readFile(filePath, "utf8")
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
-    }
-  } catch {
-    // missing or malformed config: start from an empty object
-  }
-  return {}
-}
-
-async function writeJsonWithBackup(
-  filePath: string,
-  data: Record<string, unknown>,
-): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  try {
-    await fs.copyFile(filePath, `${filePath}.gearshift-backup`)
-  } catch {
-    // no existing file to back up
-  }
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2) + "\n", {
-    encoding: "utf8",
-    mode: 0o600,
-  })
-  try {
-    await fs.chmod(filePath, 0o600)
-  } catch {
-    // best effort
-  }
-}
-
-function isMarkedHookEntry(entry: unknown): boolean {
-  if (!entry || typeof entry !== "object") return false
-  const hooks = (entry as { hooks?: unknown }).hooks
-  if (!Array.isArray(hooks)) return false
-  return hooks.some((hook) => {
-    if (!hook || typeof hook !== "object") return false
-    const command = (hook as { command?: unknown }).command
-    return typeof command === "string" && command.includes(AGENT_HOOK_MARKER)
-  })
-}
-
-function buildCommandHookEntry(command: string, timeout?: number) {
-  return {
-    matcher: "",
-    hooks: [
-      {
-        type: "command",
-        command,
-        ...(timeout ? { timeout } : {}),
-      },
-    ],
-  }
-}
-
-function mergeMarkedHookEntry(existing: unknown, entry: object): object[] {
-  const entries = Array.isArray(existing) ? existing.filter((e) => !isMarkedHookEntry(e)) : []
-  return [...entries, entry]
-}
-
-async function writeAgentHookScript(): Promise<void> {
-  const script = `#!/usr/bin/env bash
-set -euo pipefail
-
-agent="\${1:-}"
-event="\${2:-stop}"
-
-if [ -z "\${GEARSHIFT_AGENT_SOCKET:-}" ] || [ -z "\${GEARSHIFT_SESSION_ID:-}" ]; then
-  exit 0
-fi
-
-input="$(cat || true)"
-
-extract_last_message() {
-  local msg=""
-  msg=$(printf '%s' "$input" | grep -o '"last_assistant_message":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-  if [ -n "$msg" ]; then
-    printf '%s' "$msg" | tr '|\\n\\r' '   ' | head -c 500
-    return
-  fi
-  printf 'Session completed'
-}
-
-case "$agent" in
-  claude|codex|opencode|pi|gemini) ;;
-  *) exit 0 ;;
-esac
-
-case "$event" in
-  notification) body="Needs attention" ;;
-  *) event="stop"; body="$(extract_last_message)" ;;
-esac
-
-printf '%s|%s|%s|%s' "$agent" "$GEARSHIFT_SESSION_ID" "$event" "$body" \\
-  | nc -U "$GEARSHIFT_AGENT_SOCKET" 2>/dev/null || true
-`
-  const filePath = agentHookScriptPath()
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, script, { encoding: "utf8", mode: 0o700 })
-  try {
-    await fs.chmod(filePath, 0o700)
-  } catch {
-    // best effort
-  }
-}
-
-async function installClaudeHooks(scriptPath: string): Promise<void> {
-  const settingsPath = path.join(app.getPath("home"), ".claude", "settings.json")
-  const settings = await readJsonObject(settingsPath)
-  const hooks = (settings.hooks && typeof settings.hooks === "object" && !Array.isArray(settings.hooks))
-    ? (settings.hooks as Record<string, unknown>)
-    : {}
-  const stopCommand = `${shellSingleQuote(scriptPath)} claude stop # ${AGENT_HOOK_MARKER}`
-  const notificationCommand = `${shellSingleQuote(scriptPath)} claude notification # ${AGENT_HOOK_MARKER}`
-  settings.hooks = {
-    ...hooks,
-    Stop: mergeMarkedHookEntry(hooks.Stop, buildCommandHookEntry(stopCommand, 10)),
-    Notification: mergeMarkedHookEntry(
-      hooks.Notification,
-      buildCommandHookEntry(notificationCommand, 10),
-    ),
-  }
-  await writeJsonWithBackup(settingsPath, settings)
-}
-
-async function installCodexHooks(scriptPath: string): Promise<void> {
-  const hooksPath = path.join(app.getPath("home"), ".codex", "hooks.json")
-  const settings = await readJsonObject(hooksPath)
-  const hooks = (settings.hooks && typeof settings.hooks === "object" && !Array.isArray(settings.hooks))
-    ? (settings.hooks as Record<string, unknown>)
-    : {}
-  const stopCommand = `${shellSingleQuote(scriptPath)} codex stop # ${AGENT_HOOK_MARKER}`
-  const notificationCommand = `${shellSingleQuote(scriptPath)} codex notification # ${AGENT_HOOK_MARKER}`
-  settings.hooks = {
-    ...hooks,
-    Stop: mergeMarkedHookEntry(hooks.Stop, buildCommandHookEntry(stopCommand)),
-    Notification: mergeMarkedHookEntry(
-      hooks.Notification,
-      buildCommandHookEntry(notificationCommand),
-    ),
-  }
-  await writeJsonWithBackup(hooksPath, settings)
-}
-
-async function writeOpenCodePlugin(): Promise<void> {
-  const plugin = `const childSessions = new Set()
-const cancelledSessions = new Set()
-
-export const GearShiftNotificationPlugin = async ({ client }) => ({
-  event: async ({ event }) => {
-    const socketPath = process.env.GEARSHIFT_AGENT_SOCKET
-    const sessionId = process.env.GEARSHIFT_SESSION_ID
-    if (!socketPath || !sessionId) return
-
-    if (event.type === "session.created") {
-      const info = event.properties.info
-      if (info?.parentID) childSessions.add(event.properties.sessionID)
-      return
-    }
-
-    if (event.type === "session.error") {
-      const id = event.properties.sessionID
-      const err = event.properties.error
-      if (err?.name === "MessageAbortedError" && id) {
-        cancelledSessions.add(id)
-      }
-      return
-    }
-
-    if (event.type !== "session.status") return
-    if (event.properties.status.type !== "idle") return
-
-    const id = event.properties.sessionID
-    if (cancelledSessions.has(id)) {
-      cancelledSessions.delete(id)
-      return
-    }
-    if (childSessions.has(id)) return
-
-    let body = "Session completed"
-    try {
-      const result = await client.session.messages({
-        path: { id },
-        query: { limit: 3 },
-      })
-      const messages = result.data || []
-      const lastAssistant = [...messages]
-        .reverse()
-        .find((m) => m.info.role === "assistant")
-      if (lastAssistant) {
-        const text = (lastAssistant.parts || [])
-          .filter((p) => p.type === "text")
-          .map((p) => p.text || "")
-          .join("")
-        if (text) body = text.replace(/[\\n\\r|]+/g, " ").slice(0, 500)
-      }
-    } catch {}
-
-    try {
-      const { createConnection } = await import("net")
-      const conn = createConnection({ path: socketPath })
-      conn.on("error", () => {})
-      conn.write(\`opencode|\${sessionId}|stop|\${body}\`, () => conn.end())
-      await new Promise((resolve) => {
-        conn.on("close", resolve)
-        setTimeout(resolve, 3000)
-      })
-    } catch {}
-  },
-})
-`
-  const sourcePath = opencodePluginSourcePath()
-  await fs.writeFile(sourcePath, plugin, "utf8")
-  const pluginsDir = path.join(app.getPath("home"), ".opencode", "plugins")
-  const targetPath = path.join(pluginsDir, OPENCODE_PLUGIN_FILENAME)
-  await fs.mkdir(pluginsDir, { recursive: true })
-  try {
-    await fs.copyFile(targetPath, `${targetPath}.gearshift-backup`)
-  } catch {
-    // no existing plugin to back up
-  }
-  await fs.copyFile(sourcePath, targetPath)
-}
-
-async function installAgentHooks(): Promise<void> {
-  if (process.platform === "win32") return
-  await writeAgentHookScript()
-  const scriptPath = agentHookScriptPath()
-  const installers = [
-    installClaudeHooks(scriptPath),
-    installCodexHooks(scriptPath),
-    writeOpenCodePlugin(),
-  ]
-  const results = await Promise.allSettled(installers)
-  for (const result of results) {
-    if (result.status === "rejected") {
-      console.warn("[agent-hooks] install failed", result.reason)
-    }
-  }
-}
-
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -641,7 +332,8 @@ function createWindow() {
 }
 
 function sendToFocused(channel: string) {
-  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const win =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   if (!win) return
   win.webContents.send(channel)
 }
@@ -716,7 +408,7 @@ async function findBinary(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv,
-  extraCandidates: string[] = [],
+  extraCandidates: string[] = []
 ): Promise<string | null> {
   const candidates = [command, ...extraCandidates]
   for (const bin of candidates) {
@@ -739,7 +431,7 @@ async function findGhBinary(env: NodeJS.ProcessEnv): Promise<string | null> {
 }
 
 async function findDirenvBinary(
-  env: NodeJS.ProcessEnv,
+  env: NodeJS.ProcessEnv
 ): Promise<string | null> {
   return findBinary("direnv", ["version"], env, [
     "/opt/homebrew/bin/direnv",
@@ -851,7 +543,10 @@ function flushProjectWatch(watchId: string) {
   })
 }
 
-function queueProjectWatchEvent(watchId: string, filePath?: string | Buffer | null) {
+function queueProjectWatchEvent(
+  watchId: string,
+  filePath?: string | Buffer | null
+) {
   const entry = projectWatchers.get(watchId)
   if (!entry) return
   if (filePath) entry.paths.add(String(filePath))
@@ -914,13 +609,13 @@ async function buildUntrackedPatch(cwd: string, files: string[]) {
         return raw
           .replace(
             /^diff --git a\/dev\/null b\/.*$/m,
-            `diff --git a/${filePath} b/${filePath}`,
+            `diff --git a/${filePath} b/${filePath}`
           )
           .replace(/^--- a\/dev\/null$/m, "--- /dev/null")
       } catch {
         return ""
       }
-    }),
+    })
   )
   return patches.filter(Boolean).join("\n")
 }
@@ -972,12 +667,20 @@ async function flushState() {
 
 app.whenReady().then(async () => {
   buildMenu()
+  // The socket server must be listening before any agent tries to connect, so
+  // we still await it — but it's just a Unix-socket bind, milliseconds.
   try {
-    await startAgentHookServer()
-    await installAgentHooks()
+    await startAgentHookServer(sendAgentHookEvent)
   } catch (err) {
-    console.warn("[agent-hooks] setup failed", err)
+    console.warn("[agent-hooks] socket server failed", err)
   }
+  // Writing hook configs / plugins / extensions is pure file I/O across
+  // several agent dirs and was previously blocking window creation. Run it in
+  // the background — agents launched before it finishes will simply miss the
+  // current run's hook updates and pick them up on the next start.
+  void installAgentHooks().catch((err) => {
+    console.warn("[agent-hooks] install failed", err)
+  })
 
   ipcMain.handle(
     "menu:update-accelerators",
@@ -992,7 +695,7 @@ app.whenReady().then(async () => {
         buildMenu()
       }
       return { ok: true }
-    },
+    }
   )
 
   ipcMain.handle("state:read", () => readState())
@@ -1069,7 +772,7 @@ app.whenReady().then(async () => {
           if (err) return
           for (const ev of events) queueProjectWatchEvent(watchId, ev.path)
         },
-        { ignore },
+        { ignore }
       )
       projectWatchers.set(watchId, {
         cwd,
@@ -1114,78 +817,75 @@ app.whenReady().then(async () => {
     }
   })
 
-  ipcMain.handle(
-    "fs:readDir",
-    async (_event, absPath: string) => {
-      if (!absPath) return { ok: false, error: "no-path", entries: [] }
+  ipcMain.handle("fs:readDir", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path", entries: [] }
+    try {
+      const dirents = await fs.readdir(absPath, { withFileTypes: true })
+      // Always hide .git; everything else is filtered by git check-ignore.
+      const candidates = dirents
+        .filter((d) => d.name !== ".git")
+        .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
+      if (candidates.length === 0) return { ok: true, entries: [] }
+
+      // Find the enclosing repo root so check-ignore has a consistent cwd
+      // (works for subdirectories too). Fall back to no filtering if not a repo.
+      let repoRoot: string | null = null
       try {
-        const dirents = await fs.readdir(absPath, { withFileTypes: true })
-        // Always hide .git; everything else is filtered by git check-ignore.
-        const candidates = dirents
-          .filter((d) => d.name !== ".git")
-          .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
-        if (candidates.length === 0) return { ok: true, entries: [] }
-
-        // Find the enclosing repo root so check-ignore has a consistent cwd
-        // (works for subdirectories too). Fall back to no filtering if not a repo.
-        let repoRoot: string | null = null
-        try {
-          repoRoot = (
-            await runGit(absPath, ["rev-parse", "--show-toplevel"])
-          ).trim()
-        } catch {
-          repoRoot = null
-        }
-
-        if (!repoRoot) {
-          return { ok: true, entries: candidates }
-        }
-
-        const relPaths = candidates.map((c) => {
-          const full = path.join(absPath, c.name)
-          const rel = path.relative(repoRoot!, full)
-          return c.isDir ? `${rel}/` : rel
-        })
-
-        // git check-ignore exits 1 when nothing matches; 0 when matches; >1 on error.
-        const ignored = new Set<string>()
-        await new Promise<void>((resolve) => {
-          const child = spawn("git", ["check-ignore", "--stdin", "-z"], {
-            cwd: repoRoot!,
-          })
-          let buf = ""
-          child.stdout.on("data", (d) => (buf += d.toString()))
-          child.on("close", () => {
-            for (const line of buf.split("\0")) {
-              if (line) ignored.add(line.replace(/\/$/, ""))
-            }
-            resolve()
-          })
-          child.on("error", () => resolve())
-          // `--stdin -z` requires every input path NUL-terminated, including
-          // the last one — otherwise git silently fails to match it.
-          child.stdin.write(relPaths.map((p) => p + "\0").join(""))
-          child.stdin.end()
-        })
-
-        // Allow-list: .env, .env.local, .env.production etc. should appear in
-        // the tree even when gitignored, since the user often needs to view
-        // them in the app.
-        const isAllowlistedDotenv = (name: string) =>
-          name === ".env" || name.startsWith(".env.")
-
-        const entries = candidates.filter((c) => {
-          if (isAllowlistedDotenv(c.name)) return true
-          const full = path.join(absPath, c.name)
-          const rel = path.relative(repoRoot!, full)
-          return !ignored.has(rel)
-        })
-        return { ok: true, entries }
-      } catch (err) {
-        return { ok: false, error: (err as Error).message, entries: [] }
+        repoRoot = (
+          await runGit(absPath, ["rev-parse", "--show-toplevel"])
+        ).trim()
+      } catch {
+        repoRoot = null
       }
-    },
-  )
+
+      if (!repoRoot) {
+        return { ok: true, entries: candidates }
+      }
+
+      const relPaths = candidates.map((c) => {
+        const full = path.join(absPath, c.name)
+        const rel = path.relative(repoRoot!, full)
+        return c.isDir ? `${rel}/` : rel
+      })
+
+      // git check-ignore exits 1 when nothing matches; 0 when matches; >1 on error.
+      const ignored = new Set<string>()
+      await new Promise<void>((resolve) => {
+        const child = spawn("git", ["check-ignore", "--stdin", "-z"], {
+          cwd: repoRoot!,
+        })
+        let buf = ""
+        child.stdout.on("data", (d) => (buf += d.toString()))
+        child.on("close", () => {
+          for (const line of buf.split("\0")) {
+            if (line) ignored.add(line.replace(/\/$/, ""))
+          }
+          resolve()
+        })
+        child.on("error", () => resolve())
+        // `--stdin -z` requires every input path NUL-terminated, including
+        // the last one — otherwise git silently fails to match it.
+        child.stdin.write(relPaths.map((p) => p + "\0").join(""))
+        child.stdin.end()
+      })
+
+      // Allow-list: .env, .env.local, .env.production etc. should appear in
+      // the tree even when gitignored, since the user often needs to view
+      // them in the app.
+      const isAllowlistedDotenv = (name: string) =>
+        name === ".env" || name.startsWith(".env.")
+
+      const entries = candidates.filter((c) => {
+        if (isAllowlistedDotenv(c.name)) return true
+        const full = path.join(absPath, c.name)
+        const rel = path.relative(repoRoot!, full)
+        return !ignored.has(rel)
+      })
+      return { ok: true, entries }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message, entries: [] }
+    }
+  })
 
   ipcMain.handle("fs:listAllFiles", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, files: [] }
@@ -1215,7 +915,7 @@ app.whenReady().then(async () => {
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
-    },
+    }
   )
 
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
@@ -1236,18 +936,15 @@ app.whenReady().then(async () => {
     }
   })
 
-  ipcMain.handle(
-    "git:stage",
-    async (_event, cwd: string, paths: string[]) => {
-      if (!cwd || !paths?.length) return { ok: false, error: "no-paths" }
-      try {
-        await runGit(cwd, ["add", "--", ...paths])
-        return { ok: true }
-      } catch (err) {
-        return { ok: false, error: (err as Error).message }
-      }
-    },
-  )
+  ipcMain.handle("git:stage", async (_event, cwd: string, paths: string[]) => {
+    if (!cwd || !paths?.length) return { ok: false, error: "no-paths" }
+    try {
+      await runGit(cwd, ["add", "--", ...paths])
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
 
   ipcMain.handle(
     "git:unstage",
@@ -1260,24 +957,21 @@ app.whenReady().then(async () => {
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
-    },
+    }
   )
 
-  ipcMain.handle(
-    "git:commit",
-    async (_event, cwd: string, message: string) => {
-      if (!cwd) return { ok: false, error: "no-cwd" }
-      const trimmed = (message ?? "").trim()
-      if (!trimmed) return { ok: false, error: "empty-message" }
-      try {
-        await runGit(cwd, ["commit", "-m", trimmed])
-        return { ok: true }
-      } catch (err) {
-        const e = err as { stderr?: string; message?: string }
-        return { ok: false, error: e.stderr || e.message || "commit failed" }
-      }
-    },
-  )
+  ipcMain.handle("git:commit", async (_event, cwd: string, message: string) => {
+    if (!cwd) return { ok: false, error: "no-cwd" }
+    const trimmed = (message ?? "").trim()
+    if (!trimmed) return { ok: false, error: "empty-message" }
+    try {
+      await runGit(cwd, ["commit", "-m", trimmed])
+      return { ok: true }
+    } catch (err) {
+      const e = err as { stderr?: string; message?: string }
+      return { ok: false, error: e.stderr || e.message || "commit failed" }
+    }
+  })
 
   ipcMain.handle(
     "git:discard",
@@ -1317,7 +1011,7 @@ app.whenReady().then(async () => {
           error: e.stderr || e.message || "discard failed",
         }
       }
-    },
+    }
   )
 
   ipcMain.handle("git:branches", async (_event, cwd: string) => {
@@ -1360,7 +1054,7 @@ app.whenReady().then(async () => {
       cwd: string,
       currentBranch: string | null,
       hasUpstream: boolean,
-      ahead: number,
+      ahead: number
     ) => {
       if (!cwd || !currentBranch) {
         return {
@@ -1398,7 +1092,7 @@ app.whenReady().then(async () => {
               "--limit",
               "1",
             ],
-            { cwd, env, maxBuffer: 20 * 1024 * 1024 },
+            { cwd, env, maxBuffer: 20 * 1024 * 1024 }
           ).then((res) => res.stdout),
           getDefaultBranch(cwd),
         ])
@@ -1425,7 +1119,7 @@ app.whenReady().then(async () => {
           canCreatePullRequest: false,
         }
       }
-    },
+    }
   )
 
   ipcMain.handle(
@@ -1439,7 +1133,7 @@ app.whenReady().then(async () => {
         const e = err as { stderr?: string; message?: string }
         return { ok: false, error: e.stderr || e.message || "checkout failed" }
       }
-    },
+    }
   )
 
   ipcMain.handle(
@@ -1460,7 +1154,7 @@ app.whenReady().then(async () => {
           error: e.stderr || e.message || "create branch failed",
         }
       }
-    },
+    }
   )
 
   ipcMain.handle("git:aheadBehind", async (_event, cwd: string) => {
@@ -1524,7 +1218,7 @@ app.whenReady().then(async () => {
           error: e.stderr || e.message || "open pull request failed",
         }
       }
-    },
+    }
   )
 
   ipcMain.handle(
@@ -1551,17 +1245,12 @@ app.whenReady().then(async () => {
           error: e.stderr || e.message || "create pull request failed",
         }
       }
-    },
+    }
   )
 
   ipcMain.handle(
     "git:diffFile",
-    async (
-      _event,
-      cwd: string,
-      filePath: string,
-      staged: boolean,
-    ) => {
+    async (_event, cwd: string, filePath: string, staged: boolean) => {
       if (!cwd || !filePath) return { ok: false, error: "no-path", patch: "" }
       try {
         const args = ["diff", "--no-color", "--text"]
@@ -1577,7 +1266,7 @@ app.whenReady().then(async () => {
       } catch (err) {
         return { ok: false, error: (err as Error).message, patch: "" }
       }
-    },
+    }
   )
 
   ipcMain.handle("git:diffAll", async (_event, cwd: string) => {
@@ -1595,11 +1284,13 @@ app.whenReady().then(async () => {
           "--untracked-files=all",
         ]),
       ])
-      const untracked = parseGitStatus(statusRaw).unstaged
-        .filter((file) => file.status === "A")
+      const untracked = parseGitStatus(statusRaw)
+        .unstaged.filter((file) => file.status === "A")
         .map((file) => file.path)
       const untrackedPatch = await buildUntrackedPatch(cwd, untracked)
-      const unstagedPatch = [unstagedRaw, untrackedPatch].filter(Boolean).join("\n")
+      const unstagedPatch = [unstagedRaw, untrackedPatch]
+        .filter(Boolean)
+        .join("\n")
       return { ok: true, unstagedPatch, stagedPatch }
     } catch (err) {
       return {
@@ -1613,10 +1304,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "term:create",
-    async (
-      event,
-      opts: { cwd: string; cols?: number; rows?: number },
-    ) => {
+    async (event, opts: { cwd: string; cols?: number; rows?: number }) => {
       const client = await getDaemonClient()
       const resolved = buildOpenOptions({
         cwd: opts.cwd,
@@ -1632,7 +1320,7 @@ app.whenReady().then(async () => {
       sessionOwners.set(id, event.sender.id)
       wireSessionEvents(client, id)
       return { id }
-    },
+    }
   )
 
   ipcMain.handle("term:adopt", async (event, sessionId: string) => {

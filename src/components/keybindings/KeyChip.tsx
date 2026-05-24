@@ -1,4 +1,3 @@
-import * as React from "react"
 import { prettyAccelerator } from "@/lib/keybindings/registry"
 
 type Props = {

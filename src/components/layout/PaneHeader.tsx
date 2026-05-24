@@ -61,11 +61,7 @@ export function PaneHeader({
   }
   const cancel = () => setEditing(false)
 
-  const agentDot = pane.agentStatus?.working
-    ? "bg-emerald-500"
-    : pane.agentStatus?.running
-      ? "bg-amber-500"
-      : null
+  const agentDot = pane.agentStatus?.working ? "bg-emerald-500" : null
 
   return (
     <div

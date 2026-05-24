@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/icons/FileIcon"
+import { ChangeCountBadge } from "./ChangeCountBadge"
 import { FilesTree } from "./FilesTree"
 import { setPathDragData } from "@/lib/pathDrag"
 import {
@@ -510,9 +511,7 @@ export function RightSidebar({
             >
               Changes
               {hasData && files.length > 0 && (
-                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-emerald-500/20 px-1 text-[10px] leading-none font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                  {files.length > 99 ? "99+" : files.length}
-                </span>
+                <ChangeCountBadge count={files.length} />
               )}
             </TabsTrigger>
             <TabsTrigger

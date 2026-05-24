@@ -89,6 +89,10 @@ const SEARCH_DECORATIONS = {
 const WRAPPER_BG = "[--xterm-bg:#f8f8f8] dark:[--xterm-bg:#151515]"
 const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 10000
+// While a hook event has been seen within this window, the process-detection
+// poller is treated as advisory only — it can promote running/agentName but
+// must not downgrade the working flag. Hooks are the authoritative signal.
+const HOOK_AUTHORITATIVE_WINDOW_MS = 30000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
@@ -140,6 +144,7 @@ export function TerminalView({
   const lastTitleSignalRef = useRef<string | undefined>(undefined)
   const hasSubmittedToAgentRef = useRef(false)
   const suppressAgentActivityUntilRef = useRef(0)
+  const lastHookEventAtRef = useRef(0)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -608,6 +613,22 @@ export function TerminalView({
         }
         const recentlyActive =
           Date.now() - lastAgentActivityAtRef.current < AGENT_WORKING_QUIET_MS
+        const hookAuthoritative =
+          Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
+
+        // When hooks own the state, the poller can only promote (fill in
+        // missing agentName, flip running on once detection catches up) — it
+        // must not downgrade running or working, since process detection
+        // misses agents launched via node/bun wrappers.
+        if (hookAuthoritative) {
+          emitAgentStatus({
+            running: current.running || detected.running,
+            working: current.working,
+            agentName: current.agentName ?? detected.agentName,
+          })
+          return
+        }
+
         emitAgentStatus({
           running: detected.running,
           working: detected.running
@@ -616,7 +637,14 @@ export function TerminalView({
           agentName: detected.agentName,
         })
       } catch {
-        if (!cancelled) emitAgentStatus({ running: false, working: false })
+        if (!cancelled) {
+          // Don't clobber hook state on a transient IPC failure either.
+          const hookAuthoritative =
+            Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
+          if (!hookAuthoritative) {
+            emitAgentStatus({ running: false, working: false })
+          }
+        }
       }
     }
 
@@ -638,9 +666,24 @@ export function TerminalView({
         window.clearTimeout(agentWorkingTimerRef.current)
         agentWorkingTimerRef.current = undefined
       }
+      lastHookEventAtRef.current = Date.now()
+      const current = agentStatusRef.current
+      if (event.event === "start") {
+        // Authoritative "agent is working" signal from the lifecycle hook
+        // (UserPromptSubmit). Treats agent as running even before the
+        // process-name poll catches up.
+        hasSubmittedToAgentRef.current = true
+        lastAgentActivityAtRef.current = Date.now()
+        emitAgentStatus({
+          running: true,
+          working: true,
+          agentName: event.agentName,
+        })
+        return
+      }
+      // "stop" or "notification" → turn off working immediately.
       lastAgentActivityAtRef.current = 0
       hasSubmittedToAgentRef.current = false
-      const current = agentStatusRef.current
       emitAgentStatus({
         running: current.running,
         working: false,

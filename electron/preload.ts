@@ -38,7 +38,7 @@ const termApi = {
     id: string,
     cb: (event: {
       agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
-      event: "stop" | "notification"
+      event: "stop" | "notification" | "start"
       body?: string
     }) => void,
   ) => {
@@ -47,7 +47,7 @@ const termApi = {
       _e: unknown,
       event: {
         agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
-        event: "stop" | "notification"
+        event: "stop" | "notification" | "start"
         body?: string
       },
     ) => cb(event)

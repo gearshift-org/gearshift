@@ -198,7 +198,20 @@ function TerminalTabContent({
     <ResizablePanelGroup
       orientation="horizontal"
       className="min-h-0 flex-1"
-      onLayout={(sizes) => setPaneSizes(sizes)}
+      onLayoutChange={(layout) => {
+        const next = tab.panes.map(
+          (p) => layout[p.id] ?? 100 / tab.panes.length,
+        )
+        setPaneSizes((prev) => {
+          if (
+            prev.length === next.length &&
+            prev.every((v, i) => Math.abs(v - next[i]) < 0.01)
+          ) {
+            return prev
+          }
+          return next
+        })
+      }}
     >
       {tab.panes.map((pane, idx) => (
         <Fragment key={pane.id}>

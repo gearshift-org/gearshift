@@ -1354,10 +1354,12 @@ export function AppShell() {
         )
         const sidebarTopActions = (
           <div className="flex items-center pr-1">
-            <ProjectGitStatusBadge
-              cwd={activeProject.path}
-              onOpenChanges={openChanges}
-            />
+            {activeProject && !sidebarOpen && (
+              <ProjectGitStatusBadge
+                cwd={activeProject.path}
+                onOpenChanges={openChanges}
+              />
+            )}
             <ThemeToggle />
             <Tooltip>
               <TooltipTrigger

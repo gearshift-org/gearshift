@@ -239,7 +239,7 @@ export function WorkspacePane({
 
   return (
     <div className="flex h-full flex-col bg-card">
-      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3 text-xs text-muted-foreground">
+      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground">
         <span className="truncate">
           {activeTab
             ? tabDisplayName(activeTab)
@@ -268,7 +268,7 @@ export function WorkspacePane({
                       ? "Switch to split diff"
                       : "Switch to inline diff"
                   }
-                  className="ml-auto grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                  className="ml-auto grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
                 >
                   {activeDiffMode === "unified" ? (
                     <Columns2 className="size-3.5" />
@@ -291,7 +291,7 @@ export function WorkspacePane({
                   type="button"
                   onClick={() => onSplitTerminal(activeTab!.id)}
                   aria-label="Split terminal"
-                  className="ml-auto grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                  className="ml-auto grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
                 >
                   <SplitSquareHorizontal className="size-3.5" />
                 </button>

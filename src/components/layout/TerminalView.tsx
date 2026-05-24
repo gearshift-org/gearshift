@@ -52,7 +52,7 @@ const DARK_THEME = {
   brightWhite: "#fafafa",
 }
 const LIGHT_THEME = {
-  background: "#f7f7f8",
+  background: "#fbfbfb",
   foreground: "#2f3033",
   cursor: "#2f3033",
   selectionBackground: "#d8d7de",

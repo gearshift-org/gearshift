@@ -1,9 +1,22 @@
 import { Fragment, useEffect, useState } from "react"
 import { Columns2, Rows3, SplitSquareHorizontal } from "lucide-react"
+import {
+  closestCenter,
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  horizontalListSortingStrategy,
+  SortableContext,
+} from "@dnd-kit/sortable"
 import { cn } from "@/lib/utils"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import { FilePreview } from "./FilePreview"
+import { PaneHeader } from "./PaneHeader"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -39,6 +52,12 @@ type Props = {
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onRenamePane?: (tabId: string, paneId: string, name: string) => void
+  onReorderPanes?: (
+    tabId: string,
+    fromPaneId: string,
+    toPaneId: string,
+  ) => void
   onOpenFile?: (path: string) => void
 }
 
@@ -104,8 +123,11 @@ function TerminalTabContent({
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
+  onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onRenamePane,
+  onReorderPanes,
 }: {
   tab: TerminalTab
   isActive: boolean
@@ -116,12 +138,41 @@ function TerminalTabContent({
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onRenamePane?: (tabId: string, paneId: string, name: string) => void
+  onReorderPanes?: (
+    tabId: string,
+    fromPaneId: string,
+    toPaneId: string,
+  ) => void
 }) {
   const multi = tab.panes.length > 1
 
-  const renderPane = (pane: TerminalPaneType) => (
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    onReorderPanes?.(tab.id, String(active.id), String(over.id))
+  }
+
+  // Mirror panel sizes so the lifted-out header row stays aligned with the
+  // terminal column beneath it. Even split until the user drags the handle.
+  const [paneSizes, setPaneSizes] = useState<number[]>(() =>
+    tab.panes.map(() => 100 / Math.max(1, tab.panes.length)),
+  )
+  useEffect(() => {
+    setPaneSizes((prev) => {
+      if (prev.length === tab.panes.length) return prev
+      return tab.panes.map(() => 100 / Math.max(1, tab.panes.length))
+    })
+  }, [tab.panes.length])
+
+  const renderTerminal = (pane: TerminalPaneType) => (
     <div
       className={cn(
         "group/pane relative h-full",
@@ -143,11 +194,12 @@ function TerminalTabContent({
     </div>
   )
 
-  // Always render through ResizablePanelGroup — even with a single pane — so
-  // splitting from 1→2 panes doesn't change the parent structure and force an
-  // unmount/remount of the existing terminal (which causes a visible flicker).
-  return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full">
+  const panelGroup = (
+    <ResizablePanelGroup
+      orientation="horizontal"
+      className="min-h-0 flex-1"
+      onLayout={(sizes) => setPaneSizes(sizes)}
+    >
       {tab.panes.map((pane, idx) => (
         <Fragment key={pane.id}>
           {idx > 0 && <ResizableHandle />}
@@ -156,11 +208,54 @@ function TerminalTabContent({
             minSize={10}
             defaultSize={100 / tab.panes.length}
           >
-            {renderPane(pane)}
+            {renderTerminal(pane)}
           </ResizablePanel>
         </Fragment>
       ))}
     </ResizablePanelGroup>
+  )
+
+  if (!multi) {
+    return <div className="flex h-full flex-col">{panelGroup}</div>
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext
+        items={tab.panes.map((p) => p.id)}
+        strategy={horizontalListSortingStrategy}
+      >
+        <div className="flex h-full flex-col">
+          {/* Headers live in a flat row above the panels so the sibling-swap
+              animation isn't clipped by react-resizable-panels' overflow. */}
+          <div className="flex shrink-0">
+            {tab.panes.map((pane, idx) => (
+              <div
+                key={pane.id}
+                style={{ flexBasis: `${paneSizes[idx] ?? 100 / tab.panes.length}%` }}
+                className="min-w-0"
+              >
+                <PaneHeader
+                  pane={pane}
+                  index={idx}
+                  isActive={tab.activePaneId === pane.id}
+                  showSplit={tab.activePaneId === pane.id && !!onSplitTerminal}
+                  onFocus={() => onFocusPane?.(tab.id, pane.id)}
+                  onClose={() => onClosePane?.(tab.id, pane.id)}
+                  onRename={(name) => onRenamePane?.(tab.id, pane.id, name)}
+                  onSplit={() => onSplitTerminal?.(tab.id)}
+                />
+              </div>
+            ))}
+          </div>
+          {panelGroup}
+        </div>
+      </SortableContext>
+    </DndContext>
   )
 }
 
@@ -172,8 +267,11 @@ function PaneContent({
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
+  onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onRenamePane,
+  onReorderPanes,
   onOpenFile,
 }: {
   tab: WorkspaceTab
@@ -187,8 +285,15 @@ function PaneContent({
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onRenamePane?: (tabId: string, paneId: string, name: string) => void
+  onReorderPanes?: (
+    tabId: string,
+    fromPaneId: string,
+    toPaneId: string,
+  ) => void
   onOpenFile?: (path: string) => void
 }) {
   if (tab.kind === "terminal") {
@@ -199,8 +304,11 @@ function PaneContent({
         onTitleChange={onTitleChange}
         onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
+        onSplitTerminal={onSplitTerminal}
         onClosePane={onClosePane}
         onFocusPane={onFocusPane}
+        onRenamePane={onRenamePane}
+        onReorderPanes={onReorderPanes}
       />
     )
   }
@@ -228,11 +336,15 @@ export function WorkspacePane({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onRenamePane,
+  onReorderPanes,
   onOpenFile,
 }: Props) {
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
   const isTerminalActive = activeTab?.kind === "terminal"
   const isDiffActive = activeTab?.kind === "diff"
+  const hideSharedHeader =
+    activeTab?.kind === "terminal" && activeTab.panes.length > 1
 
   // Per-diff-tab view mode, remembered while the tab exists; defaults to the
   // last-persisted mode so the user's choice survives restarts.
@@ -251,6 +363,7 @@ export function WorkspacePane({
 
   return (
     <div className="flex h-full flex-col bg-card">
+      {!hideSharedHeader && (
       <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground">
         <span className="truncate">
           {activeTab
@@ -313,6 +426,7 @@ export function WorkspacePane({
           </Tooltip>
         )}
       </div>
+      )}
       <div className="relative flex-1">
         {project?.tabs.map((t) => (
           <div
@@ -331,8 +445,11 @@ export function WorkspacePane({
               onTitleChange={onTitleChange}
               onAgentStatusChange={onAgentStatusChange}
               onStartTerminal={onStartTerminal}
+              onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}
+              onRenamePane={onRenamePane}
+              onReorderPanes={onReorderPanes}
               onOpenFile={onOpenFile}
             />
           </div>

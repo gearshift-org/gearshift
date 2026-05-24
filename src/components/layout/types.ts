@@ -7,6 +7,8 @@ export type TerminalPane = {
   pendingSessionId?: string
   /** Title emitted by the running process (OSC sequence). */
   autoTitle?: string
+  /** User-set name for this specific pane; overrides the auto title. */
+  customName?: string
   /** Ephemeral coding-agent status detected from the PTY process/output. */
   agentStatus?: TerminalAgentStatus
   /** True for restored panes whose PTY has not been spawned (or adopted) yet. */

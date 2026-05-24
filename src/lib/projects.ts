@@ -5,6 +5,8 @@ export type StoredPane = {
   id: string
   /** Daemon session id. Present → renderer attempts adopt on next launch. */
   sessionId?: string
+  /** User-set name for this pane. */
+  customName?: string
 }
 
 export type StoredTab = {
@@ -187,6 +189,9 @@ export function loadProjects(): StoredProject[] {
                         id: pp.id,
                         ...(typeof pp.sessionId === "string"
                           ? { sessionId: pp.sessionId }
+                          : {}),
+                        ...(typeof pp.customName === "string"
+                          ? { customName: pp.customName }
                           : {}),
                       }))
                   : [{ id: t.id }]

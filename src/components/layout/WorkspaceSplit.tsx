@@ -34,6 +34,12 @@ type Props = {
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onRenamePane?: (tabId: string, paneId: string, name: string) => void
+  onReorderPanes?: (
+    tabId: string,
+    fromPaneId: string,
+    toPaneId: string,
+  ) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
   rightSidebarTab?: "changes" | "files"
@@ -55,6 +61,8 @@ export function WorkspaceSplit({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onRenamePane,
+  onReorderPanes,
   onOpenDiffTab,
   onOpenFileTab,
   rightSidebarTab,
@@ -144,6 +152,8 @@ export function WorkspaceSplit({
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}
+              onRenamePane={onRenamePane}
+              onReorderPanes={onReorderPanes}
               onOpenFile={onOpenFileTab}
             />
           </div>

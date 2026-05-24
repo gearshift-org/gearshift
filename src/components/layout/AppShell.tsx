@@ -51,6 +51,7 @@ function hydrateProjects(): Project[] {
         id: sp.id,
         pendingStart: true,
         ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
+        ...(sp.customName ? { customName: sp.customName } : {}),
       }))
       const activePaneId =
         (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
@@ -121,6 +122,7 @@ function serializeProjects(projects: Project[]) {
           return {
             id: pp.id,
             ...(sid ? { sessionId: sid } : {}),
+            ...(pp.customName ? { customName: pp.customName } : {}),
           }
         }),
       })),
@@ -494,6 +496,56 @@ export function AppShell() {
         tabs.splice(to, 0, moved)
         return { ...p, tabs }
       })
+    )
+  }
+
+  const renamePane = (tabId: string, paneId: string, name: string) => {
+    if (!activeProjectId) return
+    const trimmed = name.trim()
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        return {
+          ...p,
+          tabs: p.tabs.map((t) => {
+            if (t.id !== tabId || t.kind !== "terminal") return t
+            return {
+              ...t,
+              panes: t.panes.map((pp) => {
+                if (pp.id !== paneId) return pp
+                if (!trimmed) {
+                  const next = { ...pp }
+                  delete next.customName
+                  return next
+                }
+                return { ...pp, customName: trimmed }
+              }),
+            }
+          }),
+        }
+      }),
+    )
+  }
+
+  const reorderPanes = (tabId: string, fromPaneId: string, toPaneId: string) => {
+    if (fromPaneId === toPaneId || !activeProjectId) return
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        return {
+          ...p,
+          tabs: p.tabs.map((t) => {
+            if (t.id !== tabId || t.kind !== "terminal") return t
+            const from = t.panes.findIndex((pp) => pp.id === fromPaneId)
+            const to = t.panes.findIndex((pp) => pp.id === toPaneId)
+            if (from < 0 || to < 0) return t
+            const panes = t.panes.slice()
+            const [moved] = panes.splice(from, 1)
+            panes.splice(to, 0, moved)
+            return { ...t, panes }
+          }),
+        }
+      }),
     )
   }
 
@@ -1360,6 +1412,8 @@ export function AppShell() {
             onSplitTerminal={(tabId) => void splitTerminalPane(tabId)}
             onClosePane={closePane}
             onFocusPane={setActivePane}
+            onRenamePane={renamePane}
+            onReorderPanes={reorderPanes}
             onOpenDiffTab={openDiffTab}
             onOpenFileTab={openFileTab}
             rightSidebarTab={rightSidebarTab}

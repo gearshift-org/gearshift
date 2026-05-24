@@ -34,6 +34,28 @@ const termApi = {
       running: boolean
       agentName?: "claude" | "codex" | "opencode" | "pi" | "gemini"
     }>,
+  onAgentEvent: (
+    id: string,
+    cb: (event: {
+      agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
+      event: "stop" | "notification"
+      body?: string
+    }) => void,
+  ) => {
+    const channel = `term:agentEvent:${id}`
+    const listener = (
+      _e: unknown,
+      event: {
+        agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
+        event: "stop" | "notification"
+        body?: string
+      },
+    ) => cb(event)
+    ipcRenderer.on(channel, listener)
+    return () => {
+      ipcRenderer.removeListener(channel, listener)
+    }
+  },
   onData: (id: string, cb: (chunk: string) => void) => {
     const channel = `term:data:${id}`
     const listener = (_e: unknown, chunk: string) => cb(chunk)

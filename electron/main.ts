@@ -8,10 +8,12 @@ import {
   shell,
 } from "electron"
 import path from "node:path"
+import net from "node:net"
 import { fileURLToPath } from "node:url"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
+import { randomUUID } from "node:crypto"
 import parcelWatcher from "@parcel/watcher"
 import { ensureDaemonRunning } from "./daemonSupervisor"
 import { DaemonClient } from "./pty-daemon/client"
@@ -30,9 +32,17 @@ type PullRequestInfo = {
   url: string
 }
 
+type TerminalAgentName = "claude" | "codex" | "opencode" | "pi" | "gemini"
+
 type AgentStatusInfo = {
   running: boolean
-  agentName?: "claude" | "codex" | "opencode" | "pi" | "gemini"
+  agentName?: TerminalAgentName
+}
+
+type AgentHookEvent = {
+  agentName: TerminalAgentName
+  event: "stop" | "notification"
+  body?: string
 }
 
 app.setName("GearShift V2")
@@ -83,6 +93,25 @@ async function getDaemonClient(): Promise<DaemonClient> {
 // and exit events back to the window that opened/adopted the session, even
 // when multiple windows are open.
 const sessionOwners = new Map<string, number>()
+let agentHookServer: net.Server | null = null
+
+const AGENT_HOOK_SOCKET_FILENAME = "gearshift-agent-hooks.sock"
+const AGENT_HOOK_SCRIPT_FILENAME = "gearshift-agent-hook.sh"
+const OPENCODE_PLUGIN_FILENAME = "gearshift-notify.js"
+const AGENT_HOOK_MARKER = "gearshift-agent-hook"
+const AGENT_EVENT_MAX_BYTES = 64 * 1024
+
+function agentHookSocketPath(): string {
+  return path.join(app.getPath("userData"), AGENT_HOOK_SOCKET_FILENAME)
+}
+
+function agentHookScriptPath(): string {
+  return path.join(app.getPath("userData"), AGENT_HOOK_SCRIPT_FILENAME)
+}
+
+function opencodePluginSourcePath(): string {
+  return path.join(app.getPath("userData"), OPENCODE_PLUGIN_FILENAME)
+}
 
 function getOwnerWebContents(sessionId: string) {
   const id = sessionOwners.get(sessionId)
@@ -91,6 +120,85 @@ function getOwnerWebContents(sessionId: string) {
     BrowserWindow.getAllWindows().find((w) => w.webContents.id === id)
       ?.webContents ?? null
   )
+}
+
+function sendAgentHookEvent(sessionId: string, event: AgentHookEvent) {
+  const sender = getOwnerWebContents(sessionId)
+  if (!sender || sender.isDestroyed()) return
+  sender.send(`term:agentEvent:${sessionId}`, event)
+}
+
+function parseAgentHookPayload(raw: string):
+  | { sessionId: string; event: AgentHookEvent }
+  | null {
+  const [agentRaw, sessionIdRaw, eventRaw, ...bodyParts] = raw
+    .replace(/\0/g, "")
+    .trim()
+    .split("|")
+  const agentName = agentRaw as TerminalAgentName
+  if (!["claude", "codex", "opencode", "pi", "gemini"].includes(agentName)) {
+    return null
+  }
+  const event = eventRaw === "notification" ? "notification" : "stop"
+  const sessionId = sessionIdRaw?.trim()
+  if (!sessionId) return null
+  const body = bodyParts.join("|").replace(/[\r\n]+/g, " ").trim().slice(0, 500)
+  return {
+    sessionId,
+    event: {
+      agentName,
+      event,
+      ...(body ? { body } : {}),
+    },
+  }
+}
+
+async function startAgentHookServer(): Promise<void> {
+  if (agentHookServer) return
+  const socketPath = agentHookSocketPath()
+  try {
+    await fs.unlink(socketPath)
+  } catch {
+    // not there
+  }
+  await fs.mkdir(path.dirname(socketPath), { recursive: true })
+  agentHookServer = net.createServer((socket) => {
+    let raw = ""
+    socket.on("data", (chunk) => {
+      raw += chunk.toString("utf8")
+      if (Buffer.byteLength(raw) > AGENT_EVENT_MAX_BYTES) {
+        socket.destroy()
+      }
+    })
+    socket.on("end", () => {
+      const parsed = parseAgentHookPayload(raw)
+      if (!parsed) return
+      sendAgentHookEvent(parsed.sessionId, parsed.event)
+    })
+    socket.on("error", () => {
+      // fire-and-forget hook clients may disconnect early
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    agentHookServer?.once("error", reject)
+    agentHookServer?.listen(socketPath, () => {
+      agentHookServer?.off("error", reject)
+      resolve()
+    })
+  })
+  try {
+    await fs.chmod(socketPath, 0o600)
+  } catch {
+    // best effort
+  }
+}
+
+function hookEnv(sessionId: string): Record<string, string> {
+  return {
+    GEARSHIFT_SESSION_ID: sessionId,
+    GEARSHIFT_AGENT_SOCKET: agentHookSocketPath(),
+    GEARSHIFT_AGENT_HOOKS: "1",
+  }
 }
 
 function wireSessionEvents(client: DaemonClient, sessionId: string) {
@@ -259,6 +367,254 @@ async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
   }
 
   return { running: false }
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+async function readJsonObject(filePath: string): Promise<Record<string, unknown>> {
+  try {
+    const raw = await fs.readFile(filePath, "utf8")
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    // missing or malformed config: start from an empty object
+  }
+  return {}
+}
+
+async function writeJsonWithBackup(
+  filePath: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  try {
+    await fs.copyFile(filePath, `${filePath}.gearshift-backup`)
+  } catch {
+    // no existing file to back up
+  }
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2) + "\n", {
+    encoding: "utf8",
+    mode: 0o600,
+  })
+  try {
+    await fs.chmod(filePath, 0o600)
+  } catch {
+    // best effort
+  }
+}
+
+function isMarkedHookEntry(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object") return false
+  const hooks = (entry as { hooks?: unknown }).hooks
+  if (!Array.isArray(hooks)) return false
+  return hooks.some((hook) => {
+    if (!hook || typeof hook !== "object") return false
+    const command = (hook as { command?: unknown }).command
+    return typeof command === "string" && command.includes(AGENT_HOOK_MARKER)
+  })
+}
+
+function buildCommandHookEntry(command: string, timeout?: number) {
+  return {
+    matcher: "",
+    hooks: [
+      {
+        type: "command",
+        command,
+        ...(timeout ? { timeout } : {}),
+      },
+    ],
+  }
+}
+
+function mergeMarkedHookEntry(existing: unknown, entry: object): object[] {
+  const entries = Array.isArray(existing) ? existing.filter((e) => !isMarkedHookEntry(e)) : []
+  return [...entries, entry]
+}
+
+async function writeAgentHookScript(): Promise<void> {
+  const script = `#!/usr/bin/env bash
+set -euo pipefail
+
+agent="\${1:-}"
+event="\${2:-stop}"
+
+if [ -z "\${GEARSHIFT_AGENT_SOCKET:-}" ] || [ -z "\${GEARSHIFT_SESSION_ID:-}" ]; then
+  exit 0
+fi
+
+input="$(cat || true)"
+
+extract_last_message() {
+  local msg=""
+  msg=$(printf '%s' "$input" | grep -o '"last_assistant_message":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+  if [ -n "$msg" ]; then
+    printf '%s' "$msg" | tr '|\\n\\r' '   ' | head -c 500
+    return
+  fi
+  printf 'Session completed'
+}
+
+case "$agent" in
+  claude|codex|opencode|pi|gemini) ;;
+  *) exit 0 ;;
+esac
+
+case "$event" in
+  notification) body="Needs attention" ;;
+  *) event="stop"; body="$(extract_last_message)" ;;
+esac
+
+printf '%s|%s|%s|%s' "$agent" "$GEARSHIFT_SESSION_ID" "$event" "$body" \\
+  | nc -U "$GEARSHIFT_AGENT_SOCKET" 2>/dev/null || true
+`
+  const filePath = agentHookScriptPath()
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  await fs.writeFile(filePath, script, { encoding: "utf8", mode: 0o700 })
+  try {
+    await fs.chmod(filePath, 0o700)
+  } catch {
+    // best effort
+  }
+}
+
+async function installClaudeHooks(scriptPath: string): Promise<void> {
+  const settingsPath = path.join(app.getPath("home"), ".claude", "settings.json")
+  const settings = await readJsonObject(settingsPath)
+  const hooks = (settings.hooks && typeof settings.hooks === "object" && !Array.isArray(settings.hooks))
+    ? (settings.hooks as Record<string, unknown>)
+    : {}
+  const stopCommand = `${shellSingleQuote(scriptPath)} claude stop # ${AGENT_HOOK_MARKER}`
+  const notificationCommand = `${shellSingleQuote(scriptPath)} claude notification # ${AGENT_HOOK_MARKER}`
+  settings.hooks = {
+    ...hooks,
+    Stop: mergeMarkedHookEntry(hooks.Stop, buildCommandHookEntry(stopCommand, 10)),
+    Notification: mergeMarkedHookEntry(
+      hooks.Notification,
+      buildCommandHookEntry(notificationCommand, 10),
+    ),
+  }
+  await writeJsonWithBackup(settingsPath, settings)
+}
+
+async function installCodexHooks(scriptPath: string): Promise<void> {
+  const hooksPath = path.join(app.getPath("home"), ".codex", "hooks.json")
+  const settings = await readJsonObject(hooksPath)
+  const hooks = (settings.hooks && typeof settings.hooks === "object" && !Array.isArray(settings.hooks))
+    ? (settings.hooks as Record<string, unknown>)
+    : {}
+  const stopCommand = `${shellSingleQuote(scriptPath)} codex stop # ${AGENT_HOOK_MARKER}`
+  const notificationCommand = `${shellSingleQuote(scriptPath)} codex notification # ${AGENT_HOOK_MARKER}`
+  settings.hooks = {
+    ...hooks,
+    Stop: mergeMarkedHookEntry(hooks.Stop, buildCommandHookEntry(stopCommand)),
+    Notification: mergeMarkedHookEntry(
+      hooks.Notification,
+      buildCommandHookEntry(notificationCommand),
+    ),
+  }
+  await writeJsonWithBackup(hooksPath, settings)
+}
+
+async function writeOpenCodePlugin(): Promise<void> {
+  const plugin = `const childSessions = new Set()
+const cancelledSessions = new Set()
+
+export const GearShiftNotificationPlugin = async ({ client }) => ({
+  event: async ({ event }) => {
+    const socketPath = process.env.GEARSHIFT_AGENT_SOCKET
+    const sessionId = process.env.GEARSHIFT_SESSION_ID
+    if (!socketPath || !sessionId) return
+
+    if (event.type === "session.created") {
+      const info = event.properties.info
+      if (info?.parentID) childSessions.add(event.properties.sessionID)
+      return
+    }
+
+    if (event.type === "session.error") {
+      const id = event.properties.sessionID
+      const err = event.properties.error
+      if (err?.name === "MessageAbortedError" && id) {
+        cancelledSessions.add(id)
+      }
+      return
+    }
+
+    if (event.type !== "session.status") return
+    if (event.properties.status.type !== "idle") return
+
+    const id = event.properties.sessionID
+    if (cancelledSessions.has(id)) {
+      cancelledSessions.delete(id)
+      return
+    }
+    if (childSessions.has(id)) return
+
+    let body = "Session completed"
+    try {
+      const result = await client.session.messages({
+        path: { id },
+        query: { limit: 3 },
+      })
+      const messages = result.data || []
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((m) => m.info.role === "assistant")
+      if (lastAssistant) {
+        const text = (lastAssistant.parts || [])
+          .filter((p) => p.type === "text")
+          .map((p) => p.text || "")
+          .join("")
+        if (text) body = text.replace(/[\\n\\r|]+/g, " ").slice(0, 500)
+      }
+    } catch {}
+
+    try {
+      const { createConnection } = await import("net")
+      const conn = createConnection({ path: socketPath })
+      conn.on("error", () => {})
+      conn.write(\`opencode|\${sessionId}|stop|\${body}\`, () => conn.end())
+      await new Promise((resolve) => {
+        conn.on("close", resolve)
+        setTimeout(resolve, 3000)
+      })
+    } catch {}
+  },
+})
+`
+  const sourcePath = opencodePluginSourcePath()
+  await fs.writeFile(sourcePath, plugin, "utf8")
+  const pluginsDir = path.join(app.getPath("home"), ".opencode", "plugins")
+  const targetPath = path.join(pluginsDir, OPENCODE_PLUGIN_FILENAME)
+  await fs.mkdir(pluginsDir, { recursive: true })
+  try {
+    await fs.copyFile(targetPath, `${targetPath}.gearshift-backup`)
+  } catch {
+    // no existing plugin to back up
+  }
+  await fs.copyFile(sourcePath, targetPath)
+}
+
+async function installAgentHooks(): Promise<void> {
+  if (process.platform === "win32") return
+  await writeAgentHookScript()
+  const scriptPath = agentHookScriptPath()
+  const installers = [
+    installClaudeHooks(scriptPath),
+    installCodexHooks(scriptPath),
+    writeOpenCodePlugin(),
+  ]
+  const results = await Promise.allSettled(installers)
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.warn("[agent-hooks] install failed", result.reason)
+    }
+  }
 }
 
 function createWindow() {
@@ -611,6 +967,12 @@ async function flushState() {
 
 app.whenReady().then(async () => {
   buildMenu()
+  try {
+    await startAgentHookServer()
+    await installAgentHooks()
+  } catch (err) {
+    console.warn("[agent-hooks] setup failed", err)
+  }
 
   ipcMain.handle("state:read", () => readState())
 
@@ -1240,7 +1602,12 @@ app.whenReady().then(async () => {
         cols: opts.cols,
         rows: opts.rows,
       })
-      const id = await client.open(resolved)
+      const id = randomUUID()
+      resolved.env = {
+        ...resolved.env,
+        ...hookEnv(id),
+      }
+      await client.open(resolved, id)
       sessionOwners.set(id, event.sender.id)
       wireSessionEvents(client, id)
       return { id }
@@ -1324,6 +1691,12 @@ app.whenReady().then(async () => {
 })
 
 app.on("before-quit", () => {
+  try {
+    agentHookServer?.close()
+  } catch {
+    // ignore
+  }
+  agentHookServer = null
   // Sessions outlive Electron. Just detach the client; the daemon keeps
   // PTYs alive until the user kills them, the daemon's own no-clients
   // grace timer fires, or the 24h per-session idle sweep triggers.

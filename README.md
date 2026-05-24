@@ -73,24 +73,32 @@ watcher subscription and polling — only the active project pays the cost.
 
 Terminal panes detect supported coding agents (`claude`, `codex`, `opencode`,
 `pi`, and `gemini`) by asking the Electron main process to inspect the PTY
-shell's child process tree. The renderer combines that "agent is running" signal
-with agent-specific activity cues: changing title/spinner signals for Claude
-Code and Codex, and terminal output as a fallback for OpenCode, Pi, and Gemini
-after their process is confirmed. Activity is ignored until the user submits
-input while the agent is already running, so the launch command itself does not
-light the project tab. Output immediately after terminal resize, app refocus, or
-project/tab activation is also ignored because TUIs often redraw in those
-moments. Echoed output from normal typing is briefly ignored until the user
-submits with Enter. General terminal output is ignored for the title-based
-agents so idle redraws, prompts, and background output do not light the project
-tab. When any pane in a project is actively working, the project tab shows a
-small orange animated dot after the avatar. If a background project's agent
-finishes, the orange dot becomes a bouncing green dot until that project is
-visited. While the app is focused, finishing away from the active project shows
-a bottom-right in-app notification that opens the project and terminal when
-clicked. If the app is not focused or is hidden, an agent finishing in any
-project uses a desktop notification instead. A short completion sound plays at
-50% volume when an agent finishes away from attention.
+shell's child process tree. GearShift auto-installs local lifecycle hooks for
+Claude Code and Codex, plus an OpenCode plugin, and passes each terminal a
+`GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET`. Those integrations send
+stop/notification events back to GearShift over a local Unix socket so the busy
+indicator can end on real agent completion instead of a brief quiet pause. Pi
+and Gemini stay on the fallback path until they expose a stable hook API.
+
+The renderer still combines the "agent is running" signal with agent-specific
+activity cues: changing title/spinner signals for Claude Code and Codex, and
+terminal output as a fallback for OpenCode, Pi, and Gemini after their process
+is confirmed. Activity is ignored until the user submits input while the agent
+is already running, so the launch command itself does not light the project tab.
+Output immediately after terminal resize, app refocus, or project/tab activation
+is also ignored because TUIs often redraw in those moments. Echoed output from
+normal typing is briefly ignored until the user submits with Enter. General
+terminal output is ignored for the title-based agents so idle redraws, prompts,
+and background output do not light the project tab. A longer quiet grace period
+prevents the busy dot from flickering off during short model pauses when hook
+events are missing or delayed. When any pane in a project is actively working,
+the project tab shows a small orange animated dot after the avatar. If a
+background project's agent finishes, the orange dot becomes a bouncing green dot
+until that project is visited. While the app is focused, finishing away from the
+active project shows a bottom-right in-app notification that opens the project
+and terminal when clicked. If the app is not focused or is hidden, an agent
+finishing in any project uses a desktop notification instead. A short completion
+sound plays at 50% volume when an agent finishes away from attention.
 Idle agents stay hidden. Inactive project and tab panes stay mounted and
 attached to the DOM; they are hidden with opacity so terminal canvases do not
 have to detach and re-attach during normal navigation.

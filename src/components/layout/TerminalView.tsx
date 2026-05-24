@@ -87,7 +87,7 @@ const SEARCH_DECORATIONS = {
 
 const WRAPPER_BG = "[--xterm-bg:#f8f8f8] dark:[--xterm-bg:#151515]"
 const AGENT_STATUS_POLL_MS = 2000
-const AGENT_WORKING_QUIET_MS = 2500
+const AGENT_WORKING_QUIET_MS = 10000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
@@ -621,6 +621,23 @@ export function TerminalView({
       cancelled = true
       window.clearInterval(interval)
     }
+  }, [sessionId, emitAgentStatus])
+
+  useEffect(() => {
+    return window.term.onAgentEvent(sessionId, (event) => {
+      if (agentWorkingTimerRef.current) {
+        window.clearTimeout(agentWorkingTimerRef.current)
+        agentWorkingTimerRef.current = undefined
+      }
+      lastAgentActivityAtRef.current = 0
+      hasSubmittedToAgentRef.current = false
+      const current = agentStatusRef.current
+      emitAgentStatus({
+        running: current.running,
+        working: false,
+        agentName: event.agentName,
+      })
+    })
   }, [sessionId, emitAgentStatus])
 
   // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens,

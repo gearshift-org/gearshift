@@ -300,9 +300,8 @@ export class DaemonClient {
     }
   }
 
-  async open(opts: OpenOptions): Promise<string> {
+  async open(opts: OpenOptions, sessionId = randomUUID()): Promise<string> {
     await this.connect()
-    const sessionId = randomUUID()
     const promise = new Promise<number>((resolve, reject) => {
       this.pendingOpens.set(sessionId, { resolve, reject })
     })

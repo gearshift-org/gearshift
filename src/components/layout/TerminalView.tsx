@@ -147,6 +147,7 @@ export function TerminalView({
     resultIndex: -1,
     resultCount: 0,
   })
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
@@ -255,6 +256,11 @@ export function TerminalView({
     term.open(container)
     termRef.current = term
     searchRef.current = search
+
+    const scrollSub = term.onScroll(() => {
+      const buf = term.buffer.active
+      setShowScrollToBottom(buf.viewportY < buf.baseY)
+    })
 
     const resultsSub = search.onDidChangeResults((e) => {
       setSearchResults({
@@ -571,6 +577,7 @@ export function TerminalView({
       inputSub.dispose()
       titleSub.dispose()
       resultsSub.dispose()
+      scrollSub.dispose()
       kittyKeyboardQuerySub.dispose()
       kittyKeyboardPushSub.dispose()
       kittyKeyboardPopSub.dispose()
@@ -736,6 +743,21 @@ export function TerminalView({
         className={`${WRAPPER_BG} relative block h-full w-full bg-[var(--xterm-bg)] px-3 py-3`}
       >
         <div ref={containerRef} className="terminal-fit-host" />
+        {showScrollToBottom && (
+          <button
+            type="button"
+            onClick={() => {
+              termRef.current?.scrollToBottom()
+              termRef.current?.focus()
+            }}
+            onContextMenu={(e) => e.stopPropagation()}
+            aria-label="Scroll to bottom"
+            className="absolute bottom-4 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover/95 px-4 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors duration-200 animate-in fade-in slide-in-from-bottom-2 hover:bg-accent/60 hover:text-foreground"
+          >
+            <ChevronDown className="size-3.5" />
+            Scroll to bottom
+          </button>
+        )}
         {searchOpen && (
           <div
             className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-border bg-popover/95 px-1.5 py-1 text-xs shadow-md backdrop-blur"

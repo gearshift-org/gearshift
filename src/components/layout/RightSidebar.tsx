@@ -43,12 +43,15 @@ import { setPathDragData } from "@/lib/pathDrag"
 import {
   EMPTY_GIT_FILES,
   applyOptimisticGitFileMoves,
+  applyOptimisticGitFileRemovals,
   fetchGitQueryData,
   gitQueryKey,
   moveCachedGitFiles,
+  removeCachedGitFiles,
   type GitFile,
   type GitQueryData,
   type OptimisticGitFileMove,
+  type OptimisticGitFileRemoval,
   type GitStatus,
   type PullRequestInfo,
 } from "@/lib/gitStatusQuery"
@@ -58,6 +61,8 @@ const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
 const OPTIMISTIC_GIT_MOVE_TTL_MS = 2500
+const OPTIMISTIC_GIT_REMOVE_TTL_MS = 2500
+const EMPTY_BRANCHES: string[] = []
 
 const STATUS_STYLES: Record<GitStatus, string> = {
   M: "text-amber-500",
@@ -107,6 +112,7 @@ export function RightSidebar({
     null | "create" | "open"
   >(null)
   const optimisticMovesRef = useRef<OptimisticGitFileMove[]>([])
+  const optimisticRemovalsRef = useRef<OptimisticGitFileRemoval[]>([])
 
   const queryClient = useQueryClient()
   const currentGitQueryKey = useMemo(() => gitQueryKey(cwd), [cwd])
@@ -117,8 +123,16 @@ export function RightSidebar({
     queryKey: currentGitQueryKey,
     enabled: !!cwd,
     queryFn: () => fetchGitQueryData(cwd!),
-    select: (data) =>
-      applyOptimisticGitFileMoves(data, optimisticMovesRef.current),
+    select: (data) => {
+      const moved = applyOptimisticGitFileMoves(
+        data,
+        optimisticMovesRef.current
+      )
+      return applyOptimisticGitFileRemovals(
+        moved,
+        optimisticRemovalsRef.current
+      )
+    },
   })
 
   // `hasData` distinguishes "we've never seen data for this cwd" from "data
@@ -131,7 +145,7 @@ export function RightSidebar({
   const behind = gitQuery.data?.behind ?? 0
   const hasUpstream = gitQuery.data?.hasUpstream ?? false
   const currentBranch = gitQuery.data?.currentBranch ?? null
-  const branches = gitQuery.data?.branches ?? []
+  const branches = gitQuery.data?.branches ?? EMPTY_BRANCHES
   const ghAvailable = gitQuery.data?.ghAvailable ?? false
   const pullRequest = gitQuery.data?.pullRequest ?? null
   const canCreatePullRequest = gitQuery.data?.canCreatePullRequest ?? false
@@ -159,6 +173,46 @@ export function RightSidebar({
       ]
       queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
         moveCachedGitFiles(data, paths, staged)
+      )
+    },
+    [currentGitQueryKey, queryClient]
+  )
+
+  const removeCachedFiles = useCallback(
+    (paths: string[], staged?: boolean) => {
+      const now = Date.now()
+      const previousData =
+        queryClient.getQueryData<GitQueryData>(currentGitQueryKey)
+      optimisticRemovalsRef.current = [
+        ...optimisticRemovalsRef.current.filter(
+          (removal) => removal.expiresAt > now
+        ),
+        {
+          paths,
+          staged,
+          expiresAt: now + OPTIMISTIC_GIT_REMOVE_TTL_MS,
+        },
+      ]
+      queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
+        removeCachedGitFiles(data, paths, staged)
+      )
+      return () => {
+        const pathSet = new Set(paths)
+        optimisticRemovalsRef.current = optimisticRemovalsRef.current.filter(
+          (removal) =>
+            removal.staged !== staged ||
+            removal.paths.some((path) => !pathSet.has(path))
+        )
+        queryClient.setQueryData(currentGitQueryKey, previousData)
+      }
+    },
+    [currentGitQueryKey, queryClient]
+  )
+
+  const updateCachedGitMeta = useCallback(
+    (patch: Partial<Omit<GitQueryData, "files">>) => {
+      queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
+        data ? { ...data, ...patch } : data
       )
     },
     [currentGitQueryKey, queryClient]
@@ -219,13 +273,15 @@ export function RightSidebar({
       if (!cwd || busy) return
       setBusy(true)
       setActionError(null)
+      updateCachedFiles([path], true)
       try {
         const res = await window.git.stage(cwd, [path])
         if (!res.ok) {
+          updateCachedFiles([path], false)
           setActionError(res.error ?? "Stage failed")
+          void runRefresh()
           return
         }
-        updateCachedFiles([path], true)
         void runRefresh()
       } finally {
         setBusy(false)
@@ -239,13 +295,15 @@ export function RightSidebar({
       if (!cwd || busy) return
       setBusy(true)
       setActionError(null)
+      updateCachedFiles([path], false)
       try {
         const res = await window.git.unstage(cwd, [path])
         if (!res.ok) {
+          updateCachedFiles([path], true)
           setActionError(res.error ?? "Unstage failed")
+          void runRefresh()
           return
         }
-        updateCachedFiles([path], false)
         void runRefresh()
       } finally {
         setBusy(false)
@@ -258,14 +316,16 @@ export function RightSidebar({
     if (!cwd || busy || unstagedFiles.length === 0) return
     setBusy(true)
     setActionError(null)
+    const paths = unstagedFiles.map((f) => f.path)
+    updateCachedFiles(paths, true)
     try {
-      const paths = unstagedFiles.map((f) => f.path)
       const res = await window.git.stage(cwd, paths)
       if (!res.ok) {
+        updateCachedFiles(paths, false)
         setActionError(res.error ?? "Stage failed")
+        void runRefresh()
         return
       }
-      updateCachedFiles(paths, true)
       void runRefresh()
     } finally {
       setBusy(false)
@@ -281,19 +341,27 @@ export function RightSidebar({
         return
       }
       setBusy(true)
+      setActionError(null)
+      const rollback = removeCachedFiles([path], false)
       try {
         const res = await window.git.discard(cwd, [path])
-        if (!res.ok) setActionError(res.error ?? "Discard failed")
-        await runRefresh()
+        if (!res.ok) {
+          rollback()
+          setActionError(res.error ?? "Discard failed")
+          void runRefresh()
+          return
+        }
+        void runRefresh()
       } finally {
         setBusy(false)
       }
     },
-    [cwd, busy, runRefresh]
+    [cwd, busy, removeCachedFiles, runRefresh]
   )
 
   const discardAllUnstaged = useCallback(async () => {
     if (!cwd || busy || unstagedFiles.length === 0) return
+    const paths = unstagedFiles.map((f) => f.path)
     if (
       !window.confirm(
         `Discard changes to ${unstagedFiles.length} file${unstagedFiles.length === 1 ? "" : "s"}?\nThis cannot be undone.`
@@ -302,30 +370,36 @@ export function RightSidebar({
       return
     }
     setBusy(true)
+    setActionError(null)
+    const rollback = removeCachedFiles(paths, false)
     try {
-      const res = await window.git.discard(
-        cwd,
-        unstagedFiles.map((f) => f.path)
-      )
-      if (!res.ok) setActionError(res.error ?? "Discard failed")
-      await runRefresh()
+      const res = await window.git.discard(cwd, paths)
+      if (!res.ok) {
+        rollback()
+        setActionError(res.error ?? "Discard failed")
+        void runRefresh()
+        return
+      }
+      void runRefresh()
     } finally {
       setBusy(false)
     }
-  }, [cwd, busy, unstagedFiles, runRefresh])
+  }, [cwd, busy, unstagedFiles, removeCachedFiles, runRefresh])
 
   const unstageAll = useCallback(async () => {
     if (!cwd || busy || stagedFiles.length === 0) return
     setBusy(true)
     setActionError(null)
+    const paths = stagedFiles.map((f) => f.path)
+    updateCachedFiles(paths, false)
     try {
-      const paths = stagedFiles.map((f) => f.path)
       const res = await window.git.unstage(cwd, paths)
       if (!res.ok) {
+        updateCachedFiles(paths, true)
         setActionError(res.error ?? "Unstage failed")
+        void runRefresh()
         return
       }
-      updateCachedFiles(paths, false)
       void runRefresh()
     } finally {
       setBusy(false)
@@ -347,27 +421,47 @@ export function RightSidebar({
       setBusy(true)
       setCommitting("commit")
       setActionError(null)
+      const committedPaths = stagedFiles.map((f) => f.path)
+      const rollback = removeCachedFiles(committedPaths, true)
       try {
         const res = await window.git.commit(cwd, message)
         if (!res.ok) {
+          rollback()
           setActionError(res.error ?? "Commit failed")
+          void runRefresh()
           return
         }
         setCommitMessage("")
+        updateCachedGitMeta({
+          ahead: hasUpstream ? ahead + 1 : ahead,
+        })
         if (opts?.push) {
           setCommitting("push")
           const pushRes = await window.git.push(cwd)
           if (!pushRes.ok) {
             setActionError(pushRes.error ?? "Push failed")
+            void runRefresh()
+            return
           }
+          updateCachedGitMeta({ ahead: 0 })
         }
-        await runRefresh()
+        void runRefresh()
       } finally {
         setBusy(false)
         setCommitting(null)
       }
     },
-    [cwd, busy, commitMessage, stagedFiles.length, runRefresh]
+    [
+      cwd,
+      busy,
+      commitMessage,
+      stagedFiles,
+      removeCachedFiles,
+      updateCachedGitMeta,
+      hasUpstream,
+      ahead,
+      runRefresh,
+    ]
   )
 
   // Gate on `hasData` so the button doesn't briefly enable on first project
@@ -380,18 +474,22 @@ export function RightSidebar({
       if (!cwd || !branch || branch === currentBranch) return
       setSwitchingBranch(true)
       setActionError(null)
+      const previousBranch = currentBranch
+      updateCachedGitMeta({ currentBranch: branch })
       try {
         const res = await window.git.checkout(cwd, branch)
         if (!res.ok) {
+          updateCachedGitMeta({ currentBranch: previousBranch })
           setActionError(res.error ?? "Checkout failed")
+          void runRefresh()
           return
         }
-        await runRefresh()
+        void runRefresh()
       } finally {
         setSwitchingBranch(false)
       }
     },
-    [cwd, currentBranch, runRefresh]
+    [cwd, currentBranch, updateCachedGitMeta, runRefresh]
   )
 
   const createBranch = useCallback(
@@ -400,18 +498,25 @@ export function RightSidebar({
       if (!cwd || !name) return
       setSwitchingBranch(true)
       setActionError(null)
+      const previousBranch = currentBranch
+      updateCachedGitMeta({
+        currentBranch: name,
+        branches: branches.includes(name) ? branches : [...branches, name],
+      })
       try {
         const res = await window.git.createBranch(cwd, name)
         if (!res.ok) {
+          updateCachedGitMeta({ currentBranch: previousBranch, branches })
           setActionError(res.error ?? "Create branch failed")
+          void runRefresh()
           return
         }
-        await runRefresh()
+        void runRefresh()
       } finally {
         setSwitchingBranch(false)
       }
     },
-    [cwd, runRefresh]
+    [cwd, currentBranch, branches, updateCachedGitMeta, runRefresh]
   )
 
   const openPullRequest = useCallback(async () => {
@@ -442,13 +547,7 @@ export function RightSidebar({
     } finally {
       setPullRequestBusy(null)
     }
-  }, [
-    cwd,
-    currentBranch,
-    canCreatePullRequest,
-    pullRequestBusy,
-    runRefresh,
-  ])
+  }, [cwd, currentBranch, canCreatePullRequest, pullRequestBusy, runRefresh])
 
   const sync = useCallback(async () => {
     if (!cwd || busy) return
@@ -460,22 +559,26 @@ export function RightSidebar({
         const pullRes = await window.git.pull(cwd)
         if (!pullRes.ok) {
           setActionError(pullRes.error ?? "Pull failed")
+          void runRefresh()
           return
         }
+        updateCachedGitMeta({ behind: 0 })
       }
       if (ahead > 0) {
         const pushRes = await window.git.push(cwd)
         if (!pushRes.ok) {
           setActionError(pushRes.error ?? "Push failed")
+          void runRefresh()
           return
         }
+        updateCachedGitMeta({ ahead: 0 })
       }
-      await runRefresh()
+      void runRefresh()
     } finally {
       setBusy(false)
       setCommitting(null)
     }
-  }, [cwd, busy, ahead, behind, runRefresh])
+  }, [cwd, busy, ahead, behind, updateCachedGitMeta, runRefresh])
 
   // Show the Sync button only when nothing is staged and the branch is out of
   // sync with its upstream.
@@ -504,10 +607,13 @@ export function RightSidebar({
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3 [-webkit-app-region:drag]">
-          <TabsList variant="line" className="h-full gap-1 bg-transparent p-0 [-webkit-app-region:no-drag]">
+          <TabsList
+            variant="line"
+            className="h-full gap-1 bg-transparent p-0 [-webkit-app-region:no-drag]"
+          >
             <TabsTrigger
               value="changes"
-              className="gap-1.5 !h-6 !border-0 rounded-sm px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 dark:data-active:!bg-foreground/15 data-active:!text-foreground"
+              className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Changes
               {hasData && files.length > 0 && (
@@ -516,7 +622,7 @@ export function RightSidebar({
             </TabsTrigger>
             <TabsTrigger
               value="files"
-              className="!h-6 !border-0 rounded-sm px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 dark:data-active:!bg-foreground/15 data-active:!text-foreground"
+              className="!h-6 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Files
             </TabsTrigger>
@@ -794,7 +900,9 @@ function PullRequestAction({
         }
       />
       <TooltipContent side="bottom">
-        {pullRequest ? "View Pull Request" : "Open GitHub to create a pull request"}
+        {pullRequest
+          ? "View Pull Request"
+          : "Open GitHub to create a pull request"}
       </TooltipContent>
     </Tooltip>
   )

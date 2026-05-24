@@ -81,9 +81,31 @@ export function moveCachedGitFiles(
   return { ...data, files: [...kept, ...additions] }
 }
 
+export function removeCachedGitFiles(
+  data: GitQueryData | undefined,
+  paths: string[],
+  staged?: boolean
+): GitQueryData | undefined {
+  if (!data) return data
+  const pathSet = new Set(paths)
+  return {
+    ...data,
+    files: data.files.filter((file) => {
+      if (!pathSet.has(file.path)) return true
+      return staged !== undefined && file.staged !== staged
+    }),
+  }
+}
+
 export type OptimisticGitFileMove = {
   paths: string[]
   staged: boolean
+  expiresAt: number
+}
+
+export type OptimisticGitFileRemoval = {
+  paths: string[]
+  staged?: boolean
   expiresAt: number
 }
 
@@ -96,6 +118,20 @@ export function applyOptimisticGitFileMoves(
     .filter((move) => move.expiresAt > now)
     .reduce(
       (next, move) => moveCachedGitFiles(next, move.paths, move.staged) ?? next,
+      data
+    )
+}
+
+export function applyOptimisticGitFileRemovals(
+  data: GitQueryData,
+  removals: OptimisticGitFileRemoval[],
+  now = Date.now()
+): GitQueryData {
+  return removals
+    .filter((removal) => removal.expiresAt > now)
+    .reduce(
+      (next, removal) =>
+        removeCachedGitFiles(next, removal.paths, removal.staged) ?? next,
       data
     )
 }

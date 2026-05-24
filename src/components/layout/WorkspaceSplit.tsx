@@ -19,6 +19,8 @@ function clampWidth(n: number): number {
 type Props = {
   projects: Project[]
   activeProjectId: string
+  titleBar?: ReactNode
+  sidebarTopActions?: ReactNode
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
   onTerminalTitleChange?: (tabId: string, paneId: string, title: string) => void
@@ -41,6 +43,8 @@ type Props = {
 export function WorkspaceSplit({
   projects,
   activeProjectId,
+  titleBar,
+  sidebarTopActions,
   workspaceTabs,
   sidebarOpen = true,
   onTerminalTitleChange,
@@ -116,6 +120,7 @@ export function WorkspaceSplit({
 
   const workspaceSection = (
     <div className="flex h-full flex-col">
+      {titleBar}
       {workspaceTabs}
       <div className="relative min-h-0 flex-1">
         {projects.map((p) => (
@@ -182,6 +187,7 @@ export function WorkspaceSplit({
             activeFilePath={activeTreeFilePath}
             onOpenDiff={onOpenDiffTab}
             onOpenFile={onOpenFileTab}
+            topRightActions={sidebarTopActions}
           />
         </div>
       </div>

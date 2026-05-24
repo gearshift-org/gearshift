@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { toast } from "sonner"
+import { PanelRight } from "lucide-react"
 import { TitleBar } from "./TitleBar"
+import { ThemeToggle } from "./ThemeToggle"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import { CommandPalette } from "./CommandPalette"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { tabDisplayName } from "./terminalName"
 import agentCompleteSoundUrl from "@/assets/sounds/agent-complete.wav?url"
 import type { Project, TerminalAgentStatus, WorkspaceTab } from "./types"
@@ -1157,28 +1164,75 @@ export function AppShell() {
         onSelectTab={selectTab}
         onOpenFile={openFileFromCommandPalette}
       />
-      <TitleBar
-        projects={projects}
-        activeProjectId={activeProjectId}
-        recents={recents.filter(
-          (r) => !projects.some((p) => p.path === r.path),
-        )}
-        onSelectProject={selectProject}
-        onAddProject={addProject}
-        onPickRecent={pickRecent}
-        onCloseProject={closeProject}
-        onCloseOtherProjects={closeOtherProjects}
-        onCloseProjectsToRight={closeProjectsToRight}
-        onOpenProjectInVSCode={openProjectInVSCode}
-        onReorderProjects={reorderProjects}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen((v) => !v)}
-      />
-      {activeProject ? (
+      {(() => {
+        const toggleSidebar = () => setSidebarOpen((v) => !v)
+        const titleBar = (
+          <TitleBar
+            projects={projects}
+            activeProjectId={activeProjectId}
+            recents={recents.filter(
+              (r) => !projects.some((p) => p.path === r.path),
+            )}
+            onSelectProject={selectProject}
+            onAddProject={addProject}
+            onPickRecent={pickRecent}
+            onCloseProject={closeProject}
+            onCloseOtherProjects={closeOtherProjects}
+            onCloseProjectsToRight={closeProjectsToRight}
+            onOpenProjectInVSCode={openProjectInVSCode}
+            onReorderProjects={reorderProjects}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={toggleSidebar}
+            showRightControls={!sidebarOpen || !activeProject}
+          />
+        )
+        const sidebarTopActions = (
+          <div className="flex items-center pr-1">
+            <ThemeToggle />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    aria-pressed={sidebarOpen}
+                    aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                    className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                  >
+                    <PanelRight className="size-3.5" />
+                  </button>
+                }
+              />
+              <TooltipContent>
+                {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )
+        if (!activeProject) {
+          return (
+            <>
+              {titleBar}
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+                <p>No project selected</p>
+                <button
+                  type="button"
+                  onClick={addProject}
+                  className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                >
+                  Select a Project
+                </button>
+              </div>
+            </>
+          )
+        }
+        return (
         <WorkspaceSplit
           projects={projects}
           activeProjectId={activeProjectId}
           sidebarOpen={sidebarOpen}
+          titleBar={titleBar}
+          sidebarTopActions={sidebarTopActions}
           onTerminalTitleChange={setTerminalTitle}
           onTerminalAgentStatusChange={setTerminalAgentStatus}
           onStartTerminal={(tabId, paneId) => {
@@ -1211,18 +1265,8 @@ export function AppShell() {
             />
           }
         />
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-          <p>No project selected</p>
-          <button
-            type="button"
-            onClick={addProject}
-            className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
-          >
-            Select a Project
-          </button>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

@@ -1,7 +1,6 @@
 import { PanelRight } from "lucide-react"
 import { ProjectTabs } from "./ProjectTabs"
 import { ThemeToggle } from "./ThemeToggle"
-import { Button } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
@@ -24,6 +23,7 @@ type Props = {
   onReorderProjects?: (fromId: string, toId: string) => void
   sidebarOpen?: boolean
   onToggleSidebar?: () => void
+  showRightControls?: boolean
 }
 
 export function TitleBar({
@@ -40,6 +40,7 @@ export function TitleBar({
   onReorderProjects,
   sidebarOpen,
   onToggleSidebar,
+  showRightControls = true,
 }: Props) {
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
@@ -58,30 +59,34 @@ export function TitleBar({
         onReorder={onReorderProjects}
       />
       <div className="flex-1" />
-      <ThemeToggle />
-      {onToggleSidebar && (
-        <div className="flex items-center pr-1 [-webkit-app-region:no-drag]">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={onToggleSidebar}
-                  aria-pressed={sidebarOpen}
-                  aria-label={
-                    sidebarOpen ? "Hide sidebar" : "Show sidebar"
+      {showRightControls && (
+        <>
+          <ThemeToggle />
+          {onToggleSidebar && (
+            <div className="flex items-center pr-4 [-webkit-app-region:no-drag]">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={onToggleSidebar}
+                      aria-pressed={sidebarOpen}
+                      aria-label={
+                        sidebarOpen ? "Hide sidebar" : "Show sidebar"
+                      }
+                      className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                    >
+                      <PanelRight className="size-3.5" />
+                    </button>
                   }
-                >
-                  <PanelRight />
-                </Button>
-              }
-            />
-            <TooltipContent>
-              {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-            </TooltipContent>
-          </Tooltip>
-        </div>
+                />
+                <TooltipContent>
+                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

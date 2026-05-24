@@ -162,7 +162,7 @@ function FileNode({
       onClick={() => onOpenFile(relPath)}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
-        active && "bg-accent text-accent-foreground"
+        active && "bg-foreground/10 dark:bg-foreground/15"
       )}
       style={{ paddingLeft: (depth + 1) * 12 + 12 }}
     >

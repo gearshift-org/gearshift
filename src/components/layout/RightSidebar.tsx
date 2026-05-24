@@ -71,6 +71,7 @@ type Props = {
   activeFilePath?: string
   onOpenDiff: (path: string, staged: boolean) => void
   onOpenFile: (path: string) => void
+  topRightActions?: React.ReactNode
 }
 
 export function RightSidebar({
@@ -81,6 +82,7 @@ export function RightSidebar({
   activeFilePath,
   onOpenDiff,
   onOpenFile,
+  topRightActions,
 }: Props) {
   const [internalTab, setInternalTab] = useState<"changes" | "files">("changes")
   const tab = activeTab ?? internalTab
@@ -479,26 +481,31 @@ export function RightSidebar({
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3">
-          <TabsList variant="line" className="h-full gap-4 bg-transparent p-0">
+        <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3 [-webkit-app-region:drag]">
+          <TabsList variant="line" className="h-full gap-1 bg-transparent p-0 [-webkit-app-region:no-drag]">
             <TabsTrigger
               value="changes"
-              className="!h-full gap-1.5 !border-0 text-xs after:!bottom-[-1px] after:!h-px"
+              className="gap-1.5 !h-6 !border-0 rounded-sm px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 dark:data-active:!bg-foreground/15 data-active:!text-foreground"
             >
               Changes
               {hasData && files.length > 0 && (
-                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-indigo-500 px-1 text-[10px] leading-none font-medium text-white">
+                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-emerald-500/20 px-1 text-[10px] leading-none font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
                   {files.length > 99 ? "99+" : files.length}
                 </span>
               )}
             </TabsTrigger>
             <TabsTrigger
               value="files"
-              className="!h-full !border-0 text-xs after:!bottom-[-1px] after:!h-px"
+              className="!h-6 !border-0 rounded-sm px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 dark:data-active:!bg-foreground/15 data-active:!text-foreground"
             >
               Files
             </TabsTrigger>
           </TabsList>
+          {topRightActions && (
+            <div className="ml-auto flex items-center [-webkit-app-region:no-drag]">
+              {topRightActions}
+            </div>
+          )}
         </div>
         <TabsContent
           value="changes"

@@ -646,6 +646,11 @@ function sendToFocused(channel: string) {
   win.webContents.send(channel)
 }
 
+const menuAccelerators: { "terminal.new": string; "terminal.close": string } = {
+  "terminal.new": "CmdOrCtrl+T",
+  "terminal.close": "CmdOrCtrl+W",
+}
+
 function buildMenu() {
   const isMac = process.platform === "darwin"
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -672,12 +677,12 @@ function buildMenu() {
       submenu: [
         {
           label: "New Terminal",
-          accelerator: "CmdOrCtrl+T",
+          accelerator: menuAccelerators["terminal.new"],
           click: () => sendToFocused("app:new-terminal"),
         },
         {
           label: "Close Terminal",
-          accelerator: "CmdOrCtrl+W",
+          accelerator: menuAccelerators["terminal.close"],
           click: () => sendToFocused("app:close-terminal"),
         },
       ],
@@ -973,6 +978,22 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn("[agent-hooks] setup failed", err)
   }
+
+  ipcMain.handle(
+    "menu:update-accelerators",
+    (_e, map: Partial<typeof menuAccelerators>) => {
+      if (map && typeof map === "object") {
+        if (typeof map["terminal.new"] === "string") {
+          menuAccelerators["terminal.new"] = map["terminal.new"]
+        }
+        if (typeof map["terminal.close"] === "string") {
+          menuAccelerators["terminal.close"] = map["terminal.close"]
+        }
+        buildMenu()
+      }
+      return { ok: true }
+    },
+  )
 
   ipcMain.handle("state:read", () => readState())
 

@@ -269,6 +269,15 @@ const stateApi = {
     ipcRenderer.invoke("state:write", data) as Promise<{ ok: true }>,
 }
 
+const menuApi = {
+  updateAccelerators: (
+    map: Partial<{ "terminal.new": string; "terminal.close": string }>,
+  ) =>
+    ipcRenderer.invoke("menu:update-accelerators", map) as Promise<{
+      ok: true
+    }>,
+}
+
 contextBridge.exposeInMainWorld("dialogApi", dialogApi)
 contextBridge.exposeInMainWorld("shellApi", shellApi)
 contextBridge.exposeInMainWorld("term", termApi)
@@ -278,6 +287,7 @@ contextBridge.exposeInMainWorld("appApi", appApi)
 contextBridge.exposeInMainWorld("git", gitApi)
 contextBridge.exposeInMainWorld("fsApi", fsApi)
 contextBridge.exposeInMainWorld("stateApi", stateApi)
+contextBridge.exposeInMainWorld("menuApi", menuApi)
 
 export type DialogApi = typeof dialogApi
 export type ShellApi = typeof shellApi
@@ -288,3 +298,4 @@ export type AppApi = typeof appApi
 export type GitApi = typeof gitApi
 export type FsApi = typeof fsApi
 export type StateApi = typeof stateApi
+export type MenuApi = typeof menuApi

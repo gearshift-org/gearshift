@@ -6,6 +6,7 @@ import {
   Outlet,
 } from "@tanstack/react-router"
 import { AppShell } from "./components/layout/AppShell"
+import { SettingsRoute } from "./routes/settings/SettingsRoute"
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -40,9 +41,16 @@ const tabRoute = createRoute({
   component: () => null,
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: SettingsRoute,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   projectRoute.addChildren([projectIndexRoute, tabRoute]),
+  settingsRoute,
 ])
 
 // Boot always lands on "/"; AppShell navigates to the stored active project

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelRight } from "lucide-react"
 import { TitleBar } from "./TitleBar"
@@ -1226,25 +1227,37 @@ export function AppShell() {
     }
   }, [])
 
+  const { findActionForEvent } = useKeybindings()
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey
-      if (mod && !e.shiftKey && !e.altKey && e.key === "2") {
-        e.preventDefault()
-        setSidebarOpen((v) => !v)
-      }
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p") {
-        e.preventDefault()
-        setPaletteOpen((v) => !v)
-      }
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "d") {
-        e.preventDefault()
-        splitActiveTerminalRef.current()
+      const target = e.target as HTMLElement | null
+      if (target?.dataset?.keycapture === "true") return
+      const action = findActionForEvent(e)
+      if (!action) return
+      switch (action) {
+        case "sidebar.toggle":
+          e.preventDefault()
+          setSidebarOpen((v) => !v)
+          break
+        case "palette.open":
+          e.preventDefault()
+          setPaletteOpen((v) => !v)
+          break
+        case "terminal.split":
+          e.preventDefault()
+          splitActiveTerminalRef.current()
+          break
+        case "settings.open":
+          e.preventDefault()
+          void navigate({ to: "/settings" })
+          break
+        default:
+          break
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [])
+  }, [findActionForEvent, navigate])
 
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">

@@ -5,6 +5,7 @@ import type {
   ElectronUtils,
   FsApi,
   GitApi,
+  MenuApi,
   ShellApi,
   StateApi,
   TermApi,
@@ -21,6 +22,7 @@ declare global {
     git: GitApi
     fsApi: FsApi
     stateApi?: StateApi
+    menuApi?: MenuApi
   }
 }
 

@@ -361,6 +361,7 @@ export function AppShell() {
     const { id: paneId } = await window.term.create({
       cwd: path,
       theme: resolvedTheme,
+      projectId: id,
     })
     setProjects((prev) => [
       ...prev,
@@ -572,6 +573,7 @@ export function AppShell() {
     const { id: paneId } = await window.term.create({
       cwd: activeProject.path,
       theme: resolvedTheme,
+      projectId: activeProject.id,
     })
     const tabId = makeId()
     setProjects((prev) =>
@@ -606,6 +608,7 @@ export function AppShell() {
       const { id: paneId } = await window.term.create({
         cwd: activeProject.path,
         theme: resolvedTheme,
+        projectId: activeProject.id,
       })
       setProjects((prev) =>
         prev.map((p) =>
@@ -879,7 +882,10 @@ export function AppShell() {
         let sessionId: string | null = null
         if (pane.pendingSessionId) {
           try {
-            const res = await window.term.adopt(pane.pendingSessionId)
+            const res = await window.term.adopt(
+              pane.pendingSessionId,
+              project.id,
+            )
             if (res.ok) sessionId = pane.pendingSessionId
           } catch {
             // fall through to create
@@ -889,6 +895,7 @@ export function AppShell() {
           const { id } = await window.term.create({
             cwd: project.path,
             theme: resolvedTheme,
+            projectId: project.id,
           })
           sessionId = id
         }

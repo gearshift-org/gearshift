@@ -4,6 +4,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { SplitSquareHorizontal, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { paneDisplayName } from "./terminalName"
+import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
 import type { TerminalPane } from "./types"
 
 type Props = {
@@ -11,17 +12,20 @@ type Props = {
   index: number
   isActive: boolean
   showSplit: boolean
+  showClose?: boolean
   onFocus: () => void
   onClose: () => void
   onRename: (name: string) => void
   onSplit: () => void
 }
 
+
 export function PaneHeader({
   pane,
   index,
   isActive,
   showSplit,
+  showClose = true,
   onFocus,
   onClose,
   onRename,
@@ -67,15 +71,13 @@ export function PaneHeader({
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
       onMouseDown={onFocus}
       onDoubleClick={(e) => {
         e.stopPropagation()
         startEdit()
       }}
       className={cn(
-        "flex h-[34px] shrink-0 cursor-default items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground/80 select-none",
+        "flex h-[34px] shrink-0 cursor-default items-center gap-0.5 border-b border-border bg-background px-3 text-xs text-foreground/80 select-none",
         isActive && "bg-muted/60 text-foreground",
       )}
     >
@@ -99,36 +101,50 @@ export function PaneHeader({
           className="h-5 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 font-mono text-[11px] text-foreground outline-none ring-1 ring-ring/40"
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate">
+        // The name span is the ONLY drag handle. Buttons sit outside the
+        // listener spread, so clicking History/Split/Close never starts a
+        // sortable drag — and neither does interacting with the popover.
+        <span
+          {...attributes}
+          {...listeners}
+          className="min-w-0 flex-1 truncate cursor-grab active:cursor-grabbing"
+        >
           {paneDisplayName(pane, index)}
         </span>
       )}
+      {pane.sessionId && !editing ? (
+        <TerminalHistoryButton sessionId={pane.sessionId} />
+      ) : null}
       {showSplit && !editing ? (
         <button
           type="button"
           onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
             onSplit()
           }}
           aria-label="Split pane"
-          className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+          className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
         >
-          <SplitSquareHorizontal className="size-3" />
+          <SplitSquareHorizontal className="size-3.5" />
         </button>
       ) : null}
-      <button
-        type="button"
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation()
-          onClose()
-        }}
-        aria-label="Close pane"
-        className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground/70 transition-colors hover:bg-destructive/15 hover:text-destructive"
-      >
-        <X className="size-3" />
-      </button>
+      {showClose ? (
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          aria-label="Close pane"
+          className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+        >
+          <X className="size-3.5" />
+        </button>
+      ) : null}
     </div>
   )
 }

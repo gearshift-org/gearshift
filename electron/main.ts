@@ -17,6 +17,8 @@ import parcelWatcher from "@parcel/watcher"
 import { ensureDaemonRunning } from "./daemonSupervisor"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
+import * as chatDb from "./db/chatDb"
+import * as inputCapture from "./inputCapture"
 import {
   closeAgentHookServer,
   hookEnv,
@@ -89,6 +91,9 @@ async function getDaemonClient(): Promise<DaemonClient> {
 // and exit events back to the window that opened/adopted the session, even
 // when multiple windows are open.
 const sessionOwners = new Map<string, number>()
+// sessionId → projectId for tagging captured input lines. Populated on
+// term:create and cleared on session exit/kill.
+const sessionProjects = new Map<string, string | null>()
 
 function getOwnerWebContents(sessionId: string) {
   const id = sessionOwners.get(sessionId)
@@ -105,6 +110,26 @@ function sendAgentHookEvent(sessionId: string, event: AgentHookEvent) {
   sender.send(`term:agentEvent:${sessionId}`, event)
 }
 
+async function captureInput(sessionId: string, data: string) {
+  const projectId = sessionProjects.get(sessionId) ?? null
+  // Skip the process-tree walk for chunks without a submit — Enter is the
+  // only event that triggers a DB write.
+  let agent: string | null = null
+  if (data.includes("\r") || data.includes("\n")) {
+    const pid = daemonClient?.getPid(sessionId)
+    if (pid) {
+      const status = await detectPtyAgent(pid)
+      agent = status.running ? status.agentName ?? null : null
+    }
+  }
+  inputCapture.feed(sessionId, projectId, data, agent, (msg) => {
+    const sender = getOwnerWebContents(sessionId)
+    if (sender && !sender.isDestroyed()) {
+      sender.send(`term:history:appended:${sessionId}`, msg)
+    }
+  })
+}
+
 function wireSessionEvents(client: DaemonClient, sessionId: string) {
   client.onData(sessionId, (chunk) => {
     const sender = getOwnerWebContents(sessionId)
@@ -117,6 +142,8 @@ function wireSessionEvents(client: DaemonClient, sessionId: string) {
       sender.send(`term:exit:${sessionId}`, info)
     }
     sessionOwners.delete(sessionId)
+    sessionProjects.delete(sessionId)
+    inputCapture.dispose(sessionId)
   })
 }
 
@@ -1340,6 +1367,7 @@ app.whenReady().then(async () => {
         cols?: number
         rows?: number
         theme?: "light" | "dark"
+        projectId?: string | null
       },
     ) => {
       const client = await getDaemonClient()
@@ -1356,24 +1384,29 @@ app.whenReady().then(async () => {
       }
       await client.open(resolved, id)
       sessionOwners.set(id, event.sender.id)
+      sessionProjects.set(id, opts.projectId ?? null)
       wireSessionEvents(client, id)
       return { id }
     }
   )
 
-  ipcMain.handle("term:adopt", async (event, sessionId: string) => {
-    const client = await getDaemonClient()
-    const res = await client.attach(sessionId)
-    if (!res.ok) return { ok: false }
-    sessionOwners.set(sessionId, event.sender.id)
-    wireSessionEvents(client, sessionId)
-    return {
-      ok: true,
-      replay: res.replay,
-      cols: res.cols,
-      rows: res.rows,
-    }
-  })
+  ipcMain.handle(
+    "term:adopt",
+    async (event, sessionId: string, projectId?: string | null) => {
+      const client = await getDaemonClient()
+      const res = await client.attach(sessionId)
+      if (!res.ok) return { ok: false }
+      sessionOwners.set(sessionId, event.sender.id)
+      sessionProjects.set(sessionId, projectId ?? null)
+      wireSessionEvents(client, sessionId)
+      return {
+        ok: true,
+        replay: res.replay,
+        cols: res.cols,
+        rows: res.rows,
+      }
+    },
+  )
 
   ipcMain.handle("term:snapshot", async (_e, id: string) => {
     return daemonClient?.snapshot(id) ?? ""
@@ -1381,6 +1414,7 @@ app.whenReady().then(async () => {
 
   ipcMain.on("term:write", (_e, id: string, data: string) => {
     daemonClient?.write(id, data)
+    void captureInput(id, data)
   })
 
   ipcMain.on("term:resize", (_e, id: string, cols: number, rows: number) => {
@@ -1425,6 +1459,17 @@ app.whenReady().then(async () => {
   ipcMain.on("term:kill", (_e, id: string) => {
     daemonClient?.kill(id)
     sessionOwners.delete(id)
+    sessionProjects.delete(id)
+    inputCapture.dispose(id)
+  })
+
+  ipcMain.handle("term:history:list", async (_e, sessionId: string) => {
+    return chatDb.listForSession(sessionId)
+  })
+
+  ipcMain.handle("term:history:clear", async (_e, sessionId: string) => {
+    chatDb.clearForSession(sessionId)
+    return { ok: true }
   })
 
   try {
@@ -1444,6 +1489,9 @@ app.on("before-quit", () => {
   // grace timer fires, or the 24h per-session idle sweep triggers.
   daemonClient?.disconnect()
   sessionOwners.clear()
+  sessionProjects.clear()
+  inputCapture.disposeAll()
+  chatDb.closeDb()
 })
 
 app.on("window-all-closed", () => {

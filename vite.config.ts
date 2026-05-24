@@ -19,7 +19,12 @@ export default defineConfig({
           build: {
             outDir: "dist-electron",
             rollupOptions: {
-              external: ["node-pty", "electron", "@parcel/watcher"],
+              external: [
+                "node-pty",
+                "electron",
+                "@parcel/watcher",
+                "better-sqlite3",
+              ],
             },
           },
         },

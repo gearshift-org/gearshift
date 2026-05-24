@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+export type ChatHistoryMessage = {
+  id: string
+  sessionId: string
+  projectId: string | null
+  body: string
+  agent: string | null
+  createdAt: number
+}
+
 const dialogApi = {
   openProject: () =>
     ipcRenderer.invoke("dialog:openProject") as Promise<string | null>,
@@ -16,9 +25,10 @@ const termApi = {
     cols?: number
     rows?: number
     theme?: "light" | "dark"
+    projectId?: string | null
   }) => ipcRenderer.invoke("term:create", opts) as Promise<{ id: string }>,
-  adopt: (sessionId: string) =>
-    ipcRenderer.invoke("term:adopt", sessionId) as Promise<{
+  adopt: (sessionId: string, projectId?: string | null) =>
+    ipcRenderer.invoke("term:adopt", sessionId, projectId ?? null) as Promise<{
       ok: boolean
       replay?: string
       cols?: number
@@ -77,6 +87,22 @@ const termApi = {
     ) => cb(info)
     ipcRenderer.on(channel, listener)
     return () => ipcRenderer.removeListener(channel, listener)
+  },
+  history: {
+    list: (sessionId: string) =>
+      ipcRenderer.invoke("term:history:list", sessionId) as Promise<
+        ChatHistoryMessage[]
+      >,
+    clear: (sessionId: string) =>
+      ipcRenderer.invoke("term:history:clear", sessionId) as Promise<{
+        ok: boolean
+      }>,
+    onAppended: (sessionId: string, cb: (msg: ChatHistoryMessage) => void) => {
+      const channel = `term:history:appended:${sessionId}`
+      const listener = (_e: unknown, msg: ChatHistoryMessage) => cb(msg)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
   },
 }
 

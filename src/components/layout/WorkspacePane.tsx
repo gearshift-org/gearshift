@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react"
-import { Columns2, Rows3, SplitSquareHorizontal } from "lucide-react"
+import { Columns2, Rows3 } from "lucide-react"
 import {
   closestCenter,
   DndContext,
@@ -233,10 +233,6 @@ function TerminalTabContent({
     </ResizablePanelGroup>
   )
 
-  if (!multi) {
-    return <div className="flex h-full flex-col">{panelGroup}</div>
-  }
-
   return (
     <DndContext
       sensors={sensors}
@@ -249,7 +245,9 @@ function TerminalTabContent({
       >
         <div className="flex h-full flex-col">
           {/* Headers live in a flat row above the panels so the sibling-swap
-              animation isn't clipped by react-resizable-panels' overflow. */}
+              animation isn't clipped by react-resizable-panels' overflow.
+              Same row, same component for single and split — pane count
+              just changes the flex basis. */}
           <div className="flex shrink-0">
             {tab.panes.map((pane, idx) => (
               <div
@@ -262,6 +260,7 @@ function TerminalTabContent({
                   index={idx}
                   isActive={tab.activePaneId === pane.id}
                   showSplit={tab.activePaneId === pane.id && !!onSplitTerminal}
+                  showClose={multi}
                   onFocus={() => onFocusPane?.(tab.id, pane.id)}
                   onClose={() => onClosePane?.(tab.id, pane.id)}
                   onRename={(name) => onRenamePane?.(tab.id, pane.id, name)}
@@ -359,10 +358,10 @@ export function WorkspacePane({
   onOpenFile,
 }: Props) {
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
-  const isTerminalActive = activeTab?.kind === "terminal"
   const isDiffActive = activeTab?.kind === "diff"
-  const hideSharedHeader =
-    activeTab?.kind === "terminal" && activeTab.panes.length > 1
+  // Terminal tabs render their own PaneHeader row (single or split), so the
+  // shared header would just stack a redundant row above it.
+  const hideSharedHeader = activeTab?.kind === "terminal"
 
   // Per-diff-tab view mode, remembered while the tab exists; defaults to the
   // last-persisted mode so the user's choice survives restarts.
@@ -424,23 +423,6 @@ export function WorkspacePane({
             <TooltipContent>
               {activeDiffMode === "unified" ? "Split diff" : "Inline diff"}
             </TooltipContent>
-          </Tooltip>
-        )}
-        {isTerminalActive && onSplitTerminal && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => onSplitTerminal(activeTab!.id)}
-                  aria-label="Split terminal"
-                  className="ml-auto grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-                >
-                  <SplitSquareHorizontal className="size-3.5" />
-                </button>
-              }
-            />
-            <TooltipContent>Split terminal (⌘D)</TooltipContent>
           </Tooltip>
         )}
       </div>

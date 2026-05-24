@@ -486,6 +486,18 @@ async function runGh(cwd: string, args: string[]): Promise<string> {
   return stdout
 }
 
+async function hasGitRemote(cwd: string): Promise<boolean> {
+  try {
+    const raw = await runGit(cwd, ["remote"])
+    return raw
+      .split("\n")
+      .map((s) => s.trim())
+      .some(Boolean)
+  } catch {
+    return false
+  }
+}
+
 async function getDefaultBranch(cwd: string): Promise<string | null> {
   try {
     const raw = await runGit(cwd, [
@@ -1077,6 +1089,15 @@ app.whenReady().then(async () => {
         }
       }
 
+      if (!(await hasGitRemote(cwd))) {
+        return {
+          ok: true,
+          ghAvailable: true,
+          pullRequest: null,
+          canCreatePullRequest: false,
+        }
+      }
+
       try {
         const [raw, defaultBranch] = await Promise.all([
           execFileP(
@@ -1109,8 +1130,15 @@ app.whenReady().then(async () => {
             !isDefaultBranch(currentBranch, defaultBranch),
         }
       } catch (err) {
-        const signal = (err as { signal?: string } | null)?.signal
-        if (signal !== "SIGINT" && signal !== "SIGTERM") {
+        const e = err as { signal?: string; stderr?: string; message?: string } | null
+        const signal = e?.signal
+        const message = `${e?.stderr ?? ""}\n${e?.message ?? ""}`
+        const expectedMissingRemote = message.includes("no git remotes found")
+        if (
+          signal !== "SIGINT" &&
+          signal !== "SIGTERM" &&
+          !expectedMissingRemote
+        ) {
           console.warn("pull request check failed", err)
         }
         return {

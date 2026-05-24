@@ -4,6 +4,7 @@ export interface BuildOptions {
   cwd?: string
   cols?: number
   rows?: number
+  theme?: "light" | "dark"
 }
 
 export interface ResolvedOpenOptions {
@@ -28,11 +29,16 @@ export function buildOpenOptions(opts: BuildOptions): ResolvedOpenOptions {
   // Critical for packaged .app launches (Finder/Spotlight) where the OS
   // hands us a sparse PATH and Homebrew's PATH setup lives in zprofile.
   const args = process.platform === "win32" ? [] : ["-l"]
+  // Claim to be kitty so TUIs trust modern terminal signals (kitty CSI-u keys,
+  // theme detection). COLORFGBG seeds light/dark at shell startup; live theme
+  // reaction happens via DEC private mode 2031 in the renderer (see TerminalView).
+  const colorFgBg = opts.theme === "light" ? "0;15" : "15;0"
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
-    TERM_PROGRAM: "gearshift-v2",
+    COLORFGBG: colorFgBg,
+    TERM_PROGRAM: "kitty",
   }
   return {
     shell,

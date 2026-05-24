@@ -98,7 +98,7 @@ until that project is visited. While the app is focused, finishing away from the
 active project shows a bottom-right in-app notification that opens the project
 and terminal when clicked. If the app is not focused or is hidden, an agent
 finishing in any project uses a desktop notification instead. A short completion
-sound plays at 50% volume when an agent finishes away from attention.
+sound plays at 50% volume whenever an agent finishes.
 Idle agents stay hidden. Inactive project and tab panes stay mounted and
 attached to the DOM; they are hidden with opacity so terminal canvases do not
 have to detach and re-attach during normal navigation.

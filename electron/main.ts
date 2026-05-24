@@ -1305,12 +1305,21 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "term:create",
-    async (event, opts: { cwd: string; cols?: number; rows?: number }) => {
+    async (
+      event,
+      opts: {
+        cwd: string
+        cols?: number
+        rows?: number
+        theme?: "light" | "dark"
+      },
+    ) => {
       const client = await getDaemonClient()
       const resolved = buildOpenOptions({
         cwd: opts.cwd,
         cols: opts.cols,
         rows: opts.rows,
+        theme: opts.theme,
       })
       const id = randomUUID()
       resolved.env = {

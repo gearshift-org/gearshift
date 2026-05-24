@@ -6,6 +6,7 @@ import { PanelRight } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { TitleBar } from "./TitleBar"
 import { ThemeToggle } from "./ThemeToggle"
+import { useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import { CommandPalette } from "./CommandPalette"
@@ -157,6 +158,7 @@ function playAgentCompleteSound() {
 
 export function AppShell() {
   const navigate = useNavigate()
+  const { resolvedTheme } = useTheme()
   const params = useParams({ strict: false }) as {
     projectId?: string
     tabId?: string
@@ -356,7 +358,10 @@ export function AppShell() {
     const id = makeId()
     const tabId = makeId()
     const resolvedName = name || basename(path)
-    const { id: paneId } = await window.term.create({ cwd: path })
+    const { id: paneId } = await window.term.create({
+      cwd: path,
+      theme: resolvedTheme,
+    })
     setProjects((prev) => [
       ...prev,
       {
@@ -564,7 +569,10 @@ export function AppShell() {
 
   const addTerminal = async () => {
     if (!activeProject) return
-    const { id: paneId } = await window.term.create({ cwd: activeProject.path })
+    const { id: paneId } = await window.term.create({
+      cwd: activeProject.path,
+      theme: resolvedTheme,
+    })
     const tabId = makeId()
     setProjects((prev) =>
       prev.map((p) => {
@@ -597,6 +605,7 @@ export function AppShell() {
       if (!tab || tab.kind !== "terminal") return
       const { id: paneId } = await window.term.create({
         cwd: activeProject.path,
+        theme: resolvedTheme,
       })
       setProjects((prev) =>
         prev.map((p) =>
@@ -617,7 +626,7 @@ export function AppShell() {
         )
       )
     },
-    [activeProject]
+    [activeProject, resolvedTheme]
   )
 
   /** Close a single pane within a terminal tab. Closes the tab if it was the last. */
@@ -877,7 +886,10 @@ export function AppShell() {
           }
         }
         if (!sessionId) {
-          const { id } = await window.term.create({ cwd: project.path })
+          const { id } = await window.term.create({
+            cwd: project.path,
+            theme: resolvedTheme,
+          })
           sessionId = id
         }
         const newId = sessionId
@@ -1085,12 +1097,15 @@ export function AppShell() {
       })
     )
 
+    if (finishedWork && targetProject && targetTab?.kind === "terminal") {
+      playAgentCompleteSound()
+    }
+
     if (
       finishedAwayFromAttention &&
       targetProject &&
       targetTab?.kind === "terminal"
     ) {
-      playAgentCompleteSound()
       const terminalName = tabDisplayName(targetTab)
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
       if (appVisibleAndFocused) {

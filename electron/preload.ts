@@ -11,8 +11,12 @@ const shellApi = {
 }
 
 const termApi = {
-  create: (opts: { cwd: string; cols?: number; rows?: number }) =>
-    ipcRenderer.invoke("term:create", opts) as Promise<{ id: string }>,
+  create: (opts: {
+    cwd: string
+    cols?: number
+    rows?: number
+    theme?: "light" | "dark"
+  }) => ipcRenderer.invoke("term:create", opts) as Promise<{ id: string }>,
   adopt: (sessionId: string) =>
     ipcRenderer.invoke("term:adopt", sessionId) as Promise<{
       ok: boolean

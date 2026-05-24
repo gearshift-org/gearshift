@@ -86,6 +86,23 @@ const SEARCH_DECORATIONS = {
   activeMatchColorOverviewRuler: "#facc15",
 }
 
+// DEC private mode codes for color-scheme update notifications.
+// Spec: https://github.com/contour-terminal/contour/blob/master/docs/vt-extensions/color-palette-update-notifications.md
+const DEC_COLOR_SCHEME_UPDATE = 2031 // subscribe via CSI ? 2031 h / l
+const DEC_COLOR_SCHEME_QUERY = 996 // explicit query: CSI ? 996 n
+const DEC_COLOR_SCHEME_REPORT = 997 // response: CSI ? 997 ; 1|2 n (dark|light)
+
+function csiParamsInclude(
+  params: (number | number[])[],
+  target: number,
+): boolean {
+  for (let i = 0; i < params.length; i++) {
+    const p = params[i]
+    if ((typeof p === "number" ? p : p[0]) === target) return true
+  }
+  return false
+}
+
 const WRAPPER_BG = "[--xterm-bg:#f8f8f8] dark:[--xterm-bg:#151515]"
 const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 10000
@@ -134,6 +151,9 @@ export function TerminalView({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
+  const themeRef = useRef({ isDark })
+  themeRef.current.isDark = isDark
+  const colorSchemeSubscribedRef = useRef(false)
   const onTitleChangeRef = useRef(onTitleChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
   const agentStatusRef = useRef<TerminalAgentStatus>({ running: false, working: false })
@@ -307,6 +327,41 @@ export function TerminalView({
         const second = Array.isArray(params[1]) ? params[1][0] : params[1]
         if (first !== 4) return false
         modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
+        return true
+      },
+    )
+
+    // DEC private mode 2031 — color-scheme update notifications. Subscribed
+    // TUIs (Claude Code, Codex, Bubble Tea, …) send `CSI ? 2031 h` and expect
+    // a push of `CSI ? 997 ; 1|2 n` (dark|light) on every theme flip so they
+    // repaint live without a restart. `CSI ? 996 n` is an explicit query.
+    const colorSchemeSetSub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "h" },
+      (params) => {
+        if (csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) {
+          colorSchemeSubscribedRef.current = true
+        }
+        return false
+      },
+    )
+    const colorSchemeResetSub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "l" },
+      (params) => {
+        if (csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) {
+          colorSchemeSubscribedRef.current = false
+        }
+        return false
+      },
+    )
+    const colorSchemeQuerySub = term.parser.registerCsiHandler(
+      { prefix: "?", final: "n" },
+      (params) => {
+        if (!csiParamsInclude(params, DEC_COLOR_SCHEME_QUERY)) return false
+        const reply = themeRef.current.isDark ? 1 : 2
+        window.term.write(
+          sessionId,
+          `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`,
+        )
         return true
       },
     )
@@ -587,6 +642,9 @@ export function TerminalView({
       kittyKeyboardPushSub.dispose()
       kittyKeyboardPopSub.dispose()
       modifyOtherKeysSub.dispose()
+      colorSchemeSetSub.dispose()
+      colorSchemeResetSub.dispose()
+      colorSchemeQuerySub.dispose()
       search.dispose()
       webglRef.current?.dispose()
       webglRef.current = null
@@ -716,7 +774,16 @@ export function TerminalView({
     const term = termRef.current
     if (!term) return
     term.options.theme = themeObj
-  }, [themeObj])
+    // DEC mode 2031: push color-scheme report so subscribed TUIs (Claude Code,
+    // Codex, Bubble Tea) repaint live on theme flip without a restart.
+    if (colorSchemeSubscribedRef.current) {
+      const reply = isDark ? 1 : 2
+      window.term.write(
+        sessionId,
+        `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`,
+      )
+    }
+  }, [themeObj, isDark, sessionId])
 
   useEffect(() => {
     if (isActive && !searchOpen) termRef.current?.focus()

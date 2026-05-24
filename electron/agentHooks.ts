@@ -198,11 +198,14 @@ function buildCommandHookEntry(
   }
 }
 
-function mergeMarkedHookEntry(existing: unknown, entry: object): object[] {
-  const entries = Array.isArray(existing)
+function removeMarkedHookEntries(existing: unknown): object[] {
+  return Array.isArray(existing)
     ? existing.filter((e) => !isMarkedHookEntry(e))
     : []
-  return [...entries, entry]
+}
+
+function mergeMarkedHookEntry(existing: unknown, entry: object): object[] {
+  return [...removeMarkedHookEntries(existing), entry]
 }
 
 async function writeAgentHookScript(): Promise<void> {
@@ -283,10 +286,9 @@ async function installClaudeHooks(scriptPath: string): Promise<void> {
   const cmd = (event: string) => `${q} claude ${event} # ${AGENT_HOOK_MARKER}`
   settings.hooks = {
     ...hooks,
-    SessionStart: mergeMarkedHookEntry(
-      hooks.SessionStart,
-      buildCommandHookEntry(cmd("start"), 5)
-    ),
+    // Do not mark the pane busy on agent/TUI launch. The busy indicator should
+    // only start once the user submits a prompt in the terminal TUI.
+    SessionStart: removeMarkedHookEntries(hooks.SessionStart),
     UserPromptSubmit: mergeMarkedHookEntry(
       hooks.UserPromptSubmit,
       buildCommandHookEntry(cmd("start"), 5)
@@ -332,10 +334,9 @@ async function installCodexHooks(scriptPath: string): Promise<void> {
   const cmd = (event: string) => `${q} codex ${event} # ${AGENT_HOOK_MARKER}`
   settings.hooks = {
     ...hooks,
-    SessionStart: mergeMarkedHookEntry(
-      hooks.SessionStart,
-      buildCommandHookEntry(cmd("start"))
-    ),
+    // Do not mark the pane busy on agent/TUI launch. The busy indicator should
+    // only start once the user submits a prompt in the terminal TUI.
+    SessionStart: removeMarkedHookEntries(hooks.SessionStart),
     UserPromptSubmit: mergeMarkedHookEntry(
       hooks.UserPromptSubmit,
       buildCommandHookEntry(cmd("start"))
@@ -547,8 +548,8 @@ async function writePiExtension(): Promise<void> {
 // shim, matching the opencode plugin) so the pane indicator turns off as fast
 // for pi as it does for opencode.
 //
-//   session_start / before_agent_start / tool_execution_end → start
-//   agent_end / session_end / session_shutdown              → stop
+//   before_agent_start / tool_execution_end    → start
+//   agent_end / session_end / session_shutdown → stop
 
 import { createConnection } from "node:net"
 
@@ -576,7 +577,8 @@ export default function (pi: {
   // for those. Older pi versions without hasUI still fire (best-effort).
   const skip = (ctx: { hasUI?: boolean }) => ctx.hasUI === false
 
-  pi.on("session_start", (_e, ctx) => { if (!skip(ctx)) fire("start") })
+  // session_start only means the TUI opened. Wait for a prompt submission
+  // before marking the terminal agent as busy.
   pi.on("before_agent_start", (_e, ctx) => { if (!skip(ctx)) fire("start") })
   pi.on("tool_execution_end", (_e, ctx) => { if (!skip(ctx)) fire("start") })
   pi.on("agent_end", (_e, ctx) => { if (!skip(ctx)) fire("stop") })

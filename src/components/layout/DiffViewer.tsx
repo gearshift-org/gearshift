@@ -9,6 +9,7 @@ import {
 } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { FileIcon } from "@/components/icons/FileIcon"
+import { setPathDragData } from "@/lib/pathDrag"
 import {
   CodeView,
   type CodeViewHandle,
@@ -18,6 +19,7 @@ import { parsePatchFiles } from "@pierre/diffs"
 import type { FileDiffMetadata } from "@pierre/diffs"
 
 type Props = {
+  cwd: string
   patch: string
   themeType: "light" | "dark"
   viewMode: "unified" | "split"
@@ -41,6 +43,11 @@ function countHunkChanges(file: FileDiffMetadata) {
     deletions += hunk.deletionLines
   }
   return { additions, deletions }
+}
+
+function absolutePath(cwd: string, path: string) {
+  if (path.startsWith("/")) return path
+  return `${cwd.replace(/\/+$/, "")}/${path}`
 }
 
 const DIFFS_UNSAFE_CSS = `
@@ -76,7 +83,7 @@ const DIFFS_UNSAFE_CSS = `
 
 const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
   function DiffViewerComponent(
-    { patch, themeType, viewMode, onCollapsedStateChange },
+    { cwd, patch, themeType, viewMode, onCollapsedStateChange },
     ref,
   ) {
     const files = useMemo(() => {
@@ -213,6 +220,12 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
           return (
             <button
               type="button"
+              draggable
+              onDragStart={(e) =>
+                setPathDragData(e.dataTransfer, [
+                  absolutePath(cwd, item.fileDiff.name),
+                ])
+              }
               onClick={() => toggleCollapsed(item.id)}
               aria-expanded={!isCollapsed}
               className="diff-viewer-file-header"

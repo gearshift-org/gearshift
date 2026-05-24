@@ -288,13 +288,14 @@ export function SingleFileDiff({
         highlighterOptions={{}}
       >
         <DiffViewer
+          cwd={cwd}
           patch={patch}
           themeType={resolvedTheme}
           viewMode={viewMode}
         />
       </WorkerPoolContextProvider>
     )
-  }, [loading, patch, error, resolvedTheme, viewMode])
+  }, [cwd, loading, patch, error, resolvedTheme, viewMode])
 
   const copySelectionOrAll = () => {
     const sel = selectionTextRef.current

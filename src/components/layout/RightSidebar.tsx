@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/icons/FileIcon"
 import { FilesTree } from "./FilesTree"
+import { setPathDragData } from "@/lib/pathDrag"
 import {
   EMPTY_GIT_FILES,
   fetchGitQueryData,
@@ -61,6 +62,11 @@ const STATUS_STYLES: Record<GitStatus, string> = {
   R: "text-sky-500",
   C: "text-sky-500",
   U: "text-red-500",
+}
+
+function absolutePath(cwd: string, path: string) {
+  if (path.startsWith("/")) return path
+  return `${cwd.replace(/\/+$/, "")}/${path}`
 }
 
 type Props = {
@@ -663,6 +669,7 @@ export function RightSidebar({
                 {stagedFiles.map((c) => (
                   <FileRow
                     key={`staged-${c.path}`}
+                    cwd={cwd}
                     file={c}
                     actionIcon={<Minus className="size-3.5" />}
                     actionLabel="Unstage"
@@ -688,6 +695,7 @@ export function RightSidebar({
                 {unstagedFiles.map((c) => (
                   <FileRow
                     key={`unstaged-${c.path}`}
+                    cwd={cwd}
                     file={c}
                     actionIcon={<Plus className="size-3.5" />}
                     actionLabel="Stage"
@@ -979,6 +987,7 @@ function FileGroup({
 }
 
 function FileRow({
+  cwd,
   file,
   actionIcon,
   actionLabel,
@@ -990,6 +999,7 @@ function FileRow({
   onOpenFile,
   busy,
 }: {
+  cwd: string
   file: GitFile
   actionIcon: React.ReactNode
   actionLabel: string
@@ -1006,6 +1016,10 @@ function FileRow({
       <ContextMenuTrigger
         render={
           <li
+            draggable
+            onDragStart={(e) =>
+              setPathDragData(e.dataTransfer, [absolutePath(cwd, file.path)])
+            }
             onClick={onOpen}
             className="group/row flex cursor-pointer items-center gap-3 px-4 py-1.5 text-xs hover:bg-accent/40"
           >

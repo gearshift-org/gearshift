@@ -17,6 +17,7 @@ type Props = {
   onAddProject: () => void
   onPickRecent: (recent: RecentProject) => void
   onCloseProject: (id: string) => void
+  onCloseAllProjectTerminals?: (id: string) => void
   onCloseOtherProjects?: (id: string) => void
   onCloseProjectsToRight?: (id: string) => void
   onOpenProjectInVSCode?: (id: string) => void
@@ -34,6 +35,7 @@ export function TitleBar({
   onAddProject,
   onPickRecent,
   onCloseProject,
+  onCloseAllProjectTerminals,
   onCloseOtherProjects,
   onCloseProjectsToRight,
   onOpenProjectInVSCode,
@@ -53,6 +55,7 @@ export function TitleBar({
         onAdd={onAddProject}
         onPickRecent={onPickRecent}
         onClose={onCloseProject}
+        onCloseAllTerminals={onCloseAllProjectTerminals}
         onCloseOthers={onCloseOtherProjects}
         onCloseToRight={onCloseProjectsToRight}
         onOpenInVSCode={onOpenProjectInVSCode}

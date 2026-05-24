@@ -75,6 +75,7 @@ type Props = {
   onAdd: () => void
   onPickRecent: (recent: RecentProject) => void
   onClose?: (id: string) => void
+  onCloseAllTerminals?: (id: string) => void
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onOpenInVSCode?: (id: string) => void
@@ -90,6 +91,7 @@ type TabItemProps = {
   hasTabsToRight: boolean
   onSelect: (id: string) => void
   onClose?: (id: string) => void
+  onCloseAllTerminals?: (id: string) => void
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onAdd: () => void
@@ -104,6 +106,7 @@ function ProjectTabItem({
   hasTabsToRight,
   onSelect,
   onClose,
+  onCloseAllTerminals,
   onCloseOthers,
   onCloseToRight,
   onAdd,
@@ -131,6 +134,7 @@ function ProjectTabItem({
   }
   const hasWorkingAgent = projectHasWorkingAgent(p)
   const hasDoneAgent = projectHasDoneAgent(p)
+  const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
 
   return (
     <ContextMenu>
@@ -210,6 +214,12 @@ function ProjectTabItem({
           Close
         </ContextMenuItem>
         <ContextMenuItem
+          onClick={() => onCloseAllTerminals?.(p.id)}
+          disabled={!onCloseAllTerminals || terminalCount === 0}
+        >
+          Close All Terminals
+        </ContextMenuItem>
+        <ContextMenuItem
           onClick={() => onCloseToRight?.(p.id)}
           disabled={!hasTabsToRight}
         >
@@ -249,6 +259,7 @@ export function ProjectTabs({
   onAdd,
   onPickRecent,
   onClose,
+  onCloseAllTerminals,
   onCloseOthers,
   onCloseToRight,
   onOpenInVSCode,
@@ -282,6 +293,7 @@ export function ProjectTabs({
               hasTabsToRight={i < projects.length - 1}
               onSelect={onSelect}
               onClose={onClose}
+              onCloseAllTerminals={onCloseAllTerminals}
               onCloseOthers={onCloseOthers}
               onCloseToRight={onCloseToRight}
               onAdd={onAdd}

@@ -35,6 +35,7 @@ type Props = {
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onAddTerminal?: () => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
@@ -214,6 +215,7 @@ export function WorkspacePane({
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
+  onAddTerminal,
   onSplitTerminal,
   onFocusPane,
   onOpenFile,
@@ -325,8 +327,17 @@ export function WorkspacePane({
           </div>
         ))}
         {project && project.tabs.length === 0 && (
-          <div className="grid h-full place-items-center text-xs text-muted-foreground">
-            No terminals — click + to open one
+          <div className="grid h-full place-items-center">
+            <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
+              <span>No terminals</span>
+              <button
+                type="button"
+                onClick={onAddTerminal}
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40"
+              >
+                Start terminal
+              </button>
+            </div>
           </div>
         )}
         {!project && (

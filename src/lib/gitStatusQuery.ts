@@ -80,3 +80,22 @@ export function moveCachedGitFiles(
   })
   return { ...data, files: [...kept, ...additions] }
 }
+
+export type OptimisticGitFileMove = {
+  paths: string[]
+  staged: boolean
+  expiresAt: number
+}
+
+export function applyOptimisticGitFileMoves(
+  data: GitQueryData,
+  moves: OptimisticGitFileMove[],
+  now = Date.now()
+): GitQueryData {
+  return moves
+    .filter((move) => move.expiresAt > now)
+    .reduce(
+      (next, move) => moveCachedGitFiles(next, move.paths, move.staged) ?? next,
+      data
+    )
+}

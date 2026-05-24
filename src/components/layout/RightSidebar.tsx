@@ -41,11 +41,13 @@ import { FilesTree } from "./FilesTree"
 import { setPathDragData } from "@/lib/pathDrag"
 import {
   EMPTY_GIT_FILES,
+  applyOptimisticGitFileMoves,
   fetchGitQueryData,
   gitQueryKey,
   moveCachedGitFiles,
   type GitFile,
   type GitQueryData,
+  type OptimisticGitFileMove,
   type GitStatus,
   type PullRequestInfo,
 } from "@/lib/gitStatusQuery"
@@ -54,6 +56,7 @@ const REFRESH_DEBOUNCE_MS = 350
 const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
+const OPTIMISTIC_GIT_MOVE_TTL_MS = 2500
 
 const STATUS_STYLES: Record<GitStatus, string> = {
   M: "text-amber-500",
@@ -102,6 +105,7 @@ export function RightSidebar({
   const [pullRequestBusy, setPullRequestBusy] = useState<
     null | "create" | "open"
   >(null)
+  const optimisticMovesRef = useRef<OptimisticGitFileMove[]>([])
 
   const queryClient = useQueryClient()
   const currentGitQueryKey = useMemo(() => gitQueryKey(cwd), [cwd])
@@ -112,6 +116,8 @@ export function RightSidebar({
     queryKey: currentGitQueryKey,
     enabled: !!cwd,
     queryFn: () => fetchGitQueryData(cwd!),
+    select: (data) =>
+      applyOptimisticGitFileMoves(data, optimisticMovesRef.current),
   })
 
   // `hasData` distinguishes "we've never seen data for this cwd" from "data
@@ -141,6 +147,15 @@ export function RightSidebar({
 
   const updateCachedFiles = useCallback(
     (paths: string[], staged: boolean) => {
+      const now = Date.now()
+      optimisticMovesRef.current = [
+        ...optimisticMovesRef.current.filter((move) => move.expiresAt > now),
+        {
+          paths,
+          staged,
+          expiresAt: now + OPTIMISTIC_GIT_MOVE_TTL_MS,
+        },
+      ]
       queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
         moveCachedGitFiles(data, paths, staged)
       )

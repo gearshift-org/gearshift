@@ -344,78 +344,46 @@ export function AppShell() {
     saveProjects(serializeProjects(projects))
   }, [projects])
 
-  // Auto-spawn one terminal only when an active project has no tabs at all.
-  useEffect(() => {
-    if (!activeProject) return
-    if (activeProject.tabs.length > 0) return
-    let cancelled = false
-    ;(async () => {
-      const { id } = await window.term.create({ cwd: activeProject.path })
-      if (cancelled) {
-        window.term.kill(id)
-        return
-      }
-      const tabId = makeId()
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === activeProject.id
-            ? {
-                ...p,
-                tabs: [
-                  {
-                    kind: "terminal",
-                    id: tabId,
-                    name: "Terminal 1",
-                    panes: [{ id, sessionId: id }],
-                    activePaneId: id,
-                  },
-                ] as WorkspaceTab[],
-                activeTabId: tabId,
-              }
-            : p,
-        ),
-      )
-      void navigate({
-        to: "/projects/$projectId/tabs/$tabId",
-        params: { projectId: activeProject.id, tabId },
-        replace: true,
-      })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [activeProject, navigate])
-
-  const openProjectByPath = (path: string, name?: string) => {
+  const openProjectByPath = async (path: string, name?: string) => {
     const existing = projects.find((p) => p.path === path)
     if (existing) {
       navigateToProject(existing.id, existing.activeTabId || undefined)
       return
     }
     const id = makeId()
+    const tabId = makeId()
     const resolvedName = name || basename(path)
+    const { id: paneId } = await window.term.create({ cwd: path })
     setProjects((prev) => [
       ...prev,
       {
         id,
         name: resolvedName,
         path,
-        tabs: [],
-        activeTabId: "",
+        tabs: [
+          {
+            kind: "terminal" as const,
+            id: tabId,
+            name: "Terminal 1",
+            panes: [{ id: paneId, sessionId: paneId }],
+            activePaneId: paneId,
+          },
+        ],
+        activeTabId: tabId,
       },
     ])
-    navigateToProject(id)
+    navigateToProject(id, tabId)
     setRecents(pushRecentProject({ name: resolvedName, path }))
   }
 
   const addProject = async () => {
     const path = await window.dialogApi.openProject()
     if (!path) return
-    openProjectByPath(path)
+    void openProjectByPath(path)
   }
 
   const pickRecent = (recent: RecentProject) => {
-    openProjectByPath(recent.path, recent.name)
+    void openProjectByPath(recent.path, recent.name)
   }
 
   const selectProject = (id: string) => {
@@ -448,6 +416,30 @@ export function AppShell() {
       }
       return next
     })
+  }
+
+  const closeAllProjectTerminals = (id: string) => {
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p
+        const terminalTabs = p.tabs.filter((t) => t.kind === "terminal")
+        if (terminalTabs.length === 0) return p
+        for (const t of terminalTabs) killAllPanes(t)
+        const tabs = p.tabs.filter((t) => t.kind !== "terminal")
+        const activeTabId = tabs.some((t) => t.id === p.activeTabId)
+          ? p.activeTabId
+          : tabs[0]?.id ?? ""
+        return { ...p, tabs, activeTabId }
+      }),
+    )
+    if (id === activeProjectId) {
+      const project = projects.find((p) => p.id === id)
+      const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
+      if (activeTab?.kind !== "terminal") return
+      const next = project?.tabs.find((t) => t.kind !== "terminal")?.id
+      if (next) navigateToTab(next)
+      else navigateToProject(id)
+    }
   }
 
   const closeProjectsToRight = (id: string) => {
@@ -1279,6 +1271,7 @@ export function AppShell() {
             onAddProject={addProject}
             onPickRecent={pickRecent}
             onCloseProject={closeProject}
+            onCloseAllProjectTerminals={closeAllProjectTerminals}
             onCloseOtherProjects={closeOtherProjects}
             onCloseProjectsToRight={closeProjectsToRight}
             onOpenProjectInVSCode={openProjectInVSCode}
@@ -1340,6 +1333,7 @@ export function AppShell() {
           onStartTerminal={(tabId, paneId) => {
             void startTerminalPane(activeProject.id, tabId, paneId)
           }}
+          onAddTerminal={() => void addTerminal()}
           onSplitTerminal={(tabId) => void splitTerminalPane(tabId)}
           onClosePane={closePane}
           onFocusPane={setActivePane}

@@ -30,6 +30,7 @@ type Props = {
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onAddTerminal?: () => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
@@ -50,6 +51,7 @@ export function WorkspaceSplit({
   onTerminalTitleChange,
   onTerminalAgentStatusChange,
   onStartTerminal,
+  onAddTerminal,
   onSplitTerminal,
   onClosePane,
   onFocusPane,
@@ -138,6 +140,7 @@ export function WorkspaceSplit({
               onTitleChange={onTerminalTitleChange}
               onAgentStatusChange={onTerminalAgentStatusChange}
               onStartTerminal={onStartTerminal}
+              onAddTerminal={onAddTerminal}
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}

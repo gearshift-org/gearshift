@@ -42,14 +42,26 @@ function hydrateProjects(): Project[] {
     id: p.id,
     name: p.name,
     path: p.path,
-    tabs: (p.tabs ?? []).map((t) => ({
-      kind: "terminal" as const,
-      id: t.id,
-      name: t.name,
-      customName: t.customName,
-      panes: [{ id: t.id, pendingStart: true }],
-      activePaneId: t.id,
-    })),
+    tabs: (p.tabs ?? []).map((t) => {
+      const storedPanes = t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
+      const panes = storedPanes.map((sp) => ({
+        id: sp.id,
+        pendingStart: true,
+        ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
+      }))
+      const activePaneId =
+        (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
+          ? t.activePaneId
+          : panes[0]?.id) ?? t.id
+      return {
+        kind: "terminal" as const,
+        id: t.id,
+        name: t.name,
+        customName: t.customName,
+        panes,
+        activePaneId,
+      }
+    }),
     activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
   }))
 }
@@ -65,19 +77,26 @@ function basename(p: string) {
 function killAllPanes(tab: WorkspaceTab) {
   if (tab.kind !== "terminal") return
   for (const pane of tab.panes) {
-    if (!pane.pendingStart) {
-      try {
-        window.term.kill(pane.id)
-      } catch {
-        // ignore
-      }
+    if (pane.pendingStart) continue
+    // Daemon keys sessions by sessionId; pane.id is the stable DOM key and
+    // may not match. Using pane.id here would orphan the PTY until the 24h
+    // idle sweep.
+    const sid = pane.sessionId
+    if (!sid) continue
+    try {
+      window.term.kill(sid)
+    } catch {
+      // ignore
     }
   }
 }
 
 function serializeProjects(projects: Project[]) {
   return projects.map((p) => {
-    const terminals = p.tabs.filter((t) => t.kind === "terminal")
+    const terminals = p.tabs.filter(
+      (t): t is Extract<WorkspaceTab, { kind: "terminal" }> =>
+        t.kind === "terminal",
+    )
     const activeTerminal = terminals.find((t) => t.id === p.activeTabId)
     return {
       id: p.id,
@@ -90,6 +109,17 @@ function serializeProjects(projects: Project[]) {
         id: t.id,
         name: t.name,
         ...(t.customName ? { customName: t.customName } : {}),
+        activePaneId: t.activePaneId,
+        panes: t.panes.map((pp) => {
+          // Persist the live sessionId for running panes, and keep the
+          // pending one for panes the user hasn't activated yet — that way
+          // a relaunch can still try to adopt them.
+          const sid = pp.sessionId ?? pp.pendingSessionId
+          return {
+            id: pp.id,
+            ...(sid ? { sessionId: sid } : {}),
+          }
+        }),
       })),
     }
   })
@@ -336,7 +366,7 @@ export function AppShell() {
                     kind: "terminal",
                     id: tabId,
                     name: "Terminal 1",
-                    panes: [{ id }],
+                    panes: [{ id, sessionId: id }],
                     activePaneId: id,
                   },
                 ] as WorkspaceTab[],
@@ -503,7 +533,7 @@ export function AppShell() {
               kind: "terminal" as const,
               id: tabId,
               name: `Terminal ${terminalCount + 1}`,
-              panes: [{ id: paneId }],
+              panes: [{ id: paneId, sessionId: paneId }],
               activePaneId: paneId,
             },
           ],
@@ -532,7 +562,10 @@ export function AppShell() {
                   t.id === tabId && t.kind === "terminal"
                     ? {
                         ...t,
-                        panes: [...t.panes, { id: paneId }],
+                        panes: [
+                          ...t.panes,
+                          { id: paneId, sessionId: paneId },
+                        ],
                         activePaneId: paneId,
                       }
                     : t,
@@ -789,7 +822,23 @@ export function AppShell() {
       startingTerminalsRef.current.add(startKey)
 
       try {
-        const { id: newId } = await window.term.create({ cwd: project.path })
+        // Try adoption first if we have a stored sessionId for this pane.
+        // Falls through to fresh create on miss (session was killed, the
+        // 24 h idle sweep fired, or the daemon was restarted).
+        let sessionId: string | null = null
+        if (pane.pendingSessionId) {
+          try {
+            const res = await window.term.adopt(pane.pendingSessionId)
+            if (res.ok) sessionId = pane.pendingSessionId
+          } catch {
+            // fall through to create
+          }
+        }
+        if (!sessionId) {
+          const { id } = await window.term.create({ cwd: project.path })
+          sessionId = id
+        }
+        const newId = sessionId
         setProjects((prev) =>
           prev.map((p) => {
             if (p.id !== projectId) return p
@@ -801,11 +850,17 @@ export function AppShell() {
                   ...t,
                   panes: t.panes.map((pp) =>
                     pp.id === paneId
-                      ? { ...pp, id: newId, pendingStart: false }
+                      ? {
+                          ...pp,
+                          // Keep pp.id (stable DOM key per types.ts); only
+                          // assign the new daemon sessionId.
+                          sessionId: newId,
+                          pendingSessionId: undefined,
+                          pendingStart: false,
+                        }
                       : pp,
                   ),
-                  activePaneId:
-                    t.activePaneId === paneId ? newId : t.activePaneId,
+                  activePaneId: t.activePaneId,
                 }
               }),
             }
@@ -817,6 +872,53 @@ export function AppShell() {
     },
     [projects],
   )
+
+  // Subscribe to onExit for every running pane so that when the daemon
+  // force-stops a session (24 h idle sweep) or the user types `exit`, the
+  // tab entry stays but the pane flips back to pendingStart and can be
+  // restarted with the "Start terminal" button.
+  useEffect(() => {
+    const offs: Array<() => void> = []
+    for (const project of projects) {
+      for (const tab of project.tabs) {
+        if (tab.kind !== "terminal") continue
+        for (const pane of tab.panes) {
+          if (!pane.sessionId || pane.pendingStart) continue
+          const sid = pane.sessionId
+          const off = window.term.onExit(sid, () => {
+            setProjects((prev) =>
+              prev.map((p) => {
+                if (p.id !== project.id) return p
+                return {
+                  ...p,
+                  tabs: p.tabs.map((t) => {
+                    if (t.id !== tab.id || t.kind !== "terminal") return t
+                    return {
+                      ...t,
+                      panes: t.panes.map((pp) =>
+                        pp.sessionId === sid
+                          ? {
+                              ...pp,
+                              sessionId: undefined,
+                              pendingSessionId: undefined,
+                              pendingStart: true,
+                            }
+                          : pp,
+                      ),
+                    }
+                  }),
+                }
+              }),
+            )
+          })
+          offs.push(off)
+        }
+      }
+    }
+    return () => {
+      for (const off of offs) off()
+    }
+  }, [projects])
 
   useEffect(() => {
     if (!activeProject || !activeTabId) return

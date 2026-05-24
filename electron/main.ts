@@ -9,12 +9,13 @@ import {
 } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { randomUUID } from "node:crypto"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
-import * as pty from "node-pty"
 import parcelWatcher from "@parcel/watcher"
+import { ensureDaemonRunning } from "./daemonSupervisor"
+import { DaemonClient } from "./pty-daemon/client"
+import { buildOpenOptions } from "./pty-daemon/spawnOpts"
 
 type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 
@@ -50,7 +51,119 @@ if (VITE_DEV_SERVER_URL) {
   )
 }
 
-const ptys = new Map<string, pty.IPty>()
+let daemonClient: DaemonClient | null = null
+let daemonConnectPromise: Promise<DaemonClient> | null = null
+
+// Single source of truth for the daemon connection. Reconnects transparently
+// after a daemon crash or its idle-exit so the renderer doesn't have to
+// restart the whole app to use terminals again.
+async function getDaemonClient(): Promise<DaemonClient> {
+  if (daemonClient) return daemonClient
+  if (daemonConnectPromise) return daemonConnectPromise
+  daemonConnectPromise = (async () => {
+    const handle = await ensureDaemonRunning()
+    const client = new DaemonClient(handle.socket)
+    client.onDisconnect(() => {
+      if (daemonClient === client) {
+        daemonClient = null
+        sessionOwners.clear()
+      }
+    })
+    await client.connect()
+    daemonClient = client
+    return client
+  })()
+  try {
+    return await daemonConnectPromise
+  } finally {
+    daemonConnectPromise = null
+  }
+}
+// Owner mapping: sessionId → webContents.id. Lets us route per-session data
+// and exit events back to the window that opened/adopted the session, even
+// when multiple windows are open.
+const sessionOwners = new Map<string, number>()
+
+function getOwnerWebContents(sessionId: string) {
+  const id = sessionOwners.get(sessionId)
+  if (id == null) return null
+  return (
+    BrowserWindow.getAllWindows().find((w) => w.webContents.id === id)
+      ?.webContents ?? null
+  )
+}
+
+function wireSessionEvents(client: DaemonClient, sessionId: string) {
+  client.onData(sessionId, (chunk) => {
+    const sender = getOwnerWebContents(sessionId)
+    if (!sender || sender.isDestroyed()) return
+    sender.send(`term:data:${sessionId}`, chunk)
+  })
+  client.onExit(sessionId, (info) => {
+    const sender = getOwnerWebContents(sessionId)
+    if (sender && !sender.isDestroyed()) {
+      sender.send(`term:exit:${sessionId}`, info)
+    }
+    sessionOwners.delete(sessionId)
+  })
+}
+
+interface StoredPaneShape {
+  id: string
+  sessionId?: string
+}
+interface StoredTabShape {
+  id: string
+  panes?: StoredPaneShape[]
+}
+interface StoredProjectShape {
+  tabs?: StoredTabShape[]
+}
+
+async function collectPersistedSessionIds(): Promise<Set<string>> {
+  const state = await readState()
+  const raw = state["gearshift.projects"]
+  const out = new Set<string>()
+  if (!raw) return out
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return out
+    for (const project of parsed as StoredProjectShape[]) {
+      if (!project?.tabs) continue
+      for (const tab of project.tabs) {
+        if (!tab?.panes) continue
+        for (const pane of tab.panes) {
+          if (typeof pane?.sessionId === "string") out.add(pane.sessionId)
+        }
+      }
+    }
+  } catch {
+    // ignore malformed state — keep an empty set so we don't accidentally
+    // kill live daemon sessions just because the JSON is busted.
+  }
+  return out
+}
+
+async function reconcileDaemonSessions(): Promise<void> {
+  if (!daemonClient) return
+  try {
+    const live = await daemonClient.list()
+    const persisted = await collectPersistedSessionIds()
+    let killed = 0
+    for (const session of live) {
+      if (!persisted.has(session.sessionId)) {
+        daemonClient.kill(session.sessionId)
+        killed += 1
+      }
+    }
+    if (killed > 0) {
+      console.log(`[pty-daemon] reconcile: killed ${killed} orphan session(s)`)
+    }
+  } catch (err) {
+    console.warn("[pty-daemon] reconcile failed", err)
+  }
+}
+
 const projectWatchers = new Map<
   string,
   {
@@ -88,11 +201,6 @@ async function readGitignoreGlobs(cwd: string): Promise<string[]> {
   } catch {
     return []
   }
-}
-
-function defaultShell(): string {
-  if (process.platform === "win32") return process.env.COMSPEC || "powershell.exe"
-  return process.env.SHELL || "/bin/zsh"
 }
 
 function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
@@ -163,7 +271,7 @@ function createWindow() {
     // while Vite/React boot. Window itself shows immediately.
     backgroundColor: "#0a0a0a",
     webPreferences: {
-      preload: path.join(__dirname, "preload.mjs"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -501,7 +609,7 @@ async function flushState() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   buildMenu()
 
   ipcMain.handle("state:read", () => readState())
@@ -1126,52 +1234,52 @@ app.whenReady().then(() => {
       event,
       opts: { cwd: string; cols?: number; rows?: number },
     ) => {
-      const id = randomUUID()
-      const proc = pty.spawn(defaultShell(), [], {
-        name: "xterm-256color",
+      const client = await getDaemonClient()
+      const resolved = buildOpenOptions({
         cwd: opts.cwd,
-        cols: opts.cols ?? 80,
-        rows: opts.rows ?? 24,
-        env: {
-          ...(process.env as Record<string, string>),
-          TERM: "xterm-256color",
-          COLORTERM: "truecolor",
-        },
+        cols: opts.cols,
+        rows: opts.rows,
       })
-      ptys.set(id, proc)
-
-      const sender = event.sender
-      proc.onData((chunk) => {
-        if (sender.isDestroyed()) return
-        sender.send(`term:data:${id}`, chunk)
-      })
-      proc.onExit((info) => {
-        if (!sender.isDestroyed()) {
-          sender.send(`term:exit:${id}`, info)
-        }
-        ptys.delete(id)
-      })
-
+      const id = await client.open(resolved)
+      sessionOwners.set(id, event.sender.id)
+      wireSessionEvents(client, id)
       return { id }
     },
   )
 
+  ipcMain.handle("term:adopt", async (event, sessionId: string) => {
+    const client = await getDaemonClient()
+    const res = await client.attach(sessionId)
+    if (!res.ok) return { ok: false }
+    sessionOwners.set(sessionId, event.sender.id)
+    wireSessionEvents(client, sessionId)
+    return {
+      ok: true,
+      replay: res.replay,
+      cols: res.cols,
+      rows: res.rows,
+    }
+  })
+
+  ipcMain.handle("term:snapshot", async (_e, id: string) => {
+    return daemonClient?.snapshot(id) ?? ""
+  })
+
   ipcMain.on("term:write", (_e, id: string, data: string) => {
-    ptys.get(id)?.write(data)
+    daemonClient?.write(id, data)
   })
 
   ipcMain.on("term:resize", (_e, id: string, cols: number, rows: number) => {
     try {
-      ptys.get(id)?.resize(cols, rows)
+      daemonClient?.resize(id, cols, rows)
     } catch {
       // ignore resize errors on dead PTYs
     }
   })
 
   ipcMain.handle("term:cwd", async (_e, id: string) => {
-    const proc = ptys.get(id)
-    if (!proc) return null
-    const pid = proc.pid
+    const pid = daemonClient?.getPid(id)
+    if (!pid) return null
     try {
       if (process.platform === "linux") {
         return await fs.readlink(`/proc/${pid}/cwd`)
@@ -1195,34 +1303,32 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle("term:agentStatus", async (_e, id: string) => {
-    const proc = ptys.get(id)
-    if (!proc) return { running: false } satisfies AgentStatusInfo
-    return detectPtyAgent(proc.pid)
+    const pid = daemonClient?.getPid(id)
+    if (!pid) return { running: false } satisfies AgentStatusInfo
+    return detectPtyAgent(pid)
   })
 
   ipcMain.on("term:kill", (_e, id: string) => {
-    const proc = ptys.get(id)
-    if (!proc) return
-    try {
-      proc.kill()
-    } catch {
-      // ignore
-    }
-    ptys.delete(id)
+    daemonClient?.kill(id)
+    sessionOwners.delete(id)
   })
+
+  try {
+    await getDaemonClient()
+    await reconcileDaemonSessions()
+  } catch (err) {
+    console.error("[pty-daemon] failed to start", err)
+  }
 
   createWindow()
 })
 
 app.on("before-quit", () => {
-  for (const proc of ptys.values()) {
-    try {
-      proc.kill()
-    } catch {
-      // ignore
-    }
-  }
-  ptys.clear()
+  // Sessions outlive Electron. Just detach the client; the daemon keeps
+  // PTYs alive until the user kills them, the daemon's own no-clients
+  // grace timer fires, or the 24h per-session idle sweep triggers.
+  daemonClient?.disconnect()
+  sessionOwners.clear()
 })
 
 app.on("window-all-closed", () => {

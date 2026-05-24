@@ -1,9 +1,19 @@
 import { store } from "./store"
 
+export type StoredPane = {
+  /** Stable DOM-key id assigned at create time. Persists across restarts. */
+  id: string
+  /** Daemon session id. Present → renderer attempts adopt on next launch. */
+  sessionId?: string
+}
+
 export type StoredTab = {
   id: string
   name: string
   customName?: string
+  /** Persisted multi-pane state. Falls back to [{ id: tab.id }] for older snapshots. */
+  panes?: StoredPane[]
+  activePaneId?: string
 }
 
 export type StoredProject = {
@@ -166,13 +176,33 @@ export function loadProjects(): StoredProject[] {
                   typeof (t as StoredTab).id === "string" &&
                   typeof (t as StoredTab).name === "string",
               )
-              .map((t) => ({
-                id: t.id,
-                name: t.name,
-                ...(typeof t.customName === "string"
-                  ? { customName: t.customName }
-                  : {}),
-              }))
+              .map((t) => {
+                const panes: StoredPane[] = Array.isArray(t.panes)
+                  ? t.panes
+                      .filter(
+                        (pp: unknown): pp is StoredPane =>
+                          !!pp && typeof (pp as StoredPane).id === "string",
+                      )
+                      .map((pp) => ({
+                        id: pp.id,
+                        ...(typeof pp.sessionId === "string"
+                          ? { sessionId: pp.sessionId }
+                          : {}),
+                      }))
+                  : [{ id: t.id }]
+                return {
+                  id: t.id,
+                  name: t.name,
+                  panes,
+                  ...(typeof t.activePaneId === "string" &&
+                  panes.some((pp) => pp.id === t.activePaneId)
+                    ? { activePaneId: t.activePaneId }
+                    : { activePaneId: panes[0]?.id ?? t.id }),
+                  ...(typeof t.customName === "string"
+                    ? { customName: t.customName }
+                    : {}),
+                }
+              })
           : [],
       }))
   } catch {

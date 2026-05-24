@@ -420,7 +420,16 @@ export function TerminalView({
     safeFit()
     if (isActive) term.focus()
 
-    const offData = window.term.onData(sessionId, (chunk) => {
+    // Pull whatever scrollback the daemon captured before this view mounted
+    // (empty for freshly spawned sessions), THEN subscribe to live data.
+    // Subscribing first would race: live chunks would render before the
+    // snapshot resolves, and the snapshot would then be appended on top,
+    // producing duplicated/out-of-order output. The daemon-client side of
+    // snapshot() drops its pendingData buffer so the post-snapshot subscribe
+    // only receives bytes that arrived after the snapshot was taken.
+    let unmounted = false
+    let offData: (() => void) | null = null
+    const onDataChunk = (chunk: string) => {
       term.write(chunk)
       const current = agentStatusRef.current
       if (
@@ -430,6 +439,11 @@ export function TerminalView({
       ) {
         markAgentWorking()
       }
+    }
+    void window.term.snapshot(sessionId).then((snap) => {
+      if (unmounted) return
+      if (snap) term.write(snap)
+      offData = window.term.onData(sessionId, onDataChunk)
     })
     const offExit = window.term.onExit(sessionId, () => {
       term.write("\r\n\x1b[31m[process exited]\x1b[0m\r\n")
@@ -540,6 +554,7 @@ export function TerminalView({
     container.addEventListener("drop", onDrop)
 
     return () => {
+      unmounted = true
       ro.disconnect()
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
@@ -549,7 +564,7 @@ export function TerminalView({
         window.clearTimeout(agentWorkingTimerRef.current)
         agentWorkingTimerRef.current = undefined
       }
-      offData()
+      offData?.()
       offExit()
       inputSub.dispose()
       titleSub.dispose()

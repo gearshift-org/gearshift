@@ -13,6 +13,15 @@ const shellApi = {
 const termApi = {
   create: (opts: { cwd: string; cols?: number; rows?: number }) =>
     ipcRenderer.invoke("term:create", opts) as Promise<{ id: string }>,
+  adopt: (sessionId: string) =>
+    ipcRenderer.invoke("term:adopt", sessionId) as Promise<{
+      ok: boolean
+      replay?: string
+      cols?: number
+      rows?: number
+    }>,
+  snapshot: (id: string) =>
+    ipcRenderer.invoke("term:snapshot", id) as Promise<string>,
   write: (id: string, data: string) =>
     ipcRenderer.send("term:write", id, data),
   resize: (id: string, cols: number, rows: number) =>

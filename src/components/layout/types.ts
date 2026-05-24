@@ -1,11 +1,15 @@
 export type TerminalPane = {
-  /** PTY session id (also acts as DOM key). */
+  /** Stable DOM-key id (renderer-assigned). Persists across restarts. */
   id: string
+  /** Daemon session id. Set on attach/create; cleared on exit. */
+  sessionId?: string
+  /** Saved session id from disk — tried via adopt before falling back to a fresh create. */
+  pendingSessionId?: string
   /** Title emitted by the running process (OSC sequence). */
   autoTitle?: string
   /** Ephemeral coding-agent status detected from the PTY process/output. */
   agentStatus?: TerminalAgentStatus
-  /** True for restored panes whose PTY has not been spawned yet. */
+  /** True for restored panes whose PTY has not been spawned (or adopted) yet. */
   pendingStart?: boolean
 }
 

@@ -18,6 +18,7 @@ import { ensureDaemonRunning } from "./daemonSupervisor"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
 import {
+  closeAgentHookServer,
   hookEnv,
   installAgentHooks,
   startAgentHookServer,
@@ -1400,12 +1401,7 @@ app.whenReady().then(async () => {
 })
 
 app.on("before-quit", () => {
-  try {
-    agentHookServer?.close()
-  } catch {
-    // ignore
-  }
-  agentHookServer = null
+  closeAgentHookServer()
   // Sessions outlive Electron. Just detach the client; the daemon keeps
   // PTYs alive until the user kills them, the daemon's own no-clients
   // grace timer fires, or the 24h per-session idle sweep triggers.

@@ -112,6 +112,15 @@ export async function startAgentHookServer(
   }
 }
 
+export function closeAgentHookServer(): void {
+  try {
+    agentHookServer?.close()
+  } catch {
+    // ignore shutdown errors
+  }
+  agentHookServer = null
+}
+
 export function hookEnv(sessionId: string): Record<string, string> {
   return {
     GEARSHIFT_SESSION_ID: sessionId,

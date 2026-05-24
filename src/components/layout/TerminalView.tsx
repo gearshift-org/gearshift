@@ -113,7 +113,10 @@ const HOOK_AUTHORITATIVE_WINDOW_MS = 30000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
+const TERMINAL_RESIZE_SETTLE_MS = 80
 const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
+const MIN_TERMINAL_FIT_COLS = 20
+const MIN_TERMINAL_FIT_ROWS = 2
 
 function shellQuote(s: string) {
   if (/^[A-Za-z0-9_\-./]+$/.test(s)) return s
@@ -472,20 +475,32 @@ export function TerminalView({
       return true
     })
 
-    // Initial size + send to PTY. Skip the resize IPC if the container hasn't
-    // laid out yet (cols would collapse to 1) — the ResizeObserver below will
-    // fire as soon as real dimensions are available.
-    const safeFit = () => {
+    // Initial size + send to PTY. Use proposeDimensions() instead of fit() so
+    // we avoid FitAddon's render clear, which can visibly blink during live
+    // resize. Also ignore transient tiny widths from split-pane layout because
+    // resizing xterm to 2 columns reflows the buffer into a vertical line.
+    const fitTerminal = () => {
       try {
-        fit.fit()
-        if (term.cols >= 2 && term.rows >= 2) {
-          window.term.resize(sessionId, term.cols, term.rows)
+        const dims = fit.proposeDimensions()
+        if (
+          !dims ||
+          !Number.isFinite(dims.cols) ||
+          !Number.isFinite(dims.rows) ||
+          dims.cols < MIN_TERMINAL_FIT_COLS ||
+          dims.rows < MIN_TERMINAL_FIT_ROWS
+        ) {
+          return false
         }
+        if (term.cols !== dims.cols || term.rows !== dims.rows) {
+          term.resize(dims.cols, dims.rows)
+          window.term.resize(sessionId, dims.cols, dims.rows)
+        }
+        return true
       } catch {
-        // ignore
+        return false
       }
     }
-    safeFit()
+    fitTerminal()
     if (isActive) term.focus()
 
     // Pull whatever scrollback the daemon captured before this view mounted
@@ -553,36 +568,22 @@ export function TerminalView({
     })
 
     // Debounce + rAF: ResizeObserver can fire many times per frame while a
-    // split-pane handle is dragged or panes are added. Collapse those into a
-    // single fit() per animation frame to prevent visible reflow/flicker.
+    // window or split-pane handle is dragged. Wait briefly for layout to settle
+    // so adding a split does not reflow the existing terminal through several
+    // intermediate widths.
     let resizeTimer: number | undefined
     let rafId: number | undefined
-    let lastCols = term.cols
-    let lastRows = term.rows
     const scheduleFit = () => {
       if (rafId) cancelAnimationFrame(rafId)
       rafId = requestAnimationFrame(() => {
-        try {
-          fit.fit()
-          if (
-            (term.cols !== lastCols || term.rows !== lastRows) &&
-            term.cols >= 2 &&
-            term.rows >= 2
-          ) {
-            lastCols = term.cols
-            lastRows = term.rows
-            suppressAgentActivityUntilRef.current =
-              Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
-            window.term.resize(sessionId, term.cols, term.rows)
-          }
-        } catch {
-          // ignore
-        }
+        suppressAgentActivityUntilRef.current =
+          Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
+        fitTerminal()
       })
     }
     const ro = new ResizeObserver(() => {
       if (resizeTimer) window.clearTimeout(resizeTimer)
-      resizeTimer = window.setTimeout(scheduleFit, 16)
+      resizeTimer = window.setTimeout(scheduleFit, TERMINAL_RESIZE_SETTLE_MS)
     })
     ro.observe(container)
 

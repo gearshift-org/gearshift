@@ -172,6 +172,11 @@ function TerminalTabContent({
     })
   }, [tab.panes.length])
 
+  const visiblePaneSizes =
+    paneSizes.length === tab.panes.length
+      ? paneSizes
+      : tab.panes.map(() => 100 / Math.max(1, tab.panes.length))
+
   const renderTerminal = (pane: TerminalPaneType) => (
     <div
       className={cn(
@@ -249,8 +254,8 @@ function TerminalTabContent({
             {tab.panes.map((pane, idx) => (
               <div
                 key={pane.id}
-                style={{ flexBasis: `${paneSizes[idx] ?? 100 / tab.panes.length}%` }}
-                className="min-w-0"
+                style={{ flexBasis: `${visiblePaneSizes[idx] ?? 100 / tab.panes.length}%` }}
+                className={cn("min-w-0", idx > 0 && "border-l border-border")}
               >
                 <PaneHeader
                   pane={pane}

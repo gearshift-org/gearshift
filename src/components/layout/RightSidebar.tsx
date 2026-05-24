@@ -673,7 +673,7 @@ export function RightSidebar({
                 No changes
               </div>
             )}
-            {stagedFiles.length > 0 && (
+            {cwd && stagedFiles.length > 0 && (
               <FileGroup
                 label="Staged Changes"
                 count={stagedFiles.length}
@@ -696,7 +696,7 @@ export function RightSidebar({
                 ))}
               </FileGroup>
             )}
-            {unstagedFiles.length > 0 && (
+            {cwd && unstagedFiles.length > 0 && (
               <FileGroup
                 label="Changes"
                 count={unstagedFiles.length}

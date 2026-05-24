@@ -49,6 +49,7 @@ function TerminalPaneView({
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
+  onClosePane,
   onFocus,
 }: {
   tab: TerminalTab
@@ -61,6 +62,7 @@ function TerminalPaneView({
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
   onFocus?: () => void
 }) {
   if (pane.pendingStart) {
@@ -90,6 +92,7 @@ function TerminalPaneView({
         onAgentStatusChange={(status) =>
           onAgentStatusChange?.(tab.id, pane.id, status)
         }
+        onClose={() => onClosePane?.(tab.id, pane.id)}
       />
     </div>
   )
@@ -101,6 +104,7 @@ function TerminalTabContent({
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
+  onClosePane,
   onFocusPane,
 }: {
   tab: TerminalTab
@@ -112,6 +116,7 @@ function TerminalTabContent({
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
 }) {
   const multi = tab.panes.length > 1
@@ -132,6 +137,7 @@ function TerminalTabContent({
         onTitleChange={onTitleChange}
         onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
+        onClosePane={onClosePane}
         onFocus={() => onFocusPane?.(tab.id, pane.id)}
       />
     </div>
@@ -166,6 +172,7 @@ function PaneContent({
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
+  onClosePane,
   onFocusPane,
   onOpenFile,
 }: {
@@ -180,6 +187,7 @@ function PaneContent({
     status: TerminalAgentStatus,
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
+  onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
 }) {
@@ -191,6 +199,7 @@ function PaneContent({
         onTitleChange={onTitleChange}
         onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
+        onClosePane={onClosePane}
         onFocusPane={onFocusPane}
       />
     )
@@ -217,6 +226,7 @@ export function WorkspacePane({
   onStartTerminal,
   onAddTerminal,
   onSplitTerminal,
+  onClosePane,
   onFocusPane,
   onOpenFile,
 }: Props) {
@@ -321,6 +331,7 @@ export function WorkspacePane({
               onTitleChange={onTitleChange}
               onAgentStatusChange={onAgentStatusChange}
               onStartTerminal={onStartTerminal}
+              onClosePane={onClosePane}
               onFocusPane={onFocusPane}
               onOpenFile={onOpenFile}
             />

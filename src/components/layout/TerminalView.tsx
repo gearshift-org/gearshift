@@ -24,6 +24,7 @@ type Props = {
   isActive?: boolean
   onTitleChange?: (title: string) => void
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
+  onClose?: () => void
 }
 
 const DARK_THEME = {
@@ -120,6 +121,7 @@ export function TerminalView({
   isActive = true,
   onTitleChange,
   onAgentStatusChange,
+  onClose,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -817,6 +819,14 @@ export function TerminalView({
           Find
           <ContextMenuShortcut>⌘F</ContextMenuShortcut>
         </ContextMenuItem>
+        {onClose && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={onClose}>
+              Close
+            </ContextMenuItem>
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem
           onClick={async () => {

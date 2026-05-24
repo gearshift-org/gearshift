@@ -94,7 +94,7 @@ const DEC_COLOR_SCHEME_REPORT = 997 // response: CSI ? 997 ; 1|2 n (dark|light)
 
 function csiParamsInclude(
   params: (number | number[])[],
-  target: number,
+  target: number
 ): boolean {
   for (let i = 0; i < params.length; i++) {
     const p = params[i]
@@ -159,7 +159,10 @@ export function TerminalView({
   const colorSchemeSubscribedRef = useRef(false)
   const onTitleChangeRef = useRef(onTitleChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
-  const agentStatusRef = useRef<TerminalAgentStatus>({ running: false, working: false })
+  const agentStatusRef = useRef<TerminalAgentStatus>({
+    running: false,
+    working: false,
+  })
   const agentWorkingTimerRef = useRef<number | undefined>(undefined)
   const lastAgentActivityAtRef = useRef(0)
   const lastUserInputAtRef = useRef(0)
@@ -168,6 +171,7 @@ export function TerminalView({
   const hasSubmittedToAgentRef = useRef(false)
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
+  const activeHookWorkRef = useRef(false)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -204,7 +208,8 @@ export function TerminalView({
     if (
       prev.running === next.running &&
       prev.working === next.working &&
-      prev.agentName === next.agentName
+      prev.agentName === next.agentName &&
+      prev.completed === next.completed
     ) {
       return
     }
@@ -231,8 +236,16 @@ export function TerminalView({
       window.clearTimeout(agentWorkingTimerRef.current)
     }
     agentWorkingTimerRef.current = window.setTimeout(() => {
+      // Hook-backed agents (Claude Code, Codex, OpenCode, pi extension) have
+      // an authoritative stop event. Do not let the quiet fallback create a
+      // false completion notification while the job is still running.
+      if (activeHookWorkRef.current) return
       const latest = agentStatusRef.current
-      if (latest.running) emitAgentStatus({ ...latest, working: false })
+      if (latest.running) {
+        // Quiet fallback only clears the "currently active" dot. It is not an
+        // authoritative completion signal, so it must not show done UI.
+        emitAgentStatus({ ...latest, working: false, completed: false })
+      }
     }, AGENT_WORKING_QUIET_MS)
   }, [emitAgentStatus])
 
@@ -307,21 +320,21 @@ export function TerminalView({
       () => {
         modifiedEnterSequence = "\x1b[13;2u"
         return true
-      },
+      }
     )
     const kittyKeyboardPushSub = term.parser.registerCsiHandler(
       { prefix: ">", final: "u" },
       () => {
         modifiedEnterSequence = "\x1b[13;2u"
         return true
-      },
+      }
     )
     const kittyKeyboardPopSub = term.parser.registerCsiHandler(
       { prefix: "<", final: "u" },
       () => {
         modifiedEnterSequence = "\x1b\r"
         return true
-      },
+      }
     )
     const modifyOtherKeysSub = term.parser.registerCsiHandler(
       { prefix: ">", final: "m" },
@@ -331,7 +344,7 @@ export function TerminalView({
         if (first !== 4) return false
         modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
         return true
-      },
+      }
     )
 
     // DEC private mode 2031 — color-scheme update notifications. Subscribed
@@ -345,7 +358,7 @@ export function TerminalView({
           colorSchemeSubscribedRef.current = true
         }
         return false
-      },
+      }
     )
     const colorSchemeResetSub = term.parser.registerCsiHandler(
       { prefix: "?", final: "l" },
@@ -354,7 +367,7 @@ export function TerminalView({
           colorSchemeSubscribedRef.current = false
         }
         return false
-      },
+      }
     )
     const colorSchemeQuerySub = term.parser.registerCsiHandler(
       { prefix: "?", final: "n" },
@@ -363,10 +376,10 @@ export function TerminalView({
         const reply = themeRef.current.isDark ? 1 : 2
         window.term.write(
           sessionId,
-          `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`,
+          `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`
         )
         return true
-      },
+      }
     )
 
     // Clipboard + macOS-style readline navigation. xterm otherwise either
@@ -428,7 +441,7 @@ export function TerminalView({
         e.preventDefault()
         window.term.write(
           sessionId,
-          key === "arrowleft" ? LINE_START : LINE_END,
+          key === "arrowleft" ? LINE_START : LINE_END
         )
         return false
       }
@@ -444,7 +457,7 @@ export function TerminalView({
         e.preventDefault()
         window.term.write(
           sessionId,
-          key === "arrowleft" ? WORD_BACK : WORD_FORWARD,
+          key === "arrowleft" ? WORD_BACK : WORD_FORWARD
         )
         return false
       }
@@ -652,7 +665,7 @@ export function TerminalView({
       term.dispose()
       termRef.current = null
       searchRef.current = null
-      emitAgentStatus({ running: false, working: false })
+      emitAgentStatus({ running: false, working: false, completed: false })
     }
   }, [sessionId, openSearch, markAgentWorking, emitAgentStatus])
 
@@ -673,6 +686,7 @@ export function TerminalView({
         const recentlyActive =
           Date.now() - lastAgentActivityAtRef.current < AGENT_WORKING_QUIET_MS
         const hookAuthoritative =
+          activeHookWorkRef.current ||
           Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
 
         // When hooks own the state, the poller can only promote (fill in
@@ -684,24 +698,30 @@ export function TerminalView({
             running: current.running || detected.running,
             working: current.working,
             agentName: current.agentName ?? detected.agentName,
+            completed: false,
           })
           return
         }
 
         emitAgentStatus({
           running: detected.running,
-          working: detected.running
-            ? current.working || recentlyActive
-            : false,
+          working: detected.running ? current.working || recentlyActive : false,
           agentName: detected.agentName,
+          completed: false,
         })
       } catch {
         if (!cancelled) {
           // Don't clobber hook state on a transient IPC failure either.
           const hookAuthoritative =
-            Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
+            activeHookWorkRef.current ||
+            Date.now() - lastHookEventAtRef.current <
+              HOOK_AUTHORITATIVE_WINDOW_MS
           if (!hookAuthoritative) {
-            emitAgentStatus({ running: false, working: false })
+            emitAgentStatus({
+              running: false,
+              working: false,
+              completed: false,
+            })
           }
         }
       }
@@ -710,7 +730,7 @@ export function TerminalView({
     void refreshAgentStatus()
     const interval = window.setInterval(
       () => void refreshAgentStatus(),
-      AGENT_STATUS_POLL_MS,
+      AGENT_STATUS_POLL_MS
     )
 
     return () => {
@@ -731,22 +751,38 @@ export function TerminalView({
         // Authoritative "agent is working" signal from the lifecycle hook
         // (UserPromptSubmit). Treats agent as running even before the
         // process-name poll catches up.
+        activeHookWorkRef.current = true
         hasSubmittedToAgentRef.current = true
         lastAgentActivityAtRef.current = Date.now()
         emitAgentStatus({
           running: true,
           working: true,
           agentName: event.agentName,
+          completed: false,
         })
         return
       }
-      // "stop" or "notification" → turn off working immediately.
+      if (event.event === "notification") {
+        // Agent notifications can mean "needs attention" (for example a
+        // Claude Code permission request), not "job complete". Preserve the
+        // current working state so AppShell does not fire a false completion.
+        emitAgentStatus({
+          running: current.running || activeHookWorkRef.current,
+          working: current.working,
+          agentName: event.agentName,
+          completed: false,
+        })
+        return
+      }
+      // Only the explicit lifecycle stop event completes hook-backed work.
+      activeHookWorkRef.current = false
       lastAgentActivityAtRef.current = 0
       hasSubmittedToAgentRef.current = false
       emitAgentStatus({
         running: current.running,
         working: false,
         agentName: event.agentName,
+        completed: true,
       })
     })
   }, [sessionId, emitAgentStatus])
@@ -779,10 +815,7 @@ export function TerminalView({
     // Codex, Bubble Tea) repaint live on theme flip without a restart.
     if (colorSchemeSubscribedRef.current) {
       const reply = isDark ? 1 : 2
-      window.term.write(
-        sessionId,
-        `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`,
-      )
+      window.term.write(sessionId, `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`)
     }
   }, [themeObj, isDark, sessionId])
 
@@ -803,7 +836,7 @@ export function TerminalView({
       if (direction === "next") search.findNext(q, opts)
       else search.findPrevious(q, opts)
     },
-    [],
+    []
   )
 
   useEffect(() => {
@@ -863,7 +896,7 @@ export function TerminalView({
             }}
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
-            className="absolute bottom-4 left-1/2 z-10 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover/95 px-4 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors duration-200 animate-in fade-in slide-in-from-bottom-2 hover:bg-accent/60 hover:text-foreground"
+            className="absolute bottom-4 left-1/2 z-10 flex h-8 -translate-x-1/2 animate-in items-center gap-1.5 rounded-full border border-border bg-popover/95 px-4 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors duration-200 fade-in slide-in-from-bottom-2 hover:bg-accent/60 hover:text-foreground"
           >
             <ChevronDown className="size-3.5" />
             Scroll to bottom
@@ -871,7 +904,7 @@ export function TerminalView({
         )}
         {searchOpen && (
           <div
-            className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-border bg-popover/95 px-1.5 py-1 text-xs shadow-md backdrop-blur"
+            className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-md border border-border bg-popover/95 px-1.5 py-1 text-xs shadow-md backdrop-blur"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.stopPropagation()}
           >
@@ -897,7 +930,7 @@ export function TerminalView({
                 "min-w-[2.5rem] px-1 text-right tabular-nums",
                 searchResults.resultCount === 0 && searchQuery
                   ? "text-destructive"
-                  : "text-muted-foreground",
+                  : "text-muted-foreground"
               )}
             >
               {matchLabel}
@@ -955,9 +988,7 @@ export function TerminalView({
         {onClose && (
           <>
             <ContextMenuSeparator />
-            <ContextMenuItem onClick={onClose}>
-              Close
-            </ContextMenuItem>
+            <ContextMenuItem onClick={onClose}>Close</ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />

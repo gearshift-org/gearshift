@@ -15,12 +15,19 @@ export type TerminalPane = {
   pendingStart?: boolean
 }
 
-export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi" | "gemini"
+export type TerminalAgentName =
+  | "claude"
+  | "codex"
+  | "opencode"
+  | "pi"
+  | "gemini"
 
 export type TerminalAgentStatus = {
   running: boolean
   working: boolean
   agentName?: TerminalAgentName
+  /** True only when an authoritative completion signal was received. */
+  completed?: boolean
 }
 
 export type TerminalTab = {

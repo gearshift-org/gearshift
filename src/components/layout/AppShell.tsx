@@ -529,11 +529,15 @@ export function AppShell() {
             }
           }),
         }
-      }),
+      })
     )
   }
 
-  const reorderPanes = (tabId: string, fromPaneId: string, toPaneId: string) => {
+  const reorderPanes = (
+    tabId: string,
+    fromPaneId: string,
+    toPaneId: string
+  ) => {
     if (fromPaneId === toPaneId || !activeProjectId) return
     setProjects((prev) =>
       prev.map((p) => {
@@ -551,7 +555,7 @@ export function AppShell() {
             return { ...t, panes }
           }),
         }
-      }),
+      })
     )
   }
 
@@ -884,7 +888,7 @@ export function AppShell() {
           try {
             const res = await window.term.adopt(
               pane.pendingSessionId,
-              project.id,
+              project.id
             )
             if (res.ok) sessionId = pane.pendingSessionId
           } catch {
@@ -1070,7 +1074,8 @@ export function AppShell() {
         : undefined
     const wasWorking =
       previousStatus?.working ?? fallbackPane?.agentStatus?.working ?? false
-    const finishedWork = wasWorking && !status.working
+    const finishedWork =
+      wasWorking && !status.working && status.completed === true
     const appVisibleAndFocused = isAppVisibleAndFocused()
     const finishedAwayFromAttention =
       finishedWork &&

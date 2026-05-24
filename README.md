@@ -76,9 +76,11 @@ Terminal panes detect supported coding agents (`claude`, `codex`, `opencode`,
 shell's child process tree. GearShift auto-installs local lifecycle hooks for
 Claude Code and Codex, plus an OpenCode plugin, and passes each terminal a
 `GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET`. Those integrations send
-stop/notification events back to GearShift over a local Unix socket so the busy
-indicator can end on real agent completion instead of a brief quiet pause. Pi
-and Gemini stay on the fallback path until they expose a stable hook API.
+lifecycle events back to GearShift over a local Unix socket so the busy
+indicator ends on the agent's explicit stop hook instead of a brief quiet pause.
+Notification-style hooks are treated as "needs attention" only; they do not
+complete the job or show done UI. Pi and Gemini stay on the fallback path until
+they expose a stable hook API.
 
 The renderer still combines the "agent is running" signal with agent-specific
 activity cues: changing title/spinner signals for Claude Code and Codex, and

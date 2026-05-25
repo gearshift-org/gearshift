@@ -45,7 +45,7 @@ type Props = {
   onAgentStatusChange?: (
     tabId: string,
     paneId: string,
-    status: TerminalAgentStatus,
+    status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
@@ -53,11 +53,7 @@ type Props = {
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (
-    tabId: string,
-    fromPaneId: string,
-    toPaneId: string,
-  ) => void
+  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
   onOpenFile?: (path: string) => void
 }
 
@@ -78,7 +74,7 @@ function TerminalPaneView({
   onAgentStatusChange?: (
     tabId: string,
     paneId: string,
-    status: TerminalAgentStatus,
+    status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
@@ -86,10 +82,7 @@ function TerminalPaneView({
 }) {
   if (pane.pendingStart) {
     return (
-      <div
-        onClick={onFocus}
-        className="grid h-full place-items-center bg-card"
-      >
+      <div onClick={onFocus} className="grid h-full place-items-center bg-card">
         <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
           <span>"{tab.customName ?? tab.name}" is not running.</span>
           <button
@@ -135,23 +128,19 @@ function TerminalTabContent({
   onAgentStatusChange?: (
     tabId: string,
     paneId: string,
-    status: TerminalAgentStatus,
+    status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (
-    tabId: string,
-    fromPaneId: string,
-    toPaneId: string,
-  ) => void
+  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
 }) {
   const multi = tab.panes.length > 1
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -163,7 +152,7 @@ function TerminalTabContent({
   // Mirror panel sizes so the lifted-out header row stays aligned with the
   // terminal column beneath it. Even split until the user drags the handle.
   const [paneSizes, setPaneSizes] = useState<number[]>(() =>
-    tab.panes.map(() => 100 / Math.max(1, tab.panes.length)),
+    tab.panes.map(() => 100 / Math.max(1, tab.panes.length))
   )
   useEffect(() => {
     setPaneSizes((prev) => {
@@ -183,7 +172,7 @@ function TerminalTabContent({
         "group/pane relative h-full",
         multi &&
           tab.activePaneId === pane.id &&
-          "ring-1 ring-inset ring-foreground/15",
+          "ring-1 ring-foreground/15 ring-inset"
       )}
     >
       <TerminalPaneView
@@ -205,7 +194,7 @@ function TerminalTabContent({
       className="min-h-0 flex-1"
       onLayoutChange={(layout) => {
         const next = tab.panes.map(
-          (p) => layout[p.id] ?? 100 / tab.panes.length,
+          (p) => layout[p.id] ?? 100 / tab.panes.length
         )
         setPaneSizes((prev) => {
           if (
@@ -252,7 +241,9 @@ function TerminalTabContent({
             {tab.panes.map((pane, idx) => (
               <div
                 key={pane.id}
-                style={{ flexBasis: `${visiblePaneSizes[idx] ?? 100 / tab.panes.length}%` }}
+                style={{
+                  flexBasis: `${visiblePaneSizes[idx] ?? 100 / tab.panes.length}%`,
+                }}
                 className={cn("min-w-0", idx > 0 && "border-l border-border")}
               >
                 <PaneHeader
@@ -299,18 +290,14 @@ function PaneContent({
   onAgentStatusChange?: (
     tabId: string,
     paneId: string,
-    status: TerminalAgentStatus,
+    status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onSplitTerminal?: (tabId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (
-    tabId: string,
-    fromPaneId: string,
-    toPaneId: string,
-  ) => void
+  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
   onOpenFile?: (path: string) => void
 }) {
   if (tab.kind === "terminal") {
@@ -357,20 +344,22 @@ export function WorkspacePane({
   onReorderPanes,
   onOpenFile,
 }: Props) {
+  const hasTerminals = !!project?.tabs.some((t) => t.kind === "terminal")
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
   const isDiffActive = activeTab?.kind === "diff"
   // Terminal tabs render their own PaneHeader row (single or split), so the
-  // shared header would just stack a redundant row above it.
-  const hideSharedHeader = activeTab?.kind === "terminal"
+  // shared header would just stack a redundant row above it. When a project has
+  // no terminals, the empty state owns the full page and should not show a header.
+  const hideSharedHeader = !hasTerminals || activeTab?.kind === "terminal"
 
   // Per-diff-tab view mode, remembered while the tab exists; defaults to the
   // last-persisted mode so the user's choice survives restarts.
   const [defaultDiffMode, setDefaultDiffMode] = useState<"unified" | "split">(
-    () => loadDiffViewMode(),
+    () => loadDiffViewMode()
   )
   useEffect(
     () => store.onReady(() => setDefaultDiffMode(loadDiffViewMode())),
-    [],
+    []
   )
   const [diffViewModes, setDiffViewModes] = useState<
     Record<string, "unified" | "split">
@@ -381,80 +370,82 @@ export function WorkspacePane({
   return (
     <div className="flex h-full flex-col bg-card">
       {!hideSharedHeader && (
-      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground">
-        <span className="truncate">
-          {activeTab
-            ? tabDisplayName(activeTab)
-            : project
-              ? "No tab"
-              : "No project"}
-        </span>
-        {isDiffActive && activeTab && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next =
-                      activeDiffMode === "unified" ? "split" : "unified"
-                    setDiffViewModes((prev) => ({
-                      ...prev,
-                      [activeTab.id]: next,
-                    }))
-                    setDefaultDiffMode(next)
-                    saveDiffViewMode(next)
-                  }}
-                  aria-label={
-                    activeDiffMode === "unified"
-                      ? "Switch to split diff"
-                      : "Switch to inline diff"
-                  }
-                  className="ml-auto grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-                >
-                  {activeDiffMode === "unified" ? (
-                    <Columns2 className="size-3.5" />
-                  ) : (
-                    <Rows3 className="size-3.5" />
-                  )}
-                </button>
-              }
-            />
-            <TooltipContent>
-              {activeDiffMode === "unified" ? "Split diff" : "Inline diff"}
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
+        <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground">
+          <span className="truncate">
+            {activeTab
+              ? tabDisplayName(activeTab)
+              : project
+                ? "No tab"
+                : "No project"}
+          </span>
+          {isDiffActive && activeTab && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next =
+                        activeDiffMode === "unified" ? "split" : "unified"
+                      setDiffViewModes((prev) => ({
+                        ...prev,
+                        [activeTab.id]: next,
+                      }))
+                      setDefaultDiffMode(next)
+                      saveDiffViewMode(next)
+                    }}
+                    aria-label={
+                      activeDiffMode === "unified"
+                        ? "Switch to split diff"
+                        : "Switch to inline diff"
+                    }
+                    className="ml-auto grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                  >
+                    {activeDiffMode === "unified" ? (
+                      <Columns2 className="size-3.5" />
+                    ) : (
+                      <Rows3 className="size-3.5" />
+                    )}
+                  </button>
+                }
+              />
+              <TooltipContent>
+                {activeDiffMode === "unified" ? "Split diff" : "Inline diff"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       )}
       <div className="relative flex-1">
-        {project?.tabs.map((t) => (
-          <div
-            key={t.id}
-            aria-hidden={t.id !== project.activeTabId}
-            className={cn(
-              "absolute inset-0 transition-opacity duration-75",
-              t.id !== project.activeTabId && "pointer-events-none opacity-0",
-            )}
-          >
-            <PaneContent
-              tab={t}
-              project={project}
-              isActive={isActive && t.id === project.activeTabId}
-              diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
-              onTitleChange={onTitleChange}
-              onAgentStatusChange={onAgentStatusChange}
-              onStartTerminal={onStartTerminal}
-              onSplitTerminal={onSplitTerminal}
-              onClosePane={onClosePane}
-              onFocusPane={onFocusPane}
-              onRenamePane={onRenamePane}
-              onReorderPanes={onReorderPanes}
-              onOpenFile={onOpenFile}
-            />
-          </div>
-        ))}
-        {project && project.tabs.length === 0 && (
+        {project &&
+          hasTerminals &&
+          project.tabs.map((t) => (
+            <div
+              key={t.id}
+              aria-hidden={t.id !== project.activeTabId}
+              className={cn(
+                "absolute inset-0 transition-opacity duration-75",
+                t.id !== project.activeTabId && "pointer-events-none opacity-0"
+              )}
+            >
+              <PaneContent
+                tab={t}
+                project={project}
+                isActive={isActive && t.id === project.activeTabId}
+                diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
+                onTitleChange={onTitleChange}
+                onAgentStatusChange={onAgentStatusChange}
+                onStartTerminal={onStartTerminal}
+                onSplitTerminal={onSplitTerminal}
+                onClosePane={onClosePane}
+                onFocusPane={onFocusPane}
+                onRenamePane={onRenamePane}
+                onReorderPanes={onReorderPanes}
+                onOpenFile={onOpenFile}
+              />
+            </div>
+          ))}
+        {project && !hasTerminals && (
           <div className="grid h-full place-items-center">
             <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
               <span>No terminals</span>

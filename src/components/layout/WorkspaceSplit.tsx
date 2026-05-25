@@ -27,7 +27,7 @@ type Props = {
   onTerminalAgentStatusChange?: (
     tabId: string,
     paneId: string,
-    status: TerminalAgentStatus,
+    status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
@@ -35,11 +35,7 @@ type Props = {
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (
-    tabId: string,
-    fromPaneId: string,
-    toPaneId: string,
-  ) => void
+  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
   rightSidebarTab?: "changes" | "files"
@@ -128,10 +124,14 @@ export function WorkspaceSplit({
     document.body.style.userSelect = "none"
   }
 
+  const activeProjectHasTerminals = !!activeProject?.tabs.some(
+    (tab) => tab.kind === "terminal"
+  )
+
   const workspaceSection = (
     <div className="flex h-full flex-col">
       {titleBar}
-      {workspaceTabs}
+      {activeProjectHasTerminals && workspaceTabs}
       <div className="relative min-h-0 flex-1">
         {projects.map((p) => (
           <div

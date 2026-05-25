@@ -875,8 +875,8 @@ export function TerminalView({
     })
   }, [sessionId, emitAgentStatus])
 
-  // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens,
-  // matching the original GearShift pattern, so xterm has stable cell metrics.
+  // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens
+  // so xterm has stable cell metrics.
   useEffect(() => {
     const term = termRef.current
     if (!term || webglRef.current) return

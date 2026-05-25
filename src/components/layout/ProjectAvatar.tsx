@@ -12,7 +12,7 @@ function projectInitials(name: string): string {
   return (w.length === 1 ? w[0] : w.slice(0, 2)).toUpperCase()
 }
 
-/** Pick black or white text based on the background's perceived luminance. */
+/** Choose black or white text using the background luminance. */
 function readableTextOn(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)

@@ -1,6 +1,5 @@
 import { useId, type SVGProps } from "react"
 
-// Copied from t3code (apps/web/src/components/Icons.tsx).
 export function VSCodeIcon(props: SVGProps<SVGSVGElement>) {
   const id = useId()
   const maskId = `${id}-vscode-a`

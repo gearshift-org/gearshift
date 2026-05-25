@@ -142,7 +142,7 @@ function useExitAnimation(visible: boolean, ms: number) {
 
   useEffect(() => {
     if (visible) {
-      // Copied from v1: this hook intentionally drives enter/exit render state.
+      // This hook intentionally drives enter/exit render state.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setRender(true)
       setExiting(false)

@@ -56,8 +56,8 @@ if (process.platform === "win32") {
 if (VITE_DEV_SERVER_URL) {
   app.setPath("userData", path.join(app.getPath("appData"), "gearshift-dev"))
 } else {
-  // Use the bundle id as the userData folder name so uninstallers
-  // (Raycast, AppCleaner, etc.) can correlate leftover state to the app.
+  // Use the bundle id as the userData folder name so cleanup tools can
+  // correlate leftover state to the app.
   app.setPath("userData", path.join(app.getPath("appData"), "com.gearshift"))
 }
 
@@ -979,8 +979,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("clipboard:getImagePath", async () => {
     try {
-      // 1) Prefer an existing file path on the clipboard (e.g. copied from
-      //    Finder). macOS exposes this via the NSFilenamesPboardType /
+      // 1) Prefer an existing file path on the clipboard (e.g. a Finder
+      //    selection). macOS exposes this via the NSFilenamesPboardType /
       //    public.file-url formats.
       const candidates =
         process.platform === "darwin"
@@ -1026,8 +1026,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("shell:openInVSCode", async (_event, targetPath: string) => {
     if (!targetPath) return false
-    // Match the original Gearshift app: on macOS prefer `/usr/bin/open -a`
-    // (launchd hand-off, instant) over the `code` CLI (boots Node).
+    // On macOS prefer `/usr/bin/open -a` (launchd hand-off, instant) over the
+    // `code` CLI (boots Node).
     if (process.platform === "darwin") {
       try {
         await execFileP("/usr/bin/open", [

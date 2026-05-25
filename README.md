@@ -1,6 +1,6 @@
-# React + TypeScript + Vite + shadcn/ui
+# GearShift
 
-This is a template for a new Vite project with React, TypeScript, and shadcn/ui.
+GearShift is an Electron workspace app built with React, TypeScript, Vite, and shadcn/ui.
 
 ## Adding components
 

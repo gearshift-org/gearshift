@@ -609,7 +609,10 @@ export function RightSidebar({
   // Show the Sync button only when nothing is staged and the branch is out of
   // sync with its upstream.
   const showSync =
-    stagedFiles.length === 0 && hasUpstream && (ahead > 0 || behind > 0)
+    !busy &&
+    stagedFiles.length === 0 &&
+    hasUpstream &&
+    (ahead > 0 || behind > 0)
 
   const largeChangeSet = files.length > LARGE_CHANGESET_THRESHOLD
   useEffect(() => {

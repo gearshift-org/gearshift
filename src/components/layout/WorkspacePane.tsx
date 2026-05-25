@@ -457,14 +457,11 @@ export function WorkspacePane({
                 onAddTerminal?.()
               }
             }}
-            className="grid h-full cursor-pointer place-items-center"
+            className="group grid h-full cursor-pointer place-items-center"
           >
-            <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
-              <span>No terminals</span>
-              <span className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40">
-                Start terminal
-              </span>
-            </div>
+            <span className="text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+              Click here to start a new terminal
+            </span>
           </div>
         )}
         {!project && (

@@ -127,6 +127,9 @@ async function captureInput(sessionId: string, data: string) {
     const sender = getOwnerWebContents(sessionId)
     if (sender && !sender.isDestroyed()) {
       sender.send(`term:history:appended:${sessionId}`, msg)
+      if (msg.projectId) {
+        sender.send(`term:history:projectAppended:${msg.projectId}`, msg)
+      }
     }
   })
 }
@@ -1214,19 +1217,46 @@ app.whenReady().then(async () => {
       return { ok: false, error: "no-cwd", current: null, branches: [] }
     }
     try {
-      const [currentRaw, listRaw] = await Promise.all([
+      const [currentRaw, listRaw, reflogRaw] = await Promise.all([
         runGitAllowExit1(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
         runGit(cwd, [
           "for-each-ref",
+          "--sort=-committerdate",
           "--format=%(refname:short)",
           "refs/heads/",
         ]),
+        // HEAD reflog captures every checkout — pure switches that don't
+        // advance the branch tip still show up here. We take the newest 200
+        // entries which is plenty for "recent" ordering.
+        runGitAllowExit1(cwd, [
+          "reflog",
+          "show",
+          "--format=%gs",
+          "-n",
+          "200",
+          "HEAD",
+        ]),
       ])
       const current = currentRaw.trim()
-      const branches = listRaw
+      const byCommitterDate = listRaw
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean)
+      const branchSet = new Set(byCommitterDate)
+      // "checkout: moving from <from> to <to>" — pull both sides, freshest first.
+      const recentlyUsed: string[] = []
+      const seen = new Set<string>()
+      for (const line of reflogRaw.split("\n")) {
+        const match = line.match(/^checkout: moving from (\S+) to (\S+)/)
+        if (!match) continue
+        for (const candidate of [match[2], match[1]]) {
+          if (!branchSet.has(candidate) || seen.has(candidate)) continue
+          seen.add(candidate)
+          recentlyUsed.push(candidate)
+        }
+      }
+      const tail = byCommitterDate.filter((b) => !seen.has(b))
+      const branches = [...recentlyUsed, ...tail]
       return {
         ok: true,
         current: current === "HEAD" ? null : current,
@@ -1645,6 +1675,25 @@ app.whenReady().then(async () => {
   ipcMain.handle("term:history:list", async (_e, sessionId: string) => {
     return chatDb.listForSession(sessionId)
   })
+
+  ipcMain.handle(
+    "term:history:listProject",
+    async (_e, projectId: string, limit?: number) => {
+      return chatDb.listForProject(projectId, limit ?? 500)
+    }
+  )
+
+  ipcMain.handle(
+    "term:history:clearProject",
+    async (event, projectId: string) => {
+      chatDb.clearForProject(projectId)
+      const sender = event.sender
+      if (sender && !sender.isDestroyed()) {
+        sender.send(`term:history:projectCleared:${projectId}`)
+      }
+      return { ok: true }
+    }
+  )
 
   ipcMain.handle("term:history:clear", async (_e, sessionId: string) => {
     chatDb.clearForSession(sessionId)

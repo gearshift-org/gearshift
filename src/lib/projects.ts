@@ -278,11 +278,13 @@ const RIGHT_SIDEBAR_EDGE_REVEAL_KEY = "gearshift.rightSidebarEdgeReveal"
 export const RIGHT_SIDEBAR_EDGE_REVEAL_EVENT =
   "gearshift:rightSidebarEdgeRevealChanged"
 
-export type RightSidebarTab = "changes" | "files"
+export type RightSidebarTab = "changes" | "files" | "history"
 
 export function loadRightSidebarTab(): RightSidebarTab {
   try {
-    return store.get(RIGHT_SIDEBAR_TAB_KEY) === "files" ? "files" : "changes"
+    const v = store.get(RIGHT_SIDEBAR_TAB_KEY)
+    if (v === "files" || v === "history") return v
+    return "changes"
   } catch {
     return "changes"
   }

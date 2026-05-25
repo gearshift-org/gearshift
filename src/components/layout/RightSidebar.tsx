@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowDown,
   ArrowUp,
-  Check,
   ChevronDown,
   ExternalLink,
   GitBranch,
@@ -18,6 +17,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +49,7 @@ import { FileIcon } from "@/components/icons/FileIcon"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { ChangeCountBadge } from "./ChangeCountBadge"
 import { FilesTree } from "./FilesTree"
+import { ProjectChatHistoryPanel } from "./ProjectChatHistory"
 import { setPathDragData } from "@/lib/pathDrag"
 import {
   EMPTY_GIT_FILES,
@@ -62,8 +71,12 @@ const REFRESH_DEBOUNCE_MS = 350
 const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
-const OPTIMISTIC_GIT_MOVE_TTL_MS = 2500
-const OPTIMISTIC_GIT_REMOVE_TTL_MS = 2500
+// Optimistic overlays are confirm-cleared once a refetch reflects the action,
+// so these TTLs are only a safety net for the rare case where reality never
+// catches up (e.g. external git tampering). Keep them generous.
+const OPTIMISTIC_GIT_MOVE_TTL_MS = 15000
+const OPTIMISTIC_GIT_REMOVE_TTL_MS = 15000
+const OPTIMISTIC_BRANCH_TTL_MS = 15000
 const EMPTY_BRANCHES: string[] = []
 
 const STATUS_STYLES: Record<GitStatus, string> = {
@@ -82,9 +95,10 @@ function absolutePath(cwd: string, path: string) {
 
 type Props = {
   cwd: string | null
+  projectId?: string | null
   isActive?: boolean
-  activeTab?: "changes" | "files"
-  onActiveTabChange?: (tab: "changes" | "files") => void
+  activeTab?: "changes" | "files" | "history"
+  onActiveTabChange?: (tab: "changes" | "files" | "history") => void
   activeFilePath?: string
   onOpenDiff: (path: string, staged: boolean) => void
   onOpenFile: (path: string) => void
@@ -93,6 +107,7 @@ type Props = {
 
 export function RightSidebar({
   cwd,
+  projectId,
   isActive = true,
   activeTab,
   onActiveTabChange,
@@ -101,7 +116,7 @@ export function RightSidebar({
   onOpenFile,
   topRightActions,
 }: Props) {
-  const [internalTab, setInternalTab] = useState<"changes" | "files">("changes")
+  const [internalTab, setInternalTab] = useState<"changes" | "files" | "history">("changes")
   const tab = activeTab ?? internalTab
   const [actionError, setActionError] = useState<string | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
@@ -116,6 +131,13 @@ export function RightSidebar({
   const [githubBranchBusy, setGithubBranchBusy] = useState(false)
   const optimisticMovesRef = useRef<OptimisticGitFileMove[]>([])
   const optimisticRemovalsRef = useRef<OptimisticGitFileRemoval[]>([])
+  const pendingBranchRef = useRef<{ branch: string; expiresAt: number } | null>(
+    null
+  )
+  // While > 0, an action is in flight or just completed — watcher refreshes
+  // are deferred so half-applied git state can't flash into the UI.
+  const inflightActionsRef = useRef(0)
+  const settleUntilRef = useRef(0)
 
   const queryClient = useQueryClient()
   const currentGitQueryKey = useMemo(() => gitQueryKey(cwd), [cwd])
@@ -131,12 +153,52 @@ export function RightSidebar({
         data,
         optimisticMovesRef.current
       )
-      return applyOptimisticGitFileRemovals(
+      const cleaned = applyOptimisticGitFileRemovals(
         moved,
         optimisticRemovalsRef.current
       )
+      const pending = pendingBranchRef.current
+      if (pending && pending.expiresAt > Date.now()) {
+        if (cleaned.currentBranch === pending.branch) return cleaned
+        return { ...cleaned, currentBranch: pending.branch }
+      }
+      return cleaned
     },
   })
+
+  // After every refetch, drop optimistic overlays that the fresh data already
+  // confirms — single source of truth for "this action landed". Prevents the
+  // overlay from flickering off on TTL expiry while reality is still stale.
+  useEffect(() => {
+    const raw = queryClient.getQueryData<GitQueryData>(currentGitQueryKey)
+    if (!raw) return
+    const now = Date.now()
+    optimisticMovesRef.current = optimisticMovesRef.current.filter((move) => {
+      if (move.expiresAt <= now) return false
+      // Keep while any path is still on the wrong side in the fresh data.
+      return move.paths.some((p) => {
+        const file = raw.files.find((f) => f.path === p)
+        return !file || file.staged !== move.staged
+      })
+    })
+    optimisticRemovalsRef.current = optimisticRemovalsRef.current.filter(
+      (removal) => {
+        if (removal.expiresAt <= now) return false
+        return removal.paths.some((p) =>
+          raw.files.some((f) => {
+            if (f.path !== p) return false
+            return removal.staged === undefined || f.staged === removal.staged
+          })
+        )
+      }
+    )
+    const pending = pendingBranchRef.current
+    if (pending) {
+      if (raw.currentBranch === pending.branch || pending.expiresAt <= now) {
+        pendingBranchRef.current = null
+      }
+    }
+  }, [gitQuery.dataUpdatedAt, currentGitQueryKey, queryClient])
 
   // `hasData` distinguishes "we've never seen data for this cwd" from "data
   // loaded and empty". Used to suppress the counter badge / commit-button
@@ -243,6 +305,24 @@ export function RightSidebar({
   const pendingRef = useRef(false)
   const runRefresh = useCallback(async () => {
     if (!cwd) return
+    // If an action just landed, give git a moment to settle so the next
+    // refetch returns the post-action truth instead of a half-applied snapshot.
+    const settleDelay = settleUntilRef.current - Date.now()
+    if (inflightActionsRef.current > 0 || settleDelay > 0) {
+      pendingRef.current = true
+      if (!inFlightRef.current) {
+        window.setTimeout(
+          () => {
+            if (pendingRef.current && inflightActionsRef.current === 0) {
+              pendingRef.current = false
+              void runRefresh()
+            }
+          },
+          Math.max(settleDelay, 50)
+        )
+      }
+      return
+    }
     if (inFlightRef.current) {
       pendingRef.current = true
       return
@@ -287,99 +367,106 @@ export function RightSidebar({
     }
   }, [cwd, runRefresh])
 
-  const stagePath = useCallback(
-    async (path: string) => {
-      if (!cwd || busy) return
-      setBusy(true)
+  // One shape for every git action. The pattern is always: optimistically
+  // patch the cache → run the mutation → roll back on failure → refresh in
+  // background. `inflightActionsRef` defers watcher-triggered refreshes so a
+  // half-applied snapshot can't flash into the UI mid-flight.
+  type ActionOpts<T> = {
+    label: string
+    optimistic: () => void
+    rollback?: () => void
+    mutation: () => Promise<{ ok: boolean; error?: string } & T>
+    onSuccess?: (res: { ok: true } & T) => void | Promise<void>
+    setLoading?: (v: boolean) => void
+  }
+  const runAction = useCallback(
+    async <T,>(opts: ActionOpts<T>) => {
+      if (!cwd) return
+      inflightActionsRef.current += 1
+      opts.setLoading?.(true)
       setActionError(null)
-      updateCachedFiles([path], true)
+      opts.optimistic()
       try {
-        const res = await window.git.stage(cwd, [path])
+        const res = await opts.mutation()
         if (!res.ok) {
-          updateCachedFiles([path], false)
-          setActionError(res.error ?? "Stage failed")
-          void runRefresh()
+          opts.rollback?.()
+          setActionError(res.error ?? `${opts.label} failed`)
           return
         }
-        void runRefresh()
+        await opts.onSuccess?.(res as { ok: true } & T)
       } finally {
-        setBusy(false)
+        opts.setLoading?.(false)
+        inflightActionsRef.current = Math.max(0, inflightActionsRef.current - 1)
+        // Give git a small window to settle, then refresh once.
+        settleUntilRef.current = Math.max(
+          settleUntilRef.current,
+          Date.now() + 700
+        )
+        void runRefresh()
       }
     },
-    [cwd, busy, runRefresh, updateCachedFiles]
+    [cwd, runRefresh]
+  )
+
+  const stagePath = useCallback(
+    (path: string) =>
+      runAction({
+        label: "Stage",
+        setLoading: setBusy,
+        optimistic: () => updateCachedFiles([path], true),
+        rollback: () => updateCachedFiles([path], false),
+        mutation: () => window.git.stage(cwd!, [path]),
+      }),
+    [cwd, runAction, updateCachedFiles]
   )
 
   const unstagePath = useCallback(
-    async (path: string) => {
-      if (!cwd || busy) return
-      setBusy(true)
-      setActionError(null)
-      updateCachedFiles([path], false)
-      try {
-        const res = await window.git.unstage(cwd, [path])
-        if (!res.ok) {
-          updateCachedFiles([path], true)
-          setActionError(res.error ?? "Unstage failed")
-          void runRefresh()
-          return
-        }
-        void runRefresh()
-      } finally {
-        setBusy(false)
-      }
-    },
-    [cwd, busy, runRefresh, updateCachedFiles]
+    (path: string) =>
+      runAction({
+        label: "Unstage",
+        setLoading: setBusy,
+        optimistic: () => updateCachedFiles([path], false),
+        rollback: () => updateCachedFiles([path], true),
+        mutation: () => window.git.unstage(cwd!, [path]),
+      }),
+    [cwd, runAction, updateCachedFiles]
   )
 
-  const stageAll = useCallback(async () => {
-    if (!cwd || busy || unstagedFiles.length === 0) return
-    setBusy(true)
-    setActionError(null)
+  const stageAll = useCallback(() => {
+    if (unstagedFiles.length === 0) return
     const paths = unstagedFiles.map((f) => f.path)
-    updateCachedFiles(paths, true)
-    try {
-      const res = await window.git.stage(cwd, paths)
-      if (!res.ok) {
-        updateCachedFiles(paths, false)
-        setActionError(res.error ?? "Stage failed")
-        void runRefresh()
-        return
-      }
-      void runRefresh()
-    } finally {
-      setBusy(false)
-    }
-  }, [cwd, busy, unstagedFiles, runRefresh, updateCachedFiles])
+    return runAction({
+      label: "Stage",
+      setLoading: setBusy,
+      optimistic: () => updateCachedFiles(paths, true),
+      rollback: () => updateCachedFiles(paths, false),
+      mutation: () => window.git.stage(cwd!, paths),
+    })
+  }, [cwd, runAction, unstagedFiles, updateCachedFiles])
 
   const discardPath = useCallback(
-    async (path: string) => {
-      if (!cwd || busy) return
+    (path: string) => {
       if (
         !window.confirm(`Discard changes to "${path}"?\nThis cannot be undone.`)
       ) {
         return
       }
-      setBusy(true)
-      setActionError(null)
-      const rollback = removeCachedFiles([path], false)
-      try {
-        const res = await window.git.discard(cwd, [path])
-        if (!res.ok) {
-          rollback()
-          setActionError(res.error ?? "Discard failed")
-          void runRefresh()
-          return
-        }
-        void runRefresh()
-      } finally {
-        setBusy(false)
-      }
+      let rollback: (() => void) | null = null
+      return runAction({
+        label: "Discard",
+        setLoading: setBusy,
+        optimistic: () => {
+          rollback = removeCachedFiles([path], false)
+        },
+        rollback: () => rollback?.(),
+        mutation: () => window.git.discard(cwd!, [path]),
+      })
     },
-    [cwd, busy, removeCachedFiles, runRefresh]
+    [cwd, runAction, removeCachedFiles]
   )
 
-  const discardAllUnstaged = useCallback(async () => {
-    if (!cwd || busy || unstagedFiles.length === 0) return
+  const discardAllUnstaged = useCallback(() => {
+    if (unstagedFiles.length === 0) return
     const paths = unstagedFiles.map((f) => f.path)
     if (
       !window.confirm(
@@ -388,42 +475,29 @@ export function RightSidebar({
     ) {
       return
     }
-    setBusy(true)
-    setActionError(null)
-    const rollback = removeCachedFiles(paths, false)
-    try {
-      const res = await window.git.discard(cwd, paths)
-      if (!res.ok) {
-        rollback()
-        setActionError(res.error ?? "Discard failed")
-        void runRefresh()
-        return
-      }
-      void runRefresh()
-    } finally {
-      setBusy(false)
-    }
-  }, [cwd, busy, unstagedFiles, removeCachedFiles, runRefresh])
+    let rollback: (() => void) | null = null
+    return runAction({
+      label: "Discard",
+      setLoading: setBusy,
+      optimistic: () => {
+        rollback = removeCachedFiles(paths, false)
+      },
+      rollback: () => rollback?.(),
+      mutation: () => window.git.discard(cwd!, paths),
+    })
+  }, [cwd, runAction, unstagedFiles, removeCachedFiles])
 
-  const unstageAll = useCallback(async () => {
-    if (!cwd || busy || stagedFiles.length === 0) return
-    setBusy(true)
-    setActionError(null)
+  const unstageAll = useCallback(() => {
+    if (stagedFiles.length === 0) return
     const paths = stagedFiles.map((f) => f.path)
-    updateCachedFiles(paths, false)
-    try {
-      const res = await window.git.unstage(cwd, paths)
-      if (!res.ok) {
-        updateCachedFiles(paths, true)
-        setActionError(res.error ?? "Unstage failed")
-        void runRefresh()
-        return
-      }
-      void runRefresh()
-    } finally {
-      setBusy(false)
-    }
-  }, [cwd, busy, stagedFiles, runRefresh, updateCachedFiles])
+    return runAction({
+      label: "Unstage",
+      setLoading: setBusy,
+      optimistic: () => updateCachedFiles(paths, false),
+      rollback: () => updateCachedFiles(paths, true),
+      mutation: () => window.git.unstage(cwd!, paths),
+    })
+  }, [cwd, runAction, stagedFiles, updateCachedFiles])
 
   const commit = useCallback(
     async (opts?: { push?: boolean }) => {
@@ -437,6 +511,7 @@ export function RightSidebar({
         setActionError("Nothing staged to commit")
         return
       }
+      inflightActionsRef.current += 1
       setBusy(true)
       setCommitting("commit")
       setActionError(null)
@@ -448,7 +523,6 @@ export function RightSidebar({
         if (!res.ok) {
           rollback()
           setActionError(res.error ?? "Commit failed")
-          void runRefresh()
           return
         }
         setCommitMessage("")
@@ -474,6 +548,12 @@ export function RightSidebar({
       } finally {
         setBusy(false)
         setCommitting(null)
+        inflightActionsRef.current = Math.max(0, inflightActionsRef.current - 1)
+        settleUntilRef.current = Math.max(
+          settleUntilRef.current,
+          Date.now() + 700
+        )
+        void runRefresh()
       }
     },
     [
@@ -498,53 +578,56 @@ export function RightSidebar({
     hasData && stagedFiles.length > 0 && commitMessage.trim().length > 0
 
   const switchBranch = useCallback(
-    async (branch: string) => {
-      if (!cwd || !branch || branch === currentBranch) return
-      setSwitchingBranch(true)
-      setActionError(null)
-      const previousBranch = currentBranch
-      updateCachedGitMeta({ currentBranch: branch })
-      try {
-        const res = await window.git.checkout(cwd, branch)
-        if (!res.ok) {
-          updateCachedGitMeta({ currentBranch: previousBranch })
-          setActionError(res.error ?? "Checkout failed")
-          void runRefresh()
-          return
-        }
-        void runRefresh()
-      } finally {
-        setSwitchingBranch(false)
-      }
+    (branch: string) => {
+      if (!branch || branch === currentBranch) return
+      return runAction({
+        label: "Checkout",
+        setLoading: setSwitchingBranch,
+        // Don't write currentBranch into the cache here — let pendingBranchRef
+        // be the sole overlay until a real refetch confirms the switch.
+        // Writing the cache would trigger confirm-clear immediately and drop
+        // the overlay before git is done, opening a window for a watcher
+        // refetch to flash the old branch back into the UI.
+        optimistic: () => {
+          pendingBranchRef.current = {
+            branch,
+            expiresAt: Date.now() + OPTIMISTIC_BRANCH_TTL_MS,
+          }
+        },
+        rollback: () => {
+          pendingBranchRef.current = null
+        },
+        mutation: () => window.git.checkout(cwd!, branch),
+      })
     },
-    [cwd, currentBranch, updateCachedGitMeta, runRefresh]
+    [cwd, currentBranch, runAction]
   )
 
   const createBranch = useCallback(
-    async (branch: string) => {
+    (branch: string) => {
       const name = branch.trim()
-      if (!cwd || !name) return
-      setSwitchingBranch(true)
-      setActionError(null)
-      const previousBranch = currentBranch
-      updateCachedGitMeta({
-        currentBranch: name,
-        branches: branches.includes(name) ? branches : [...branches, name],
+      if (!name) return
+      const previousBranches = branches
+      return runAction({
+        label: "Create branch",
+        setLoading: setSwitchingBranch,
+        optimistic: () => {
+          pendingBranchRef.current = {
+            branch: name,
+            expiresAt: Date.now() + OPTIMISTIC_BRANCH_TTL_MS,
+          }
+          if (!branches.includes(name)) {
+            updateCachedGitMeta({ branches: [...branches, name] })
+          }
+        },
+        rollback: () => {
+          pendingBranchRef.current = null
+          updateCachedGitMeta({ branches: previousBranches })
+        },
+        mutation: () => window.git.createBranch(cwd!, name),
       })
-      try {
-        const res = await window.git.createBranch(cwd, name)
-        if (!res.ok) {
-          updateCachedGitMeta({ currentBranch: previousBranch, branches })
-          setActionError(res.error ?? "Create branch failed")
-          void runRefresh()
-          return
-        }
-        void runRefresh()
-      } finally {
-        setSwitchingBranch(false)
-      }
     },
-    [cwd, currentBranch, branches, updateCachedGitMeta, runRefresh]
+    [cwd, branches, runAction, updateCachedGitMeta]
   )
 
   const openPullRequest = useCallback(async () => {
@@ -643,7 +726,7 @@ export function RightSidebar({
       <Tabs
         value={tab}
         onValueChange={(v) => {
-          const next = v as "changes" | "files"
+          const next = v as "changes" | "files" | "history"
           setInternalTab(next)
           onActiveTabChange?.(next)
         }}
@@ -668,6 +751,12 @@ export function RightSidebar({
               className="!h-6 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Files
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="!h-6 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
+            >
+              History
             </TabsTrigger>
           </TabsList>
           {topRightActions && (
@@ -911,6 +1000,13 @@ export function RightSidebar({
             </div>
           )}
         </TabsContent>
+        <TabsContent
+          value="history"
+          keepMounted
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          <ProjectChatHistoryPanel projectId={projectId ?? null} />
+        </TabsContent>
       </Tabs>
     </div>
   )
@@ -1006,6 +1102,8 @@ function PullRequestAction({
   )
 }
 
+const CREATE_BRANCH_SENTINEL = "__create__"
+
 function BranchPicker({
   current,
   branches,
@@ -1019,38 +1117,42 @@ function BranchPicker({
   onSwitch: (branch: string) => void
   onCreate: (branch: string) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (open) requestAnimationFrame(() => inputRef.current?.focus())
-  }, [open])
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const list = q
-      ? branches.filter((b) => b.toLowerCase().includes(q))
-      : branches
-    return list.slice(0, 200)
-  }, [branches, query])
-
   const trimmedQuery = query.trim()
-  // Git branch names can't contain whitespace or several special chars; this
-  // is a coarse client-side check — the server validates strictly.
   const isValidNewBranchName =
     trimmedQuery.length > 0 && !/[\s~^:?*[\\]/.test(trimmedQuery)
   const canCreate = isValidNewBranchName && !branches.includes(trimmedQuery)
 
+  const orderedBranches = useMemo(() => {
+    if (!current) return branches
+    return [current, ...branches.filter((b) => b !== current)]
+  }, [branches, current])
+
+  const filteredBranches = useMemo(() => {
+    const q = trimmedQuery.toLowerCase()
+    if (!q) return orderedBranches
+    return orderedBranches.filter((b) => b.toLowerCase().includes(q))
+  }, [orderedBranches, trimmedQuery])
+
   return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen)
-        if (!nextOpen) setQuery("")
+    <Combobox
+      items={orderedBranches}
+      autoHighlight
+      value={current ?? ""}
+      onValueChange={(value: string | null) => {
+        if (!value) return
+        if (value === CREATE_BRANCH_SENTINEL) {
+          if (canCreate) onCreate(trimmedQuery)
+          return
+        }
+        if (value !== current) onSwitch(value)
+      }}
+      onInputValueChange={setQuery}
+      onOpenChange={(open) => {
+        if (!open) setQuery("")
       }}
     >
-      <DropdownMenuTrigger
+      <ComboboxTrigger
         render={
           <Button
             variant="outline"
@@ -1058,83 +1160,42 @@ function BranchPicker({
             disabled={busy || branches.length === 0}
             aria-label="Switch branch"
             className="h-8 w-full justify-between gap-2 px-2 text-xs font-normal"
-          >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{current ?? "(detached HEAD)"}</span>
-            </span>
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-          </Button>
+          />
         }
-      />
-      <DropdownMenuContent align="start" className="w-(--anchor-width) p-0">
-        <div className="border-b border-border/60 p-1">
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault()
-                if (filtered[0]) {
-                  onSwitch(filtered[0])
-                  setOpen(false)
-                } else if (canCreate) {
-                  onCreate(trimmedQuery)
-                  setOpen(false)
-                }
-              }
-              // Prevent base-ui's menu typeahead from stealing characters.
-              e.stopPropagation()
-            }}
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{current ?? "(detached HEAD)"}</span>
+        </span>
+      </ComboboxTrigger>
+      <ComboboxContent align="start" className="p-0">
+        <div className="border-b border-border/60 p-2">
+          <ComboboxInput
+            showTrigger={false}
             placeholder="Filter or create branch…"
-            className="w-full rounded-sm bg-transparent px-1.5 py-1 text-xs outline-none placeholder:text-muted-foreground"
+            className="h-7 w-full text-xs"
           />
         </div>
-        <div className="max-h-64 overflow-y-auto p-1">
-          {filtered.length === 0 && !canCreate && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              {trimmedQuery ? "Invalid branch name" : "No branches"}
-            </div>
-          )}
-          {canCreate && (
-            <button
-              type="button"
-              onClick={() => {
-                onCreate(trimmedQuery)
-                setOpen(false)
-              }}
-              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-            >
+        <ComboboxEmpty>
+          {trimmedQuery ? "No matching branches" : "No branches"}
+        </ComboboxEmpty>
+        <ComboboxList>
+          {canCreate && filteredBranches.length === 0 && (
+            <ComboboxItem value={CREATE_BRANCH_SENTINEL} className="text-xs">
               <PlusCircle className="size-3.5 shrink-0" />
               <span className="truncate">
-                Create branch{" "}
-                <span className="font-medium">{trimmedQuery}</span>
+                Create branch <span className="font-medium">{trimmedQuery}</span>
               </span>
-            </button>
+            </ComboboxItem>
           )}
-          {filtered.map((b) => (
-            <button
-              key={b}
-              type="button"
-              onClick={() => {
-                onSwitch(b)
-                setOpen(false)
-              }}
-              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-            >
-              <Check
-                className={cn(
-                  "size-3.5 shrink-0",
-                  b === current ? "opacity-100" : "opacity-0"
-                )}
-              />
-              <span className="truncate">{b}</span>
-            </button>
+          {filteredBranches.map((b) => (
+            <ComboboxItem key={b} value={b} className="text-xs">
+              <span className="min-w-0 flex-1 truncate">{b}</span>
+            </ComboboxItem>
           ))}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   )
 }
 

@@ -40,8 +40,8 @@ type Props = {
   onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
-  rightSidebarTab?: "changes" | "files"
-  onRightSidebarTabChange?: (tab: "changes" | "files") => void
+  rightSidebarTab?: "changes" | "files" | "history"
+  onRightSidebarTabChange?: (tab: "changes" | "files" | "history") => void
   activeTreeFilePath?: string
 }
 
@@ -211,6 +211,7 @@ export function WorkspaceSplit({
         <div className="absolute inset-0" style={{ width: sidebarWidth }}>
           <RightSidebar
             cwd={activeProject?.path ?? null}
+            projectId={activeProject?.id ?? null}
             isActive={!!activeProject}
             activeTab={rightSidebarTab}
             onActiveTabChange={onRightSidebarTabChange}

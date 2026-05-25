@@ -197,10 +197,36 @@ export function CommandPalette({
     return scored.slice(0, MAX_FILE_RESULTS).map((s) => s.path)
   }, [activeProject?.path, files, paletteRecents.filesByProject, qLower])
 
+  const filteredTerminalTabs = filteredTabs.filter((t) => t.kind === "terminal")
+  const filteredDiffTabs = filteredTabs.filter((t) => t.kind === "diff")
+  const filteredFileTabs = filteredTabs.filter((t) => t.kind === "file")
+  const hasOpenTabResults = filteredTabs.length > 0
+
   const run = (fn: () => void) => {
     fn()
     onOpenChange(false)
   }
+
+  const renderTabItems = (tabs: WorkspaceTab[]) =>
+    tabs.map((t) => {
+      const title = tabDisplayName(t)
+      return (
+        <CommandItem
+          key={t.id}
+          value={tabCommandValue(t)}
+          keywords={tabCommandKeywords(t)}
+          onSelect={() => run(() => onSelectTab(t.id))}
+        >
+          {tabIcon(t)}
+          <span className="truncate">{title}</span>
+          {(t.kind === "diff" || t.kind === "file") && (
+            <span className="ml-auto truncate text-xs text-muted-foreground">
+              {shortenHomePath(t.path)}
+            </span>
+          )}
+        </CommandItem>
+      )
+    })
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -232,36 +258,33 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {filteredTabs.length > 0 && (
+        {hasOpenTabResults && (
           <>
             {filteredProjects.length > 0 && <CommandSeparator />}
-            <CommandGroup heading="Terminals">
-              {filteredTabs.map((t) => {
-                const title = tabDisplayName(t)
-                return (
-                  <CommandItem
-                    key={t.id}
-                    value={tabCommandValue(t)}
-                    keywords={tabCommandKeywords(t)}
-                    onSelect={() => run(() => onSelectTab(t.id))}
-                  >
-                    {tabIcon(t)}
-                    <span className="truncate">{title}</span>
-                    {(t.kind === "diff" || t.kind === "file") && (
-                      <span className="ml-auto truncate text-xs text-muted-foreground">
-                        {shortenHomePath(t.path)}
-                      </span>
-                    )}
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
+            {filteredTerminalTabs.length > 0 && (
+              <CommandGroup heading="Terminals">
+                {renderTabItems(filteredTerminalTabs)}
+              </CommandGroup>
+            )}
+            {filteredDiffTabs.length > 0 && (
+              <CommandGroup
+                heading="Diffs"
+                className="border-t border-border"
+              >
+                {renderTabItems(filteredDiffTabs)}
+              </CommandGroup>
+            )}
+            {filteredFileTabs.length > 0 && (
+              <CommandGroup heading="Open files">
+                {renderTabItems(filteredFileTabs)}
+              </CommandGroup>
+            )}
           </>
         )}
 
         {activeProject && filteredFiles.length > 0 && (
           <>
-            {(filteredProjects.length > 0 || filteredTabs.length > 0) && (
+            {(filteredProjects.length > 0 || hasOpenTabResults) && (
               <CommandSeparator />
             )}
             <CommandGroup heading="Files">

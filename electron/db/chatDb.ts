@@ -62,11 +62,23 @@ export function appendMessage(
   return msg
 }
 
+export function listForProject(
+  projectId: string,
+  limit = 500,
+): ChatHistoryMessage[] {
+  const handle = ensureDb()
+  return handle
+    .prepare(
+      `SELECT ${COLS} FROM chat_messages WHERE project_id = ? ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(projectId, limit) as ChatHistoryMessage[]
+}
+
 export function listForSession(sessionId: string): ChatHistoryMessage[] {
   const handle = ensureDb()
   return handle
     .prepare(
-      `SELECT ${COLS} FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC`,
+      `SELECT ${COLS} FROM chat_messages WHERE session_id = ? ORDER BY created_at DESC`,
     )
     .all(sessionId) as ChatHistoryMessage[]
 }
@@ -76,6 +88,13 @@ export function clearForSession(sessionId: string): void {
   handle
     .prepare("DELETE FROM chat_messages WHERE session_id = ?")
     .run(sessionId)
+}
+
+export function clearForProject(projectId: string): void {
+  const handle = ensureDb()
+  handle
+    .prepare("DELETE FROM chat_messages WHERE project_id = ?")
+    .run(projectId)
 }
 
 export function closeDb(): void {

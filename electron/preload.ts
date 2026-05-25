@@ -96,10 +96,35 @@ const termApi = {
       ipcRenderer.invoke("term:history:list", sessionId) as Promise<
         ChatHistoryMessage[]
       >,
+    listProject: (projectId: string, limit?: number) =>
+      ipcRenderer.invoke(
+        "term:history:listProject",
+        projectId,
+        limit
+      ) as Promise<ChatHistoryMessage[]>,
     clear: (sessionId: string) =>
       ipcRenderer.invoke("term:history:clear", sessionId) as Promise<{
         ok: boolean
       }>,
+    clearProject: (projectId: string) =>
+      ipcRenderer.invoke("term:history:clearProject", projectId) as Promise<{
+        ok: boolean
+      }>,
+    onProjectAppended: (
+      projectId: string,
+      cb: (msg: ChatHistoryMessage) => void
+    ) => {
+      const channel = `term:history:projectAppended:${projectId}`
+      const listener = (_e: unknown, msg: ChatHistoryMessage) => cb(msg)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onProjectCleared: (projectId: string, cb: () => void) => {
+      const channel = `term:history:projectCleared:${projectId}`
+      const listener = () => cb()
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
     onAppended: (sessionId: string, cb: (msg: ChatHistoryMessage) => void) => {
       const channel = `term:history:appended:${sessionId}`
       const listener = (_e: unknown, msg: ChatHistoryMessage) => cb(msg)

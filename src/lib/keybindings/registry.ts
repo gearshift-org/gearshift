@@ -55,11 +55,11 @@ export const ACTIONS: readonly ActionDef[] = [
   },
 ] as const
 
-export type BindingsMap = Record<ActionId, string>
+export type BindingsMap = Record<ActionId, string[]>
 
 export function defaultBindings(): BindingsMap {
   const out = {} as BindingsMap
-  for (const a of ACTIONS) out[a.id] = a.defaultAccelerator
+  for (const a of ACTIONS) out[a.id] = [a.defaultAccelerator]
   return out
 }
 
@@ -78,7 +78,10 @@ function canonicalKeyFromToken(token: string): string {
 
 export function parseAccelerator(acc: string): NormalizedAccelerator | null {
   if (!acc) return null
-  const parts = acc.split("+").map((p) => p.trim()).filter(Boolean)
+  const parts = acc
+    .split("+")
+    .map((p) => p.trim())
+    .filter(Boolean)
   if (parts.length === 0) return null
   let cmdOrCtrl = false
   let alt = false
@@ -87,7 +90,14 @@ export function parseAccelerator(acc: string): NormalizedAccelerator | null {
   for (const raw of parts) {
     const p = raw
     const lower = p.toLowerCase()
-    if (lower === "cmdorctrl" || lower === "mod" || lower === "cmd" || lower === "ctrl" || lower === "control" || lower === "meta") {
+    if (
+      lower === "cmdorctrl" ||
+      lower === "mod" ||
+      lower === "cmd" ||
+      lower === "ctrl" ||
+      lower === "control" ||
+      lower === "meta"
+    ) {
       cmdOrCtrl = true
     } else if (lower === "alt" || lower === "option") {
       alt = true
@@ -132,12 +142,20 @@ export function matchesAccelerator(acc: string, e: KeyboardEvent): boolean {
   return eventKey === n.key
 }
 
+export function matchesAnyAccelerator(
+  accelerators: readonly string[],
+  e: KeyboardEvent
+): boolean {
+  return accelerators.some((acc) => matchesAccelerator(acc, e))
+}
+
 // Pretty-print an accelerator for UI (macOS symbols on darwin, words elsewhere).
 export function prettyAccelerator(acc: string): string[] {
   const n = parseAccelerator(acc)
   if (!n) return [acc]
   const isMac =
-    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad/.test(navigator.platform)
   const out: string[] = []
   if (n.cmdOrCtrl) out.push(isMac ? "⌘" : "Ctrl")
   if (n.alt) out.push(isMac ? "⌥" : "Alt")

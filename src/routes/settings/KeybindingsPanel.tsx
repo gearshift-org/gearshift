@@ -5,29 +5,47 @@ import { KeyChip } from "@/components/keybindings/KeyChip"
 import { KeyCapture } from "@/components/keybindings/KeyCapture"
 import { Button } from "@/components/ui/button"
 
+function sameAccelerators(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
 export function KeybindingsPanel() {
-  const { bindings, setBinding, resetBinding, resetAll, conflicts } =
-    useKeybindings()
+  const {
+    bindings,
+    addBinding,
+    removeBinding,
+    resetBinding,
+    resetAll,
+    conflicts,
+  } = useKeybindings()
   const [editingId, setEditingId] = React.useState<ActionId | null>(null)
-  const [pendingPerRow, setPendingPerRow] = React.useState<Record<string, string>>({})
+  const [pendingPerRow, setPendingPerRow] = React.useState<
+    Record<string, string>
+  >({})
 
   const isDefault = (id: ActionId) => {
     const action = ACTIONS.find((a) => a.id === id)
-    return action?.defaultAccelerator === bindings[id]
+    return action
+      ? sameAccelerators([action.defaultAccelerator], bindings[id])
+      : false
   }
 
   const conflictLabel = (id: ActionId): string | null => {
-    const acc = bindings[id]
-    const others = (conflicts.get(acc) ?? []).filter((x) => x !== id)
-    if (others.length === 0) return null
-    return others
-      .map((oid) => ACTIONS.find((a) => a.id === oid)?.label ?? oid)
-      .join(", ")
+    const labels = new Set<string>()
+    for (const acc of bindings[id]) {
+      for (const other of conflicts.get(acc) ?? []) {
+        if (other === id) continue
+        labels.add(ACTIONS.find((a) => a.id === other)?.label ?? other)
+      }
+    }
+    return labels.size > 0 ? [...labels].join(", ") : null
   }
 
   const candidateConflict = (id: ActionId, acc: string): string | null => {
+    if (bindings[id].includes(acc))
+      return "This action already uses that shortcut"
     const collisions = ACTIONS.filter(
-      (a) => a.id !== id && bindings[a.id] === acc,
+      (a) => a.id !== id && bindings[a.id].includes(acc)
     )
     if (collisions.length === 0) return null
     return collisions.map((a) => a.label).join(", ")
@@ -49,10 +67,10 @@ export function KeybindingsPanel() {
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
-            <tr className="text-left text-xs uppercase text-muted-foreground">
+            <tr className="text-left text-xs text-muted-foreground uppercase">
               <th className="px-3 py-2 font-medium">Action</th>
-              <th className="px-3 py-2 font-medium">Shortcut</th>
-              <th className="px-3 py-2 font-medium text-right">&nbsp;</th>
+              <th className="px-3 py-2 font-medium">Shortcuts</th>
+              <th className="px-3 py-2 text-right font-medium">&nbsp;</th>
             </tr>
           </thead>
           <tbody>
@@ -79,48 +97,67 @@ export function KeybindingsPanel() {
                     ) : null}
                   </td>
                   <td className="px-3 py-2">
-                    {editing ? (
-                      <div className="flex flex-col gap-1">
-                        <KeyCapture
-                          initial={bindings[action.id]}
-                          onCancel={() => {
-                            setEditingId(null)
-                            setPendingPerRow((p) => {
-                              const rest = { ...p }
-                              delete rest[action.id]
-                              return rest
-                            })
-                          }}
-                          onCommit={(acc) => {
-                            const conflictWith = candidateConflict(
-                              action.id,
-                              acc,
-                            )
-                            if (conflictWith) {
-                              setPendingPerRow((p) => ({
-                                ...p,
-                                [action.id]: acc,
-                              }))
-                              return
-                            }
-                            setBinding(action.id, acc)
-                            setEditingId(null)
-                            setPendingPerRow((p) => {
-                              const rest = { ...p }
-                              delete rest[action.id]
-                              return rest
-                            })
-                          }}
-                        />
-                        {pendingConflict ? (
-                          <div className="text-xs text-destructive">
-                            Cannot save — conflicts with: {pendingConflict}
-                          </div>
-                        ) : null}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {bindings[action.id].map((accelerator) => (
+                          <span
+                            key={accelerator}
+                            className="inline-flex items-center gap-1"
+                          >
+                            <KeyChip accelerator={accelerator} />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeBinding(action.id, accelerator)
+                              }
+                              className="rounded px-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                              aria-label={`Remove ${accelerator}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
                       </div>
-                    ) : (
-                      <KeyChip accelerator={bindings[action.id]} />
-                    )}
+                      {editing ? (
+                        <div className="flex flex-col gap-1">
+                          <KeyCapture
+                            onCancel={() => {
+                              setEditingId(null)
+                              setPendingPerRow((p) => {
+                                const rest = { ...p }
+                                delete rest[action.id]
+                                return rest
+                              })
+                            }}
+                            onCommit={(acc) => {
+                              const conflictWith = candidateConflict(
+                                action.id,
+                                acc
+                              )
+                              if (conflictWith) {
+                                setPendingPerRow((p) => ({
+                                  ...p,
+                                  [action.id]: acc,
+                                }))
+                                return
+                              }
+                              addBinding(action.id, acc)
+                              setEditingId(null)
+                              setPendingPerRow((p) => {
+                                const rest = { ...p }
+                                delete rest[action.id]
+                                return rest
+                              })
+                            }}
+                          />
+                          {pendingConflict ? (
+                            <div className="text-xs text-destructive">
+                              Cannot save — conflicts with: {pendingConflict}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-2">
@@ -130,7 +167,7 @@ export function KeybindingsPanel() {
                           size="sm"
                           onClick={() => setEditingId(action.id)}
                         >
-                          Edit
+                          Add shortcut
                         </Button>
                       ) : null}
                       <Button

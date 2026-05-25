@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import { matchesAccelerator } from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelRight, X } from "lucide-react"
@@ -1408,7 +1409,7 @@ export function AppShell() {
                 type="button"
                 aria-label="Close notification"
                 onClick={() => toast.dismiss(id)}
-                className="absolute right-2 top-2 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="absolute top-2 right-2 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <X className="size-4" />
               </button>
@@ -1581,7 +1582,7 @@ export function AppShell() {
     }
   }, [])
 
-  const { findActionForEvent } = useKeybindings()
+  const { bindings, findActionForEvent } = useKeybindings()
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // Let focused controls/editors handle their own shortcuts first. For
@@ -1601,6 +1602,16 @@ export function AppShell() {
           e.preventDefault()
           setPaletteOpen((v) => !v)
           break
+        case "terminal.new":
+          if (matchesAccelerator(bindings["terminal.new"][0] ?? "", e)) return
+          e.preventDefault()
+          addTerminalRef.current()
+          break
+        case "terminal.close":
+          if (matchesAccelerator(bindings["terminal.close"][0] ?? "", e)) return
+          e.preventDefault()
+          closeActiveTabRef.current()
+          break
         case "terminal.split":
           e.preventDefault()
           splitActiveTerminalRef.current()
@@ -1615,7 +1626,7 @@ export function AppShell() {
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [findActionForEvent, navigate])
+  }, [bindings, findActionForEvent, navigate])
 
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">

@@ -12,6 +12,7 @@ import {
   horizontalListSortingStrategy,
   SortableContext,
 } from "@dnd-kit/sortable"
+import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import { cn } from "@/lib/utils"
 import { KeyChip } from "@/components/keybindings/KeyChip"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
@@ -523,13 +524,19 @@ export function WorkspacePane({
             }}
             className="group grid h-full cursor-pointer place-items-center"
           >
-            <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+            <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground">
+              <img
+                src={logoGrayUrl}
+                alt=""
+                aria-hidden="true"
+                className="mb-3 h-20 w-auto opacity-80"
+              />
               <span>Click here to start a new terminal</span>
               <div className="flex items-center gap-1.5 text-[11px]">
                 <span>Press</span>
-                <KeyChip accelerator={bindings["terminal.new"]} />
+                <KeyChip accelerator={bindings["terminal.new"][0]} />
                 <span>or</span>
-                <KeyChip accelerator={bindings["terminal.split"]} />
+                <KeyChip accelerator={bindings["terminal.split"][0]} />
               </div>
             </div>
           </div>

@@ -1,5 +1,9 @@
 import * as React from "react"
-import { formatAccelerator, prettyAccelerator } from "@/lib/keybindings/registry"
+import {
+  formatAccelerator,
+  prettyAccelerator,
+} from "@/lib/keybindings/registry"
+import { Button } from "@/components/ui/button"
 
 type Props = {
   initial?: string
@@ -44,13 +48,12 @@ export function KeyCapture({ initial, onCommit, onCancel }: Props) {
         readOnly
         data-keycapture="true"
         onKeyDown={handleKeyDown}
-        onBlur={onCancel}
         value={captured ?? ""}
         placeholder="Press a key combination…"
-        className="h-7 w-48 rounded-md border border-ring bg-background px-2 font-mono text-xs text-foreground outline-none ring-2 ring-ring/40"
+        className="h-7 w-48 rounded-md border border-ring bg-background px-2 font-mono text-xs text-foreground ring-2 ring-ring/40 outline-none"
       />
       <span className="text-[11px] text-muted-foreground">
-        {hint ?? "Press Enter to confirm, Esc to cancel"}
+        {hint ?? "Press Enter or Save to confirm, Esc to cancel"}
       </span>
       {captured && !hint ? (
         <span className="inline-flex items-center gap-0.5">
@@ -64,6 +67,24 @@ export function KeyCapture({ initial, onCommit, onCancel }: Props) {
           ))}
         </span>
       ) : null}
+      <Button
+        type="button"
+        size="sm"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => captured && !hint && onCommit(captured)}
+        disabled={!captured || !!hint}
+      >
+        Save
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onCancel}
+      >
+        Cancel
+      </Button>
     </div>
   )
 }

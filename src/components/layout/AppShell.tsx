@@ -98,10 +98,6 @@ function hydrateProjectSnapshot(): {
   return { projects, migrations }
 }
 
-function hydrateProjects(): Project[] {
-  return hydrateProjectSnapshot().projects
-}
-
 function resolveMigratedProjectId(
   id: string | null,
   projects: Project[],

@@ -219,6 +219,22 @@ export function RightSidebar({
     [currentGitQueryKey, queryClient]
   )
 
+  const clearOptimisticEntriesForPaths = useCallback((paths: string[]) => {
+    const pathSet = new Set(paths)
+    optimisticMovesRef.current = optimisticMovesRef.current.flatMap((move) => {
+      const remainingPaths = move.paths.filter((path) => !pathSet.has(path))
+      return remainingPaths.length > 0 ? [{ ...move, paths: remainingPaths }] : []
+    })
+    optimisticRemovalsRef.current = optimisticRemovalsRef.current.flatMap(
+      (removal) => {
+        const remainingPaths = removal.paths.filter((path) => !pathSet.has(path))
+        return remainingPaths.length > 0
+          ? [{ ...removal, paths: remainingPaths }]
+          : []
+      }
+    )
+  }, [])
+
   // Coalesce overlapping refreshes — `git status` can take a beat on big
   // repos and we don't want a stampede when fs events fire in bursts.
   const inFlightRef = useRef(false)
@@ -423,6 +439,7 @@ export function RightSidebar({
       setCommitting("commit")
       setActionError(null)
       const committedPaths = stagedFiles.map((f) => f.path)
+      await queryClient.cancelQueries({ queryKey: currentGitQueryKey })
       const rollback = removeCachedFiles(committedPaths, true)
       try {
         const res = await window.git.commit(cwd, message)
@@ -441,12 +458,17 @@ export function RightSidebar({
           const pushRes = await window.git.push(cwd)
           if (!pushRes.ok) {
             setActionError(pushRes.error ?? "Push failed")
-            void runRefresh()
+            clearOptimisticEntriesForPaths(committedPaths)
+            queryClient.setQueryData(
+              currentGitQueryKey,
+              await fetchGitQueryData(cwd)
+            )
             return
           }
           updateCachedGitMeta({ ahead: 0 })
         }
-        void runRefresh()
+        clearOptimisticEntriesForPaths(committedPaths)
+        queryClient.setQueryData(currentGitQueryKey, await fetchGitQueryData(cwd))
       } finally {
         setBusy(false)
         setCommitting(null)
@@ -457,10 +479,13 @@ export function RightSidebar({
       busy,
       commitMessage,
       stagedFiles,
+      queryClient,
+      currentGitQueryKey,
       removeCachedFiles,
       updateCachedGitMeta,
       hasUpstream,
       ahead,
+      clearOptimisticEntriesForPaths,
       runRefresh,
     ]
   )

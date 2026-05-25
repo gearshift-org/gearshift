@@ -1,122 +1,122 @@
 # GearShift
 
-GearShift is an Electron workspace app built with React, TypeScript, Vite, and shadcn/ui.
+GearShift is an Electron workspace app for developers who work across multiple local projects and terminal-based coding agents.
 
-## Adding components
+It brings project tabs, terminal panes, file previews, git changes, pull request shortcuts, and agent activity indicators into one desktop app.
 
-To add components to your app, run the following command:
+## Status
+
+GearShift is early-stage software. Expect rough edges, active changes, and macOS-first behavior while the project settles.
+
+## Features
+
+- Multi-project workspace with project tabs and split panes.
+- File tree, file preview, Markdown rendering, and syntax-highlighted diffs.
+- Git status, file changes, branch actions, and pull request shortcuts.
+- Agent activity detection for supported CLI coding agents.
+- Desktop and in-app notifications when background agent work finishes.
+- Theme, appearance, and keybinding settings.
+
+## Tech Stack
+
+- Electron
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- shadcn/ui
+- TanStack Router
+- TanStack Query
+- CodeMirror
+- xterm.js
+- Drizzle ORM with libSQL
+
+## Requirements
+
+- macOS is the primary supported platform right now.
+- [Bun](https://bun.sh/) for dependency installation and scripts.
+- Git for project status and diffs.
+- Optional: [GitHub CLI](https://cli.github.com/) for pull request actions.
+- Optional: `direnv` for project-specific GitHub CLI environments.
+
+## Getting Started
+
+Install dependencies:
 
 ```bash
-npx shadcn@latest add button
+bun install
 ```
 
-This will place the ui components in the `src/components` directory.
+Start the app in development mode:
 
-## Using components
-
-To use the components in your app, import them as follows:
-
-```tsx
-import { Button } from "@/components/ui/button"
+```bash
+bun run dev
 ```
 
-## Architecture
+Run type checking:
 
-### Filesystem watcher
+```bash
+bun run typecheck
+```
 
-Each open project subscribes to a recursive native watcher via
-[`@parcel/watcher`](https://www.npmjs.com/package/@parcel/watcher) in
-`electron/main.ts`. One subscription per `watchId`, keyed off a renderer
-request from `fs:watchProject`.
+Run linting:
 
-The watcher is intentionally noisy at the OS level but quiet at the IPC
-level:
+```bash
+bun run lint
+```
 
-- **Ignored at the source** — base globs (`**/.git/**`, `**/.DS_Store`)
-  plus every line of the project's `.gitignore`, converted to globs by
-  `gitignoreToGlobs`. The `.git/**` filter is load-bearing: `git status`
-  writes to `.git/index`, and without the filter the watcher would
-  feedback-loop with the renderer's refresh.
-- **Debounced in main** — events are collected into a `Set<string>` per
-  watch, flushed 150 ms after the last event as a single `fs:changed`
-  IPC.
-- **Native module** — marked external in `vite.config.ts` so the bundler
-  doesn't inline its prebuilt binaries. `electron-builder install-app-deps`
-  rebuilds it against Electron's Node ABI on `postinstall`.
+Create a production build:
 
-### Changes pane refresh
+```bash
+bun run build
+```
 
-`src/components/layout/ChangesPane.tsx` keeps `git status` + `git diffAll`
-in sync with disk using three paths:
+Create a local macOS app build without signing or notarization:
 
-1. **Initial load** — on mount, on `cwd` change, and whenever the project
-   becomes active (`isActive` flips true). The only path that shows the
-   "Loading changes…" spinner.
-2. **Watcher → debounced refresh** — `fs:changed` IPC schedules a refresh
-   `REFRESH_DEBOUNCE_MS` (350 ms) after the last event.
-3. **Polling backstop** — `setInterval` calls refresh every
-   `POLL_INTERVAL_MS` (4 s), or `POLL_INTERVAL_LARGE_MS` (10 s) when the
-   changeset exceeds `LARGE_CHANGESET_THRESHOLD` (300 files). Catches
-   anything the watcher misses (external git operations, terminal
-   commands, etc.).
+```bash
+bun run dist
+```
 
-All three paths funnel through a single `runRefresh` callback that
-serializes via `inFlightRef` + `pendingRef`. Concurrent refreshes can
-never stack — a new request while one is in flight just sets the pending
-flag, which kicks off exactly one follow-up when the current call
-finishes.
+Create a local macOS DMG without signing or notarization:
 
-Inactive projects (mounted in other tabs but not focused) skip both the
-watcher subscription and polling — only the active project pays the cost.
+```bash
+bun run dist:dmg
+```
 
-### CLI agent activity
+## Project Structure
 
-Terminal panes detect supported coding agents (`claude`, `codex`, `opencode`,
-`pi`, and `gemini`) by asking the Electron main process to inspect the PTY
-shell's child process tree. GearShift auto-installs local lifecycle hooks for
-Claude Code and Codex, plus an OpenCode plugin, and passes each terminal a
-`GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET`. Those integrations send
-lifecycle events back to GearShift over a local Unix socket so the busy
-indicator ends on the agent's explicit stop hook instead of a brief quiet pause.
-Notification-style hooks are treated as "needs attention" only; they do not
-complete the job or show done UI. Pi and Gemini stay on the fallback path until
-they expose a stable hook API.
+```text
+electron/                 Electron main process, preload bridge, PTY daemon, and local data access
+src/                      React renderer app
+src/components/layout/    Main workspace, panes, terminal, files, git, and shell UI
+src/components/ui/        Shared UI primitives
+src/routes/settings/      Settings screens
+src/lib/                  Renderer utilities, stores, project state, and keybindings
+```
 
-The renderer still combines the "agent is running" signal with agent-specific
-activity cues: changing title/spinner signals for Claude Code and Codex, and
-terminal output as a fallback for OpenCode, Pi, and Gemini after their process
-is confirmed. Activity is ignored until the user submits input while the agent
-is already running, so the launch command itself does not light the project tab.
-Output immediately after terminal resize, app refocus, or project/tab activation
-is also ignored because TUIs often redraw in those moments. Echoed output from
-normal typing is briefly ignored until the user submits with Enter. General
-terminal output is ignored for the title-based agents so idle redraws, prompts,
-and background output do not light the project tab. A longer quiet grace period
-prevents the busy dot from flickering off during short model pauses when hook
-events are missing or delayed. When any pane in a project is actively working,
-the project tab shows a small orange animated dot after the avatar. If a
-background project's agent finishes, the orange dot becomes a bouncing green dot
-until that project is visited. While the app is focused, finishing away from the
-active project shows a bottom-right in-app notification that opens the project
-and terminal when clicked. If the app is not focused or is hidden, an agent
-finishing in any project uses a desktop notification instead. A short completion
-sound plays at 50% volume whenever an agent finishes.
-Idle agents stay hidden. Inactive project and tab panes stay mounted and
-attached to the DOM; they are hidden with opacity so terminal canvases do not
-have to detach and re-attach during normal navigation.
+## Development Notes
 
-### GitHub pull requests
+- The app uses `vite-plugin-electron` so `bun run dev` starts the renderer and Electron together.
+- Native modules are rebuilt after install through `electron-builder install-app-deps`.
+- The app stores development data under `gearshift-dev` and production data under `com.gearshift`.
+- The GitHub integration uses the local `gh` CLI. GearShift does not manage GitHub API tokens.
+- If `direnv` is installed, GearShift evaluates the opened project's `.envrc` before running `gh`.
 
-The Changes pane shows pull request status beside the branch picker when the
-GitHub CLI (`gh`) is installed and available. GearShift checks the current
-branch with `gh pr list`; if an open pull request exists, it shows the PR
-number and opens it in GitHub. If no PR exists and the branch is already pushed
-to an upstream remote, it shows a Create PR action that opens GitHub's PR
-creation page.
+## Documentation
 
-No GitHub API token is managed by the app. Authentication stays with the
-GitHub CLI, so users should run `gh auth login` if GitHub reports an auth
-error. When `direnv` is installed, GearShift evaluates the opened project's
-`.envrc` environment before running `gh`, including `.envrc` files inherited
-from parent directories. This lets different projects use different GitHub
-accounts or tokens without changing the global GitHub CLI account.
+- [Architecture](docs/architecture.md)
+
+## Contributing
+
+Contributions are welcome.
+
+Before opening a pull request:
+
+1. Run `bun run typecheck`.
+2. Run `bun run lint`.
+3. Keep changes focused and include screenshots for UI changes when useful.
+4. Update this README or related docs when behavior changes.
+
+## License
+
+No license has been added yet. Add a license before publishing this repository as open source.

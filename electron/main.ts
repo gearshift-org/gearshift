@@ -1686,7 +1686,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "term:history:clearProject",
     async (event, projectId: string) => {
-      chatDb.clearForProject(projectId)
+      await chatDb.clearForProject(projectId)
       const sender = event.sender
       if (sender && !sender.isDestroyed()) {
         sender.send(`term:history:projectCleared:${projectId}`)
@@ -1696,7 +1696,7 @@ app.whenReady().then(async () => {
   )
 
   ipcMain.handle("term:history:clear", async (_e, sessionId: string) => {
-    chatDb.clearForSession(sessionId)
+    await chatDb.clearForSession(sessionId)
     return { ok: true }
   })
 
@@ -1719,7 +1719,7 @@ app.on("before-quit", () => {
   sessionOwners.clear()
   sessionProjects.clear()
   inputCapture.disposeAll()
-  chatDb.closeDb()
+  void chatDb.closeDb()
 })
 
 app.on("window-all-closed", () => {

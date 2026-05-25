@@ -68,8 +68,9 @@ export function feed(
       if (ch === "\r" || ch === "\n") {
         // Newlines inside a paste act as literal line submissions too.
         if (agent && s.buf.trim().length > 0) {
-          const msg = appendMessage(sessionId, projectId, s.buf, agent)
-          onFlush(msg)
+          void appendMessage(sessionId, projectId, s.buf, agent)
+            .then(onFlush)
+            .catch((err) => console.error("[chatDb] appendMessage", err))
         }
         reset(s)
         i += 1
@@ -82,8 +83,9 @@ export function feed(
 
     if (ch === "\r" || ch === "\n") {
       if (agent && s.buf.trim().length > 0) {
-        const msg = appendMessage(sessionId, projectId, s.buf, agent)
-        onFlush(msg)
+        void appendMessage(sessionId, projectId, s.buf, agent)
+          .then(onFlush)
+          .catch((err) => console.error("[chatDb] appendMessage", err))
       }
       reset(s)
       i += 1

@@ -23,7 +23,7 @@ export default defineConfig({
                 "node-pty",
                 "electron",
                 "@parcel/watcher",
-                "better-sqlite3",
+                "@libsql/client",
               ],
             },
           },

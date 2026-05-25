@@ -96,8 +96,13 @@ function FolderNode({
       draggable
       onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
       onClick={() => {
-        setForceClosed(false)
-        setManuallyOpen((v) => !v)
+        if (open) {
+          setManuallyOpen(false)
+          setForceClosed(true)
+        } else {
+          setManuallyOpen(true)
+          setForceClosed(false)
+        }
       }}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"

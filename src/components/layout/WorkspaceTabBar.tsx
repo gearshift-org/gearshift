@@ -42,6 +42,8 @@ import {
 type Props = {
   tabs: WorkspaceTab[]
   activeId: string
+  animationScopeKey?: string
+  openingTabId?: string | null
   onSelect: (id: string) => void
   onAdd: () => void
   onClose?: (id: string) => void
@@ -59,6 +61,7 @@ type TabItemProps = {
   isActive: boolean
   hasTabsToRight: boolean
   total: number
+  animateOpen: boolean
   renamingId: string | null
   draft: string
   inputRef: React.RefObject<HTMLInputElement | null>
@@ -107,6 +110,7 @@ function WorkspaceTabItem({
   onPin,
   onOpenInVSCode,
   total,
+  animateOpen,
 }: TabItemProps) {
   const isRenaming = t.id === renamingId
   const isTerminal = t.kind === "terminal"
@@ -126,7 +130,7 @@ function WorkspaceTabItem({
     isDragging,
   } = useSortable({ id: t.id, disabled: isRenaming })
 
-  const openAnim = useTabOpenAnimation()
+  const openAnim = useTabOpenAnimation(animateOpen)
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
@@ -268,6 +272,8 @@ function WorkspaceTabItem({
 export function WorkspaceTabBar({
   tabs,
   activeId,
+  animationScopeKey = "default",
+  openingTabId = null,
   onSelect,
   onAdd,
   onClose,
@@ -282,6 +288,22 @@ export function WorkspaceTabBar({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const previousTabsRef = useRef<{ scopeKey: string; ids: Set<string> } | null>(
+    null,
+  )
+  const previousTabs = previousTabsRef.current
+  const openingTabIds = new Set(
+    previousTabs?.scopeKey === animationScopeKey
+      ? tabs.filter((tab) => !previousTabs.ids.has(tab.id)).map((tab) => tab.id)
+      : [],
+  )
+
+  useEffect(() => {
+    previousTabsRef.current = {
+      scopeKey: animationScopeKey,
+      ids: new Set(tabs.map((tab) => tab.id)),
+    }
+  }, [animationScopeKey, tabs])
 
   useEffect(() => {
     if (renamingId) {
@@ -327,6 +349,7 @@ export function WorkspaceTabBar({
                 isActive={t.id === activeId}
                 hasTabsToRight={i < tabs.length - 1}
                 total={tabs.length}
+                animateOpen={openingTabIds.has(t.id) || t.id === openingTabId}
                 renamingId={renamingId}
                 draft={draft}
                 inputRef={inputRef}

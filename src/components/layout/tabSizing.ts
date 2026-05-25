@@ -9,15 +9,19 @@ export const TAB_NAME_TOOLTIP_DELAY_MS = 700
 export const TAB_OPEN_TRANSITION_CLASS =
   "transition-[width,min-width,padding] duration-150 ease-out"
 
-export function useTabOpenAnimation(): {
+export function useTabOpenAnimation(enabled = true): {
   style: CSSProperties | undefined
   isOpening: boolean
 } {
-  const [isOpening, setIsOpening] = useState(true)
+  const [isOpening, setIsOpening] = useState(enabled)
   useEffect(() => {
+    if (!enabled) {
+      setIsOpening(false)
+      return
+    }
     const id = requestAnimationFrame(() => setIsOpening(false))
     return () => cancelAnimationFrame(id)
-  }, [])
+  }, [enabled])
   return {
     isOpening,
     style: isOpening

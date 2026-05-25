@@ -221,6 +221,9 @@ export function AppShell() {
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
     string | null
   >(() => loadActiveProjectId())
+  const [openingTerminalTabId, setOpeningTerminalTabId] = useState<string | null>(
+    null,
+  )
 
   // Disk snapshot arrives async — re-sync once it lands so the UI can paint
   // immediately with empty state and then fill in. Also restores the last
@@ -826,6 +829,8 @@ export function AppShell() {
       projectId: activeProject.id,
     })
     const tabId = makeId()
+    setOpeningTerminalTabId(tabId)
+    window.setTimeout(() => setOpeningTerminalTabId(null), 300)
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProject.id) return p
@@ -1752,6 +1757,8 @@ export function AppShell() {
               <WorkspaceTabBar
                 tabs={activeProject.tabs}
                 activeId={activeTabId}
+                animationScopeKey={activeProject.id}
+                openingTabId={openingTerminalTabId}
                 onSelect={selectTab}
                 onAdd={addTerminal}
                 onClose={closeTab}

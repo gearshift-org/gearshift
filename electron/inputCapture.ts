@@ -41,9 +41,8 @@ function reset(s: State) {
 export type FlushHandler = (msg: ChatHistoryMessage) => void
 
 /**
- * Feed raw bytes the user typed into a session. On Enter we extract the line,
- * persist it via chatDb.appendMessage, and invoke onFlush so callers can fan
- * the event out to the renderer.
+ * Feed raw bytes the user typed into a session. On Enter we extract the line.
+ * Lines are persisted only when an agent CLI is detected for the session.
  */
 export function feed(
   sessionId: string,
@@ -68,7 +67,7 @@ export function feed(
       }
       if (ch === "\r" || ch === "\n") {
         // Newlines inside a paste act as literal line submissions too.
-        if (s.buf.trim().length > 0) {
+        if (agent && s.buf.trim().length > 0) {
           const msg = appendMessage(sessionId, projectId, s.buf, agent)
           onFlush(msg)
         }
@@ -82,7 +81,7 @@ export function feed(
     }
 
     if (ch === "\r" || ch === "\n") {
-      if (s.buf.trim().length > 0) {
+      if (agent && s.buf.trim().length > 0) {
         const msg = appendMessage(sessionId, projectId, s.buf, agent)
         onFlush(msg)
       }

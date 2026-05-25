@@ -111,6 +111,8 @@ const termApi = {
 
 const clipboardApi = {
   hasImage: () => ipcRenderer.invoke("clipboard:hasImage") as Promise<boolean>,
+  getImagePath: () =>
+    ipcRenderer.invoke("clipboard:getImagePath") as Promise<string | null>,
 }
 
 const appApi = {

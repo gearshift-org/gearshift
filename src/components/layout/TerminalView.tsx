@@ -125,12 +125,22 @@ function shellQuote(s: string) {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
-async function pasteClipboard(term: Terminal, sessionId: string) {
-  // If clipboard has an image, send Ctrl+V (0x16) so CLIs like Claude Code
-  // and Codex can pick up the image themselves. Matches Ghostty/VS Code.
+async function pasteClipboard(
+  term: Terminal,
+  sessionId: string,
+  isAgentInput: boolean,
+) {
   try {
     if (await window.clipboardApi.hasImage()) {
-      window.term.write(sessionId, "\x16")
+      if (isAgentInput) {
+        // Agent CLIs (Claude Code, Codex, …) handle image paste themselves
+        // when they receive Ctrl+V (0x16). Matches Ghostty/VS Code.
+        window.term.write(sessionId, "\x16")
+      } else {
+        // Plain shell: write the image to a temp file and paste its path.
+        const filePath = await window.clipboardApi.getImagePath()
+        if (filePath) term.paste(shellQuote(filePath) + " ")
+      }
       term.focus()
       return
     }
@@ -440,7 +450,7 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId)
+          void pasteClipboard(term, sessionId, !!agentStatusRef.current.running)
           return false
         }
         if (key === "a") {
@@ -918,7 +928,7 @@ export function TerminalView({
   const pasteFromClipboard = async () => {
     const term = termRef.current
     if (!term) return
-    await pasteClipboard(term, sessionId)
+    await pasteClipboard(term, sessionId, !!agentStatusRef.current.running)
   }
 
   const selectAll = () => {

@@ -756,6 +756,43 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle("clipboard:getImagePath", async () => {
+    try {
+      // 1) Prefer an existing file path on the clipboard (e.g. copied from
+      //    Finder). macOS exposes this via the NSFilenamesPboardType /
+      //    public.file-url formats.
+      const candidates =
+        process.platform === "darwin"
+          ? [
+              "public.file-url",
+              "NSFilenamesPboardType",
+              "public.utf8-plain-text",
+              "text/uri-list",
+            ]
+          : ["text/uri-list"]
+
+      for (const fmt of candidates) {
+        let raw = ""
+        try {
+          raw = clipboard.read(fmt)
+        } catch {
+          continue
+        }
+        if (!raw) continue
+        const first = raw.split("\n")[0].trim()
+        if (first.startsWith("file://")) {
+          return decodeURIComponent(first.replace(/^file:\/\//, ""))
+        }
+        if (first.startsWith("/")) return first
+        const m = raw.match(/<string>([^<]+)<\/string>/)
+        if (m) return m[1]
+      }
+      return null
+    } catch {
+      return null
+    }
+  })
+
   ipcMain.handle("shell:revealInFinder", (_event, targetPath: string) => {
     if (!targetPath) return false
     try {

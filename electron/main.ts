@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
+import { readFileSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import parcelWatcher from "@parcel/watcher"
 import { ensureDaemonRunning } from "./daemonSupervisor"
@@ -345,10 +346,88 @@ async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
   return { running: false }
 }
 
+type WindowState = {
+  width: number
+  height: number
+  x?: number
+  y?: number
+  isMaximized?: boolean
+}
+
+function windowStatePath(): string {
+  return path.join(app.getPath("userData"), "window-state.json")
+}
+
+function readWindowStateSync(): WindowState | null {
+  try {
+    const raw = readFileSync(windowStatePath(), "utf8")
+    const parsed = JSON.parse(raw)
+    if (
+      parsed &&
+      typeof parsed.width === "number" &&
+      typeof parsed.height === "number" &&
+      parsed.width >= 400 &&
+      parsed.height >= 300
+    ) {
+      return parsed as WindowState
+    }
+  } catch {
+    // missing or corrupt → fall back to defaults
+  }
+  return null
+}
+
+function clampWindowStateToDisplay(state: WindowState): WindowState {
+  if (state.x === undefined || state.y === undefined) return state
+  const displays = screen.getAllDisplays()
+  const onScreen = displays.some((d) => {
+    const a = d.workArea
+    return (
+      state.x! < a.x + a.width &&
+      state.x! + state.width > a.x &&
+      state.y! < a.y + a.height &&
+      state.y! + state.height > a.y
+    )
+  })
+  if (onScreen) return state
+  return { width: state.width, height: state.height, isMaximized: state.isMaximized }
+}
+
+let windowStateWriteTimer: NodeJS.Timeout | undefined
+let lastNormalBounds: { width: number; height: number; x: number; y: number } | null = null
+function persistWindowState(win: BrowserWindow) {
+  if (win.isDestroyed()) return
+  if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {
+    const b = win.getBounds()
+    lastNormalBounds = { width: b.width, height: b.height, x: b.x, y: b.y }
+  }
+  if (windowStateWriteTimer) clearTimeout(windowStateWriteTimer)
+  windowStateWriteTimer = setTimeout(() => {
+    windowStateWriteTimer = undefined
+    if (win.isDestroyed()) return
+    const data: WindowState = {
+      width: lastNormalBounds?.width ?? win.getBounds().width,
+      height: lastNormalBounds?.height ?? win.getBounds().height,
+      x: lastNormalBounds?.x,
+      y: lastNormalBounds?.y,
+      isMaximized: win.isMaximized(),
+    }
+    try {
+      writeFileSync(windowStatePath(), JSON.stringify(data, null, 2), "utf8")
+    } catch (err) {
+      console.error("window state write failed", err)
+    }
+  }, 400)
+}
+
 function createWindow() {
+  const saved = readWindowStateSync()
+  const state = saved ? clampWindowStateToDisplay(saved) : null
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: state?.width ?? 1280,
+    height: state?.height ?? 800,
+    x: state?.x,
+    y: state?.y,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 11 },
     // Dark default so the brief pre-paint frame isn't a jarring white flash
@@ -359,6 +438,38 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  })
+  if (state?.isMaximized) win.maximize()
+  if (state) {
+    const b = win.getBounds()
+    lastNormalBounds = { width: b.width, height: b.height, x: b.x, y: b.y }
+  }
+  const onChange = () => persistWindowState(win)
+  win.on("resize", onChange)
+  win.on("move", onChange)
+  win.on("maximize", onChange)
+  win.on("unmaximize", onChange)
+  win.on("close", () => {
+    if (windowStateWriteTimer) {
+      clearTimeout(windowStateWriteTimer)
+      windowStateWriteTimer = undefined
+    }
+    if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {
+      const b = win.getBounds()
+      lastNormalBounds = { width: b.width, height: b.height, x: b.x, y: b.y }
+    }
+    const data: WindowState = {
+      width: lastNormalBounds?.width ?? win.getBounds().width,
+      height: lastNormalBounds?.height ?? win.getBounds().height,
+      x: lastNormalBounds?.x,
+      y: lastNormalBounds?.y,
+      isMaximized: win.isMaximized(),
+    }
+    try {
+      writeFileSync(windowStatePath(), JSON.stringify(data, null, 2), "utf8")
+    } catch (err) {
+      console.error("window state write failed", err)
+    }
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {

@@ -26,6 +26,10 @@ export type TerminalAgentStatus = {
   running: boolean
   working: boolean
   agentName?: TerminalAgentName
+  /** Timestamp when the current agent task started working. */
+  workStartedAt?: number
+  /** Timestamp when the current agent task completed. */
+  completedAt?: number
   /** True only when an authoritative completion signal was received. */
   completed?: boolean
 }

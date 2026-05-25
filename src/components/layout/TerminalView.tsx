@@ -224,6 +224,8 @@ export function TerminalView({
       prev.running === next.running &&
       prev.working === next.working &&
       prev.agentName === next.agentName &&
+      prev.workStartedAt === next.workStartedAt &&
+      prev.completedAt === next.completedAt &&
       prev.completed === next.completed
     ) {
       return
@@ -260,7 +262,12 @@ export function TerminalView({
     const current = agentStatusRef.current
     if (!current.running || !hasSubmittedToAgentRef.current) return
     lastAgentActivityAtRef.current = now
-    emitAgentStatus({ ...current, working: true })
+    emitAgentStatus({
+      ...current,
+      working: true,
+      workStartedAt: current.workStartedAt ?? now,
+      completedAt: undefined,
+    })
     if (agentWorkingTimerRef.current) {
       window.clearTimeout(agentWorkingTimerRef.current)
     }
@@ -768,6 +775,8 @@ export function TerminalView({
             running: current.running || detected.running,
             working: current.working,
             agentName: current.agentName ?? detected.agentName,
+            workStartedAt: current.workStartedAt,
+            completedAt: undefined,
             completed: false,
           })
           return
@@ -777,6 +786,8 @@ export function TerminalView({
           running: detected.running,
           working: detected.running ? current.working || recentlyActive : false,
           agentName: detected.agentName,
+          workStartedAt: detected.running ? current.workStartedAt : undefined,
+          completedAt: undefined,
           completed: false,
         })
       } catch {
@@ -823,11 +834,14 @@ export function TerminalView({
         // process-name poll catches up.
         activeHookWorkRef.current = true
         hasSubmittedToAgentRef.current = true
-        lastAgentActivityAtRef.current = Date.now()
+        const now = Date.now()
+        lastAgentActivityAtRef.current = now
         emitAgentStatus({
           running: true,
           working: true,
           agentName: event.agentName,
+          workStartedAt: current.workStartedAt ?? now,
+          completedAt: undefined,
           completed: false,
         })
         return
@@ -840,6 +854,8 @@ export function TerminalView({
           running: current.running || activeHookWorkRef.current,
           working: current.working,
           agentName: event.agentName,
+          workStartedAt: current.workStartedAt,
+          completedAt: undefined,
           completed: false,
         })
         return
@@ -852,6 +868,8 @@ export function TerminalView({
         running: current.running,
         working: false,
         agentName: event.agentName,
+        workStartedAt: current.workStartedAt,
+        completedAt: Date.now(),
         completed: true,
       })
     })

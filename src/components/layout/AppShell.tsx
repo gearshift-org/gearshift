@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelRight, X } from "lucide-react"
+import { ProjectAvatar } from "./ProjectAvatar"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { TitleBar } from "./TitleBar"
 import { ThemeToggle } from "./ThemeToggle"
@@ -177,6 +178,17 @@ function playAgentCompleteSound() {
   void audio.play().catch(() => {
     // Sound playback can be blocked until the user has interacted with the app.
   })
+}
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.max(1, Math.round(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
 }
 
 export function AppShell() {
@@ -1352,21 +1364,29 @@ export function AppShell() {
       targetTab?.kind === "terminal"
     ) {
       const terminalName = tabDisplayName(targetTab)
+      const elapsedTime =
+        status.workStartedAt && status.completedAt
+          ? formatDuration(status.completedAt - status.workStartedAt)
+          : null
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
       if (appVisibleAndFocused) {
         console.info("Agent complete: showing in-app toast")
         toast.custom(
           (id) => (
-            <div className="flex w-full min-w-72 items-start gap-2 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg">
+            <div className="relative flex w-full min-w-80 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg">
               <button
                 type="button"
                 onClick={() =>
-                  openAgentDoneTarget(targetProject.id, tabId, paneId)
+                  openAgentDoneTarget(targetProject.id, tabId, paneId, id)
                 }
-                className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
-                <span className="mt-1 size-2 shrink-0 rounded-full bg-emerald-500" />
-                <span className="flex min-w-0 flex-col gap-1">
+                <ProjectAvatar
+                  name={targetProject.name}
+                  path={targetProject.path}
+                  className="size-16 rounded-md text-lg"
+                />
+                <span className="flex min-w-0 flex-col justify-center gap-1 pr-9">
                   <span className="text-sm font-medium">Agent finished</span>
                   <span className="flex min-w-0 items-baseline gap-1 text-xs">
                     <span className="max-w-36 truncate font-semibold text-foreground">
@@ -1377,13 +1397,18 @@ export function AppShell() {
                       {terminalName}
                     </span>
                   </span>
+                  {elapsedTime && (
+                    <span className="text-xs text-muted-foreground">
+                      Completed in {elapsedTime}
+                    </span>
+                  )}
                 </span>
               </button>
               <button
                 type="button"
                 aria-label="Close notification"
                 onClick={() => toast.dismiss(id)}
-                className="-mr-1 -mt-1 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="absolute right-2 top-2 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <X className="size-4" />
               </button>

@@ -3,6 +3,11 @@ import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { SplitSquareHorizontal, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
 import { AgentSpinner } from "./AgentSpinner"
@@ -115,34 +120,48 @@ export function PaneHeader({
         <TerminalHistoryButton sessionId={pane.sessionId} />
       ) : null}
       {showSplit && !editing ? (
-        <button
-          type="button"
-          onMouseDown={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            onSplit()
-          }}
-          aria-label="Split pane"
-          className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-        >
-          <SplitSquareHorizontal className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSplit()
+                }}
+                aria-label="Split pane"
+                className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+              >
+                <SplitSquareHorizontal className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipContent>Split pane</TooltipContent>
+        </Tooltip>
       ) : null}
       {showClose ? (
-        <button
-          type="button"
-          onMouseDown={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            onClose()
-          }}
-          aria-label="Close pane"
-          className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-        >
-          <X className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onClose()
+                }}
+                aria-label="Close pane"
+                className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+              >
+                <X className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipContent>Close pane</TooltipContent>
+        </Tooltip>
       ) : null}
     </div>
   )

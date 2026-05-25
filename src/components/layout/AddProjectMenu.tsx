@@ -13,22 +13,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { shortenHomePath } from "@/lib/pathDisplay"
 import type { RecentProject } from "@/lib/projects"
 
 type Props = {
   recents: RecentProject[]
   onPickRecent: (recent: RecentProject) => void
   onOpenDialog: () => void
-}
-
-function shortenPath(p: string): string {
-  const home = "/Users/"
-  if (p.startsWith(home)) {
-    const rest = p.slice(home.length)
-    const slash = rest.indexOf("/")
-    if (slash >= 0) return "~" + rest.slice(slash)
-  }
-  return p
 }
 
 export function AddProjectMenu({
@@ -68,7 +59,7 @@ export function AddProjectMenu({
                 >
                   <span className="truncate font-medium">{r.name}</span>
                   <span className="truncate text-[10px] text-muted-foreground">
-                    {shortenPath(r.path)}
+                    {shortenHomePath(r.path)}
                   </span>
                 </DropdownMenuItem>
               ))}

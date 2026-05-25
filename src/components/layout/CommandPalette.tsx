@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { FileIcon } from "@/components/icons/FileIcon"
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { shortenHomePath } from "@/lib/pathDisplay"
 import type { PaletteRecents } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
 import type { Project, WorkspaceTab } from "./types"
@@ -209,7 +210,7 @@ export function CommandPalette({
                 <FolderGit2 />
                 <span className="truncate">{p.name}</span>
                 <span className="ml-auto truncate text-xs text-muted-foreground">
-                  {p.path}
+                  {shortenHomePath(p.path)}
                 </span>
               </CommandItem>
             ))}
@@ -219,7 +220,7 @@ export function CommandPalette({
         {filteredTabs.length > 0 && (
           <>
             {filteredProjects.length > 0 && <CommandSeparator />}
-            <CommandGroup heading="Tabs">
+            <CommandGroup heading="Terminals">
               {filteredTabs.map((t) => (
                 <CommandItem
                   key={t.id}
@@ -230,7 +231,7 @@ export function CommandPalette({
                   <span className="truncate">{tabDisplayName(t)}</span>
                   {(t.kind === "diff" || t.kind === "file") && (
                     <span className="ml-auto truncate text-xs text-muted-foreground">
-                      {t.path}
+                      {shortenHomePath(t.path)}
                     </span>
                   )}
                 </CommandItem>
@@ -254,7 +255,7 @@ export function CommandPalette({
                   <FileIcon name={f.split("/").pop() ?? f} />
                   <span className="truncate">{f.split("/").pop()}</span>
                   <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {f}
+                    {shortenHomePath(f)}
                   </span>
                 </CommandItem>
               ))}

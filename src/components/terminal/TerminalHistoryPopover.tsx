@@ -2,6 +2,11 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { History, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { ChatHistoryMessage } from "../../../electron/preload"
 
 type Props = {
@@ -34,19 +39,25 @@ export function TerminalHistoryButton({
 }) {
   if (!sessionId) return null
   return (
-    <TerminalHistoryPopover sessionId={sessionId}>
-      <button
-        type="button"
-        aria-label="Chat history"
-        title="Chat history"
-        onMouseDown={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-      >
-        <History className="size-3.5" />
-      </button>
-    </TerminalHistoryPopover>
+    <Tooltip>
+      <TerminalHistoryPopover sessionId={sessionId}>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Chat history"
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+            >
+              <History className="size-3.5" />
+            </button>
+          }
+        />
+      </TerminalHistoryPopover>
+      <TooltipContent>Chat history</TooltipContent>
+    </Tooltip>
   )
 }
 

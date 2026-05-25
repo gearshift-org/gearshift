@@ -800,6 +800,19 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle("shell:openExternal", async (_event, url: string) => {
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return false
+      }
+      await shell.openExternal(parsed.toString())
+      return true
+    } catch {
+      return false
+    }
+  })
+
   ipcMain.handle("dialog:openProject", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showOpenDialog(win!, {

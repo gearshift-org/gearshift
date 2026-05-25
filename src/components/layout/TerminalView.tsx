@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { SearchAddon } from "@xterm/addon-search"
+import { WebLinksAddon } from "@xterm/addon-web-links"
 import { WebglAddon } from "@xterm/addon-webgl"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { useTheme } from "@/components/theme-provider"
@@ -295,8 +296,14 @@ export function TerminalView({
     })
     const fit = new FitAddon()
     const search = new SearchAddon()
+    const webLinks = new WebLinksAddon((event, uri) => {
+      if (!event.metaKey && !event.ctrlKey) return
+      event.preventDefault()
+      void window.shellApi.openExternal(uri)
+    })
     term.loadAddon(fit)
     term.loadAddon(search)
+    term.loadAddon(webLinks)
     term.open(container)
     termRef.current = term
     fitRef.current = fit
@@ -674,6 +681,7 @@ export function TerminalView({
       titleSub.dispose()
       resultsSub.dispose()
       scrollSub.dispose()
+      webLinks.dispose()
       kittyKeyboardQuerySub.dispose()
       kittyKeyboardPushSub.dispose()
       kittyKeyboardPopSub.dispose()

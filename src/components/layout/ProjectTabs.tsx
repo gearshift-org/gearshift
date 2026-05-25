@@ -157,7 +157,7 @@ function ProjectTabItem({
     summaryTimerRef.current = window.setTimeout(() => {
       setShowSummary(true)
       summaryTimerRef.current = null
-    }, 1000)
+    }, 2000)
   }
 
   const closeSummary = () => {
@@ -180,6 +180,7 @@ function ProjectTabItem({
     <ContextMenu>
       <Popover open={showSummary} onOpenChange={setShowSummary}>
         <PopoverTrigger
+          nativeButton={false}
           render={
             <ContextMenuTrigger
               ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}

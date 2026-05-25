@@ -19,6 +19,8 @@ const shellApi = {
     ipcRenderer.invoke("shell:openInVSCode", path) as Promise<boolean>,
   revealInFinder: (path: string) =>
     ipcRenderer.invoke("shell:revealInFinder", path) as Promise<boolean>,
+  openExternal: (url: string) =>
+    ipcRenderer.invoke("shell:openExternal", url) as Promise<boolean>,
 }
 
 const termApi = {

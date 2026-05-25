@@ -25,7 +25,7 @@ import {
   useTabOpenAnimation,
 } from "./tabSizing"
 import { displayName, tabDisplayName } from "./terminalName"
-import type { TerminalTab, WorkspaceTab } from "./types"
+import type { TerminalAgentName, TerminalTab, WorkspaceTab } from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -38,6 +38,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 type Props = {
   tabs: WorkspaceTab[]
@@ -45,7 +52,7 @@ type Props = {
   animationScopeKey?: string
   openingTabId?: string | null
   onSelect: (id: string) => void
-  onAdd: () => void
+  onAdd: (agentName?: TerminalAgentName) => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
   onCloseOthers?: (id: string) => void
@@ -55,6 +62,17 @@ type Props = {
   onPin?: (id: string) => void
   onOpenInVSCode?: () => void
 }
+
+const AGENT_TERMINAL_OPTIONS: Array<{
+  value: TerminalAgentName
+  label: string
+}> = [
+  { value: "claude", label: "Claude" },
+  { value: "codex", label: "Codex" },
+  { value: "opencode", label: "OpenCode" },
+  { value: "pi", label: "Pi" },
+  { value: "gemini", label: "Gemini" },
+]
 
 type TabItemProps = {
   tab: WorkspaceTab
@@ -359,11 +377,11 @@ export function WorkspaceTabBar({
             ))}
           </SortableContext>
         </DndContext>
-        <Tooltip>
-          <TooltipTrigger
+        <DropdownMenu>
+          <DropdownMenuTrigger
             render={
               <button
-                onClick={onAdd}
+                type="button"
                 aria-label="New terminal"
                 className="group/add sticky right-0 grid h-full w-10 shrink-0 place-items-center bg-background text-muted-foreground"
               >
@@ -373,8 +391,22 @@ export function WorkspaceTabBar({
               </button>
             }
           />
-          <TooltipContent>New terminal</TooltipContent>
-        </Tooltip>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => onAdd()}>
+              <TerminalSquare className="size-3.5" />
+              Terminal
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {AGENT_TERMINAL_OPTIONS.map((agent) => (
+              <DropdownMenuItem
+                key={agent.value}
+                onClick={() => onAdd(agent.value)}
+              >
+                {agent.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   )

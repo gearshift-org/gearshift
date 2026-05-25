@@ -19,7 +19,12 @@ import {
 } from "@/components/ui/tooltip"
 import { tabDisplayName } from "./terminalName"
 import agentCompleteSoundUrl from "@/assets/sounds/agent-complete.wav?url"
-import type { Project, TerminalAgentStatus, WorkspaceTab } from "./types"
+import type {
+  Project,
+  TerminalAgentName,
+  TerminalAgentStatus,
+  WorkspaceTab,
+} from "./types"
 import {
   loadActiveProjectId,
   loadPaletteRecents,
@@ -80,6 +85,20 @@ function makeId() {
 }
 
 const SIDEBAR_REVEAL_OUTSIDE_LIMIT = 500
+const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
+  claude: "claude",
+  codex: "codex",
+  opencode: "opencode",
+  pi: "pi",
+  gemini: "gemini",
+}
+const AGENT_TERMINAL_LABELS: Record<TerminalAgentName, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  opencode: "OpenCode",
+  pi: "Pi",
+  gemini: "Gemini",
+}
 
 function isModifierKey(key: string): boolean {
   return ["Alt", "Control", "Meta", "Shift"].includes(key)
@@ -821,13 +840,16 @@ export function AppShell() {
     })
   }
 
-  const addTerminal = async () => {
+  const addTerminal = async (agentName?: TerminalAgentName) => {
     if (!activeProject) return
     const { id: paneId } = await window.term.create({
       cwd: activeProject.path,
       theme: resolvedTheme,
       projectId: activeProject.id,
     })
+    if (agentName) {
+      window.term.write(paneId, `${AGENT_TERMINAL_COMMANDS[agentName]}\r`)
+    }
     const tabId = makeId()
     setOpeningTerminalTabId(tabId)
     window.setTimeout(() => setOpeningTerminalTabId(null), 300)
@@ -835,6 +857,9 @@ export function AppShell() {
       prev.map((p) => {
         if (p.id !== activeProject.id) return p
         const terminalCount = p.tabs.filter((t) => t.kind === "terminal").length
+        const name = agentName
+          ? AGENT_TERMINAL_LABELS[agentName]
+          : `Terminal ${terminalCount + 1}`
         return {
           ...p,
           tabs: [
@@ -842,7 +867,7 @@ export function AppShell() {
             {
               kind: "terminal" as const,
               id: tabId,
-              name: `Terminal ${terminalCount + 1}`,
+              name,
               panes: [{ id: paneId, sessionId: paneId }],
               activePaneId: paneId,
             },

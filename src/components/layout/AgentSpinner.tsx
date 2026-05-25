@@ -27,7 +27,7 @@ export function AgentSpinner({
       aria-label={label}
       title={label}
       className={cn(
-        "inline-grid size-3.5 shrink-0 place-items-center font-mono text-xs leading-none text-orange-500 dark:text-orange-400",
+        "inline-grid size-4 shrink-0 place-items-center font-mono text-sm leading-none text-orange-500 dark:text-orange-400",
         className,
       )}
     >

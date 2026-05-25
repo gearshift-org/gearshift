@@ -1554,6 +1554,10 @@ export function AppShell() {
   const { findActionForEvent } = useKeybindings()
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Let focused controls/editors handle their own shortcuts first. For
+      // example, CodeMirror's Mod+S save binding calls preventDefault(), so a
+      // user-customized Mod+S sidebar binding must not also run here.
+      if (e.defaultPrevented) return
       const target = e.target as HTMLElement | null
       if (target?.dataset?.keycapture === "true") return
       const action = findActionForEvent(e)

@@ -1,4 +1,9 @@
-import type { TerminalPane, TerminalTab, WorkspaceTab } from "./types"
+import type {
+  TerminalAgentName,
+  TerminalPane,
+  TerminalTab,
+  WorkspaceTab,
+} from "./types"
 
 // Strip leading sparkle/asterisk-style glyphs that some TUIs (e.g. Claude Code)
 // prepend to their window title — we already render a dedicated agent icon
@@ -11,6 +16,23 @@ const LEADING_SPARKLE_RE =
 // be left with a leading separator. Strip those too.
 const LEADING_SEPARATOR_RE = /^[·•‧⋅∙・⸱⸳◦●○◇◆▪▫►▶–—−‒|]\s*/
 const SHELL_TITLE_RE = /^[^@:\s]+@[^:]+:(.+)$/
+
+function agentDisplayName(agentName: TerminalAgentName | undefined): string | undefined {
+  switch (agentName) {
+    case "claude":
+      return "Claude"
+    case "codex":
+      return "Codex"
+    case "opencode":
+      return "OpenCode"
+    case "pi":
+      return "Pi"
+    case "gemini":
+      return "Gemini"
+    default:
+      return undefined
+  }
+}
 
 export function formatAutoTitle(title: string | undefined): string | undefined {
   if (!title) return undefined
@@ -45,7 +67,7 @@ export function displayName(t: TerminalTab): string {
   const activePane =
     t.panes.find((p) => p.id === t.activePaneId) ?? t.panes[0]
   const autoFromPane = formatAutoTitle(activePane?.autoTitle)
-  return autoFromPane || t.name
+  return autoFromPane || agentDisplayName(activePane?.agentStatus?.agentName) || t.name
 }
 
 /** Display name for any workspace tab kind. */
@@ -62,5 +84,7 @@ export function paneDisplayName(
   if (pane.customName?.trim()) return pane.customName.trim()
   const auto = formatAutoTitle(pane.autoTitle)
   if (auto) return auto
+  const agentName = agentDisplayName(pane.agentStatus?.agentName)
+  if (agentName) return agentName
   return `Pane ${index + 1}`
 }

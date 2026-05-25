@@ -492,7 +492,11 @@ export function TerminalView({
       // modified-Enter sequence instead of a normal Enter.
       if (key === "enter" && shift && !ctrl && !alt) {
         e.preventDefault()
-        window.term.write(sessionId, modifiedEnterSequence)
+        const enterSequence =
+          agentStatusRef.current.agentName === "pi"
+            ? "\x1b[13;2u"
+            : modifiedEnterSequence
+        window.term.write(sessionId, enterSequence)
         return false
       }
 

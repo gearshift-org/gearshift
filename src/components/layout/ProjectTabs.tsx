@@ -127,6 +127,8 @@ function ProjectTabItem({
   const [, setColorVersion] = useState(0)
   const [showSummary, setShowSummary] = useState(false)
   const summaryTimerRef = useRef<number | null>(null)
+  const triggerRef = useRef<HTMLDivElement | null>(null)
+  const summaryTimerOpenRef = useRef(false)
   const {
     attributes,
     listeners,
@@ -155,9 +157,10 @@ function ProjectTabItem({
       window.clearTimeout(summaryTimerRef.current)
     }
     summaryTimerRef.current = window.setTimeout(() => {
+      summaryTimerOpenRef.current = true
       setShowSummary(true)
       summaryTimerRef.current = null
-    }, 2000)
+    }, 3000)
   }
 
   const closeSummary = () => {
@@ -165,7 +168,18 @@ function ProjectTabItem({
       window.clearTimeout(summaryTimerRef.current)
       summaryTimerRef.current = null
     }
+    summaryTimerOpenRef.current = false
     setShowSummary(false)
+    triggerRef.current?.blur()
+  }
+
+  const handleSummaryOpenChange = (open: boolean) => {
+    if (open && !summaryTimerOpenRef.current) return
+    summaryTimerOpenRef.current = false
+    setShowSummary(open)
+    if (!open) {
+      triggerRef.current?.blur()
+    }
   }
 
   const randomizeAvatarColor = () => {
@@ -178,19 +192,22 @@ function ProjectTabItem({
 
   return (
     <ContextMenu>
-      <Popover open={showSummary} onOpenChange={setShowSummary}>
+      <Popover open={showSummary} onOpenChange={handleSummaryOpenChange}>
         <PopoverTrigger
           nativeButton={false}
           render={
             <ContextMenuTrigger
-              ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}
+              ref={(node) => {
+                setNodeRef(node)
+                triggerRef.current = node
+              }}
               style={style}
               onClick={() => onSelect(p.id)}
               onPointerEnter={openSummaryAfterDelay}
               onPointerLeave={closeSummary}
               onPointerDown={closeSummary}
               className={cn(
-                "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
+                "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
                 isActive
                   ? "bg-secondary text-foreground"
                   : "text-foreground hover:bg-accent/40",

@@ -280,6 +280,7 @@ function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
   if (
     basenames.some((base) => base === "pi") ||
     hasPathSegment("pi-coding-agent") ||
+    hasPathSegment("@earendil-works/pi-coding-agent") ||
     hasPathSegment("@mariozechner/pi-coding-agent")
   ) {
     return "pi"

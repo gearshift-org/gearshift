@@ -1073,6 +1073,25 @@ app.whenReady().then(async () => {
     return result.filePaths[0]
   })
 
+  ipcMain.handle(
+    "dialog:confirmTerminalClose",
+    async (event, opts: { count?: number }) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const count = Math.max(1, opts.count ?? 1)
+      const plural = count === 1 ? "terminal has" : "terminals have"
+      const result = await dialog.showMessageBox(win!, {
+        type: "warning",
+        title: "Close busy terminal?",
+        message: `${count} ${plural} a coding agent still working.`,
+        detail: "Closing will stop the running terminal session.",
+        buttons: ["Close", "Cancel"],
+        defaultId: 0,
+        noLink: true,
+      })
+      return result.response === 0
+    }
+  )
+
   ipcMain.handle("fs:watchProject", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {

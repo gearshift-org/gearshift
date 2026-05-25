@@ -12,6 +12,8 @@ export type ChatHistoryMessage = {
 const dialogApi = {
   openProject: () =>
     ipcRenderer.invoke("dialog:openProject") as Promise<string | null>,
+  confirmTerminalClose: (opts: { count: number }) =>
+    ipcRenderer.invoke("dialog:confirmTerminalClose", opts) as Promise<boolean>,
 }
 
 const shellApi = {

@@ -1555,7 +1555,13 @@ export function AppShell() {
       closeTab(activeTabId)
     }
     splitActiveTerminalRef.current = () => {
-      if (!activeProject || !activeTabId) return
+      if (!activeProject) return
+      const hasTerminal = activeProject.tabs.some((t) => t.kind === "terminal")
+      if (!hasTerminal) {
+        addTerminalRef.current()
+        return
+      }
+      if (!activeTabId) return
       const active = activeProject.tabs.find((t) => t.id === activeTabId)
       if (active?.kind === "terminal") {
         void splitTerminalPane(activeTabId)

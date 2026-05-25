@@ -13,6 +13,8 @@ import {
   SortableContext,
 } from "@dnd-kit/sortable"
 import { cn } from "@/lib/utils"
+import { KeyChip } from "@/components/keybindings/KeyChip"
+import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import {
@@ -354,6 +356,7 @@ export function WorkspacePane({
   onReorderPanes,
   onOpenFile,
 }: Props) {
+  const { bindings } = useKeybindings()
   const hasTabs = !!project?.tabs.length
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
   const isDiffActive = activeTab?.kind === "diff"
@@ -520,9 +523,15 @@ export function WorkspacePane({
             }}
             className="group grid h-full cursor-pointer place-items-center"
           >
-            <span className="text-xs text-muted-foreground transition-colors group-hover:text-foreground">
-              Click here to start a new terminal
-            </span>
+            <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+              <span>Click here to start a new terminal</span>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span>Press</span>
+                <KeyChip accelerator={bindings["terminal.new"]} />
+                <span>or</span>
+                <KeyChip accelerator={bindings["terminal.split"]} />
+              </div>
+            </div>
           </div>
         )}
         {!project && (

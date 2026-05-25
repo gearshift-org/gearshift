@@ -10,6 +10,7 @@ import type {
   ShellApi,
   StateApi,
   TermApi,
+  UpdaterApi,
 } from "../../electron/preload"
 
 declare global {
@@ -25,6 +26,7 @@ declare global {
     fsApi: FsApi
     stateApi?: StateApi
     menuApi?: MenuApi
+    updaterApi?: UpdaterApi
   }
 }
 

@@ -66,9 +66,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gearshift-macos-arm64-signed
-          path: |
-            release/*.dmg
-            release/*.dmg.blockmap
+          path: release/*.dmg
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -78,6 +76,7 @@ jobs:
           files: |
             release/*.dmg
             release/*.dmg.blockmap
+            release/latest-mac.yml
           generate_release_notes: true
 
       - name: Clean up keychain & key

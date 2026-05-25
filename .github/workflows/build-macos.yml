@@ -42,9 +42,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gearshift-macos-arm64
-          path: |
-            release/*.dmg
-            release/*.dmg.blockmap
+          path: release/*.dmg
           if-no-files-found: error
 
       - name: Publish GitHub Release

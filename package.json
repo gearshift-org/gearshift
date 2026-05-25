@@ -24,6 +24,11 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "gearshift-org",
+      "repo": "gearshift"
+    },
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
@@ -52,6 +57,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "codemirror": "^6.0.2",
     "drizzle-orm": "^0.45.2",
+    "electron-updater": "^6.8.3",
     "material-icon-theme": "^5.35.0",
     "next-themes": "^0.4.6",
     "node-pty": "^1.1.0",

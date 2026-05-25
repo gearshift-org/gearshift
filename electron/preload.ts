@@ -401,6 +401,33 @@ contextBridge.exposeInMainWorld("fsApi", fsApi)
 contextBridge.exposeInMainWorld("stateApi", stateApi)
 contextBridge.exposeInMainWorld("menuApi", menuApi)
 
+type UpdaterState =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "available"; version: string }
+  | { status: "downloading"; percent: number }
+  | { status: "ready"; version: string }
+  | { status: "error"; message: string }
+
+const updaterApi = {
+  getState: () => ipcRenderer.invoke("updater:getState") as Promise<UpdaterState>,
+  check: () => ipcRenderer.invoke("updater:check") as Promise<UpdaterState>,
+  quitAndInstall: () =>
+    ipcRenderer.invoke("updater:quitAndInstall") as Promise<{ ok: boolean }>,
+  onState: (cb: (state: UpdaterState) => void) => {
+    const handler = (_: unknown, state: UpdaterState) => cb(state)
+    ipcRenderer.on("updater:state", handler)
+    return () => {
+      ipcRenderer.removeListener("updater:state", handler)
+    }
+  },
+}
+
+contextBridge.exposeInMainWorld("updaterApi", updaterApi)
+
+export type UpdaterApi = typeof updaterApi
+export type { UpdaterState }
+
 export type DialogApi = typeof dialogApi
 export type ShellApi = typeof shellApi
 export type TermApi = typeof termApi

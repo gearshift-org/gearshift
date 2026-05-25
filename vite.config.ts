@@ -22,6 +22,7 @@ export default defineConfig({
               external: [
                 "node-pty",
                 "electron",
+                "electron-updater",
                 "@parcel/watcher",
                 "@libsql/client",
               ],

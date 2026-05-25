@@ -16,6 +16,7 @@ import fs from "node:fs/promises"
 import { readFileSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import parcelWatcher from "@parcel/watcher"
+import { initUpdater } from "./updater"
 import { ensureDaemonRunning } from "./daemonSupervisor"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
@@ -869,6 +870,7 @@ async function flushState() {
 
 app.whenReady().then(async () => {
   buildMenu()
+  initUpdater()
   // The socket server must be listening before any agent tries to connect, so
   // we still await it — but it's just a Unix-socket bind, milliseconds.
   try {

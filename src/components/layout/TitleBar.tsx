@@ -2,6 +2,7 @@ import { PanelRight } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { ProjectTabs } from "./ProjectTabs"
 import { ThemeToggle } from "./ThemeToggle"
+import { UpdateButton } from "./UpdateButton"
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +57,7 @@ export function TitleBar({
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
       <div className="w-[88px] shrink-0" />
+      <UpdateButton />
       <ProjectTabs
         projects={projects}
         activeId={activeProjectId}

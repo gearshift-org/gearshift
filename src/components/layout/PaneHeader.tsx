@@ -5,6 +5,7 @@ import { SplitSquareHorizontal, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
+import { AgentSpinner } from "./AgentSpinner"
 import type { TerminalPane } from "./types"
 
 type Props = {
@@ -65,7 +66,7 @@ export function PaneHeader({
   }
   const cancel = () => setEditing(false)
 
-  const agentDot = pane.agentStatus?.working ? "bg-emerald-500" : null
+  const agentWorking = pane.agentStatus?.working
 
   return (
     <div
@@ -81,9 +82,7 @@ export function PaneHeader({
         isActive && "bg-muted/60 text-foreground",
       )}
     >
-      {agentDot ? (
-        <span className={cn("size-1.5 shrink-0 rounded-full", agentDot)} />
-      ) : null}
+      {agentWorking ? <AgentSpinner className="mr-0.5" /> : null}
       {editing ? (
         <input
           ref={inputRef}

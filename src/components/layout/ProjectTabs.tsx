@@ -28,6 +28,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { AddProjectMenu } from "./AddProjectMenu"
+import { AgentSpinner } from "./AgentSpinner"
 import {
   getProjectColor,
   randomizeProjectColor,
@@ -55,11 +56,21 @@ function readableTextOn(hex: string): string {
   return lum > 0.6 ? "#000000" : "#ffffff"
 }
 
+function tabHasWorkingAgent(tab: Project["tabs"][number]): boolean {
+  return (
+    tab.kind === "terminal" &&
+    tab.panes.some((pane) => pane.agentStatus?.working)
+  )
+}
+
 function projectHasWorkingAgent(project: Project): boolean {
+  return project.tabs.some(tabHasWorkingAgent)
+}
+
+function projectHasHiddenWorkingAgent(project: Project): boolean {
+  const activeTab = project.tabs.find((tab) => tab.id === project.activeTabId)
   return project.tabs.some(
-    (tab) =>
-      tab.kind === "terminal" &&
-      tab.panes.some((pane) => pane.agentStatus?.working),
+    (tab) => tabHasWorkingAgent(tab) && tab.id !== activeTab?.id,
   )
 }
 
@@ -132,7 +143,9 @@ function ProjectTabItem({
     randomizeProjectColor(p.path)
     setColorVersion((v) => v + 1)
   }
-  const hasWorkingAgent = projectHasWorkingAgent(p)
+  const hasWorkingAgent = isActive
+    ? projectHasHiddenWorkingAgent(p)
+    : projectHasWorkingAgent(p)
   const hasDoneAgent = projectHasDoneAgent(p)
   const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
 
@@ -164,16 +177,7 @@ function ProjectTabItem({
             </span>
           )
         })()}
-        {hasWorkingAgent && (
-          <span
-            aria-label="Coding agent working"
-            title="Coding agent working"
-            className="relative -ml-0.5 grid size-2.5 shrink-0 place-items-center"
-          >
-            <span className="absolute size-2.5 animate-ping rounded-full bg-orange-400/65" />
-            <span className="relative size-1.5 rounded-full bg-orange-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
-          </span>
-        )}
+        {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
         {!hasWorkingAgent && hasDoneAgent && (
           <span
             aria-label="Coding agent done"

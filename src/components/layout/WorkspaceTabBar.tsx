@@ -16,6 +16,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
+import { AgentSpinner } from "./AgentSpinner"
 import { displayName, tabDisplayName } from "./terminalName"
 import type { TerminalTab, WorkspaceTab } from "./types"
 import {
@@ -104,6 +105,10 @@ function WorkspaceTabItem({
   const isTerminal = t.kind === "terminal"
   const isPreview =
     (t.kind === "diff" || t.kind === "file") && t.preview === true
+  const hasHiddenWorkingAgent =
+    isTerminal &&
+    !isActive &&
+    t.panes.some((pane) => pane.agentStatus?.working)
   const {
     attributes,
     listeners,
@@ -143,6 +148,7 @@ function WorkspaceTabItem({
         {...listeners}
       >
         <TabIcon tab={t} />
+        {hasHiddenWorkingAgent ? <AgentSpinner className="-ml-1" /> : null}
         {isRenaming && isTerminal ? (
           <input
             ref={inputRef}

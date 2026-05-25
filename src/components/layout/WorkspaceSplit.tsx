@@ -124,14 +124,12 @@ export function WorkspaceSplit({
     document.body.style.userSelect = "none"
   }
 
-  const activeProjectHasTerminals = !!activeProject?.tabs.some(
-    (tab) => tab.kind === "terminal"
-  )
+  const activeProjectHasTabs = !!activeProject?.tabs.length
 
   const workspaceSection = (
     <div className="flex h-full flex-col">
       {titleBar}
-      {activeProjectHasTerminals && workspaceTabs}
+      {activeProjectHasTabs && workspaceTabs}
       <div className="relative min-h-0 flex-1">
         {projects.map((p) => (
           <div

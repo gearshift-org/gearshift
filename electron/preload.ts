@@ -284,6 +284,11 @@ const gitApi = {
       ok: boolean
       error?: string
     }>,
+  openBranchOnGitHub: (cwd: string, branch: string) =>
+    ipcRenderer.invoke("git:openBranchOnGitHub", cwd, branch) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   createPullRequest: (cwd: string, branch: string) =>
     ipcRenderer.invoke("git:createPullRequest", cwd, branch) as Promise<{
       ok: boolean

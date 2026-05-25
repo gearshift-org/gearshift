@@ -344,13 +344,13 @@ export function WorkspacePane({
   onReorderPanes,
   onOpenFile,
 }: Props) {
-  const hasTerminals = !!project?.tabs.some((t) => t.kind === "terminal")
+  const hasTabs = !!project?.tabs.length
   const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
   const isDiffActive = activeTab?.kind === "diff"
   // Terminal tabs render their own PaneHeader row (single or split), so the
   // shared header would just stack a redundant row above it. When a project has
-  // no terminals, the empty state owns the full page and should not show a header.
-  const hideSharedHeader = !hasTerminals || activeTab?.kind === "terminal"
+  // no tabs, the empty state owns the full page and should not show a header.
+  const hideSharedHeader = !hasTabs || activeTab?.kind === "terminal"
 
   // Per-diff-tab view mode, remembered while the tab exists; defaults to the
   // last-persisted mode so the user's choice survives restarts.
@@ -418,7 +418,7 @@ export function WorkspacePane({
       )}
       <div className="relative flex-1">
         {project &&
-          hasTerminals &&
+          hasTabs &&
           project.tabs.map((t) => (
             <div
               key={t.id}
@@ -445,17 +445,25 @@ export function WorkspacePane({
               />
             </div>
           ))}
-        {project && !hasTerminals && (
-          <div className="grid h-full place-items-center">
+        {project && !hasTabs && (
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Start terminal"
+            onClick={onAddTerminal}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onAddTerminal?.()
+              }
+            }}
+            className="grid h-full cursor-pointer place-items-center"
+          >
             <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
               <span>No terminals</span>
-              <button
-                type="button"
-                onClick={onAddTerminal}
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40"
-              >
+              <span className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40">
                 Start terminal
-              </button>
+              </span>
             </div>
           </div>
         )}

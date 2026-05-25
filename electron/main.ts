@@ -1306,6 +1306,26 @@ app.whenReady().then(async () => {
   )
 
   ipcMain.handle(
+    "git:openBranchOnGitHub",
+    async (_event, cwd: string, branch: string) => {
+      const currentBranch = branch?.trim()
+      if (!cwd || !currentBranch) {
+        return { ok: false, error: "no-branch" }
+      }
+      try {
+        await runGh(cwd, ["browse", "--branch", currentBranch])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "open branch failed",
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
     "git:createPullRequest",
     async (_event, cwd: string, branch: string) => {
       const currentBranch = branch?.trim()

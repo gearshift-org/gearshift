@@ -222,6 +222,20 @@ export function TerminalView({
     onAgentStatusChangeRef.current?.(next)
   }, [])
 
+  const clearAgentWorking = useCallback(() => {
+    if (agentWorkingTimerRef.current) {
+      window.clearTimeout(agentWorkingTimerRef.current)
+      agentWorkingTimerRef.current = undefined
+    }
+    activeHookWorkRef.current = false
+    lastAgentActivityAtRef.current = 0
+    hasSubmittedToAgentRef.current = false
+    const current = agentStatusRef.current
+    if (current.working) {
+      emitAgentStatus({ ...current, working: false, completed: false })
+    }
+  }, [emitAgentStatus])
+
   const markAgentWorking = useCallback(() => {
     const now = Date.now()
     if (now < suppressAgentActivityUntilRef.current) return
@@ -582,7 +596,9 @@ export function TerminalView({
       if (current.running) {
         const now = Date.now()
         lastUserInputAtRef.current = now
-        if (d.includes("\r")) {
+        if (d.includes("\x03")) {
+          clearAgentWorking()
+        } else if (d.includes("\r")) {
           hasSubmittedToAgentRef.current = true
           lastAgentSubmitAtRef.current = now
         } else {
@@ -703,7 +719,7 @@ export function TerminalView({
       searchRef.current = null
       emitAgentStatus({ running: false, working: false, completed: false })
     }
-  }, [sessionId, openSearch, markAgentWorking, emitAgentStatus])
+  }, [sessionId, openSearch, markAgentWorking, clearAgentWorking, emitAgentStatus])
 
   useEffect(() => {
     const term = termRef.current

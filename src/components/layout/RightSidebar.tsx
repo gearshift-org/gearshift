@@ -5,6 +5,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ExternalLink,
   GitBranch,
   GitPullRequest,
   Loader2,
@@ -112,6 +113,7 @@ export function RightSidebar({
   const [pullRequestBusy, setPullRequestBusy] = useState<
     null | "create" | "open"
   >(null)
+  const [githubBranchBusy, setGithubBranchBusy] = useState(false)
   const optimisticMovesRef = useRef<OptimisticGitFileMove[]>([])
   const optimisticRemovalsRef = useRef<OptimisticGitFileRemoval[]>([])
 
@@ -575,6 +577,18 @@ export function RightSidebar({
     }
   }, [cwd, currentBranch, canCreatePullRequest, pullRequestBusy, runRefresh])
 
+  const openBranchOnGitHub = useCallback(async () => {
+    if (!cwd || !currentBranch || githubBranchBusy) return
+    setGithubBranchBusy(true)
+    setActionError(null)
+    try {
+      const res = await window.git.openBranchOnGitHub(cwd, currentBranch)
+      if (!res.ok) setActionError(res.error ?? "Open GitHub failed")
+    } finally {
+      setGithubBranchBusy(false)
+    }
+  }, [cwd, currentBranch, githubBranchBusy])
+
   const sync = useCallback(async () => {
     if (!cwd || busy) return
     setBusy(true)
@@ -679,6 +693,13 @@ export function RightSidebar({
                     onCreate={createBranch}
                   />
                 </div>
+                {ghAvailable && currentBranch && (
+                  <GitHubBranchAction
+                    branch={currentBranch}
+                    busy={githubBranchBusy}
+                    onOpen={openBranchOnGitHub}
+                  />
+                )}
                 {ghAvailable && (pullRequest || canCreatePullRequest) && (
                   <PullRequestAction
                     pullRequest={pullRequest}
@@ -892,6 +913,42 @@ export function RightSidebar({
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function GitHubBranchAction({
+  branch,
+  busy,
+  onOpen,
+}: {
+  branch: string
+  busy: boolean
+  onOpen: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            aria-label={`Open ${branch} on GitHub`}
+            onClick={onOpen}
+            className="h-8 shrink-0 gap-1.5 px-2 text-xs"
+          >
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <ExternalLink className="size-3.5" />
+            )}
+            <span>GitHub</span>
+          </Button>
+        }
+      />
+      <TooltipContent side="bottom">Open current branch on GitHub</TooltipContent>
+    </Tooltip>
   )
 }
 

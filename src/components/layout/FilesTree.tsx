@@ -1,13 +1,21 @@
 import {
   createContext,
+  memo,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight, ChevronsDownUp } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  Search,
+  X,
+} from "lucide-react"
 import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
@@ -262,9 +270,82 @@ type Props = {
   onOpenFile: (relPath: string) => void
 }
 
+function fileTreeAllFilesQueryKey(cwd: string) {
+  return ["file-tree-all", cwd] as const
+}
+
 export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   const queryClient = useQueryClient()
   const [collapseSignal, setCollapseSignal] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  const allFilesQuery = useQuery({
+    queryKey: fileTreeAllFilesQueryKey(cwd),
+    enabled: searchOpen,
+    queryFn: async () => {
+      const res = await window.fsApi.listAllFiles(cwd)
+      return res.ok ? res.files : []
+    },
+  })
+
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    }
+  }, [searchOpen])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.shiftKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault()
+        setSearchOpen(true)
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery("")
+  }
+
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [deferredQuery, setDeferredQuery] = useState("")
+  useEffect(() => {
+    const id = window.setTimeout(() => setDeferredQuery(query), 80)
+    return () => window.clearTimeout(id)
+  }, [query])
+
+  const trimmedQuery = deferredQuery.trim().toLowerCase()
+  const filtering = searchOpen && trimmedQuery.length > 0
+
+  const indexedFiles = useMemo(() => {
+    const files = allFilesQuery.data ?? []
+    return files.map((path) => ({ path, lower: path.toLowerCase() }))
+  }, [allFilesQuery.data])
+
+  const matches = useMemo(() => {
+    if (!filtering) return []
+    const out: string[] = []
+    for (const f of indexedFiles) {
+      if (f.lower.includes(trimmedQuery)) {
+        out.push(f.path)
+        if (out.length >= 150) break
+      }
+    }
+    return out
+  }, [filtering, indexedFiles, trimmedQuery])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [matches])
 
   useEffect(() => {
     let active = true
@@ -281,6 +362,9 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
         void queryClient.invalidateQueries({
           queryKey: fileTreeProjectQueryKey(cwd),
         })
+        void queryClient.invalidateQueries({
+          queryKey: fileTreeAllFilesQueryKey(cwd),
+        })
       }, 300)
     })
     return () => {
@@ -295,33 +379,168 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <span>Files</span>
-        <button
-          type="button"
-          onClick={() => setCollapseSignal((n) => n + 1)}
-          aria-label="Collapse all folders"
-          title="Collapse all folders"
-          className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-        >
-          <ChevronsDownUp className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSearchOpen((v) => !v)}
+            aria-label="Search files"
+            aria-pressed={searchOpen}
+            title="Search files"
+            className={cn(
+              "grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+              searchOpen && "bg-foreground/10 text-foreground"
+            )}
+          >
+            <Search className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapseSignal((n) => n + 1)}
+            aria-label="Collapse all folders"
+            title="Collapse all folders"
+            className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+          >
+            <ChevronsDownUp className="size-3.5" />
+          </button>
+        </div>
       </div>
-      <CollapseSignalContext.Provider value={collapseSignal}>
+      {searchOpen && (
+        <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-popover px-2 text-xs">
+          <Search className="size-3 shrink-0 text-muted-foreground" />
+          <input
+            ref={searchInputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault()
+                closeSearch()
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault()
+                setSelectedIndex((i) =>
+                  matches.length === 0 ? 0 : (i + 1) % matches.length
+                )
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault()
+                setSelectedIndex((i) =>
+                  matches.length === 0
+                    ? 0
+                    : (i - 1 + matches.length) % matches.length
+                )
+              } else if (e.key === "Enter") {
+                e.preventDefault()
+                const target = matches[selectedIndex]
+                if (target) onOpenFile(target)
+              }
+            }}
+            placeholder="Find file"
+            className="min-w-0 flex-1 bg-transparent px-1 py-0.5 outline-none placeholder:text-muted-foreground"
+          />
+          {filtering && (
+            <span className="px-1 text-muted-foreground">{matches.length}</span>
+          )}
+          <button
+            type="button"
+            onClick={closeSearch}
+            aria-label="Close search"
+            className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
+      {filtering ? (
         <ScrollArea className="min-h-0 flex-1">
-          <FileTreeContextMenu absPath={cwd}>
-            <div className="min-h-full">
-              <FolderNode
-                key={cwd}
+          <div className="min-h-full py-1">
+            {allFilesQuery.isLoading && (
+              <div className="px-3 py-1 text-xs text-muted-foreground">
+                Loading…
+              </div>
+            )}
+            {!allFilesQuery.isLoading && matches.length === 0 && (
+              <div className="px-3 py-1 text-xs text-muted-foreground">
+                No matches
+              </div>
+            )}
+            {matches.map((rel, i) => (
+              <SearchResultRow
+                key={rel}
                 cwd={cwd}
-                absPath={cwd}
-                relPath=""
-                depth={0}
+                relPath={rel}
+                active={rel === activePath}
+                selected={i === selectedIndex}
                 onOpenFile={onOpenFile}
-                activePath={activePath}
               />
-            </div>
-          </FileTreeContextMenu>
+            ))}
+          </div>
         </ScrollArea>
-      </CollapseSignalContext.Provider>
+      ) : (
+        <CollapseSignalContext.Provider value={collapseSignal}>
+          <ScrollArea className="min-h-0 flex-1">
+            <FileTreeContextMenu absPath={cwd}>
+              <div className="min-h-full">
+                <FolderNode
+                  key={cwd}
+                  cwd={cwd}
+                  absPath={cwd}
+                  relPath=""
+                  depth={0}
+                  onOpenFile={onOpenFile}
+                  activePath={activePath}
+                />
+              </div>
+            </FileTreeContextMenu>
+          </ScrollArea>
+        </CollapseSignalContext.Provider>
+      )}
     </div>
   )
 }
+
+const SearchResultRow = memo(function SearchResultRow({
+  cwd,
+  relPath,
+  active,
+  selected,
+  onOpenFile,
+}: {
+  cwd: string
+  relPath: string
+  active: boolean
+  selected: boolean
+  onOpenFile: (relPath: string) => void
+}) {
+  const absPath = joinPath(cwd, relPath)
+  const name = relPath.split("/").pop() ?? relPath
+  const dir = relPath.includes("/")
+    ? relPath.slice(0, relPath.length - name.length - 1)
+    : ""
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView({ block: "nearest" })
+  }, [selected])
+  return (
+    <FileTreeContextMenu absPath={absPath}>
+      <button
+        ref={ref}
+        type="button"
+        draggable
+        onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
+        onClick={() => onOpenFile(relPath)}
+        className={cn(
+          "flex w-full items-center gap-1 px-3 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+          selected && "bg-accent/60",
+          active && "bg-foreground/10 dark:bg-foreground/15"
+        )}
+      >
+        <FileIcon name={name} className="size-4 shrink-0" />
+        <span className="truncate">{name}</span>
+        {dir && (
+          <span className="ml-auto truncate pl-2 text-[10px] text-muted-foreground">
+            {dir}
+          </span>
+        )}
+      </button>
+    </FileTreeContextMenu>
+  )
+})

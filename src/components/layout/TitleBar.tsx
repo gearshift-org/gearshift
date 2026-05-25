@@ -22,6 +22,7 @@ type Props = {
   onCloseOtherProjects?: (id: string) => void
   onCloseProjectsToRight?: (id: string) => void
   onOpenProjectInVSCode?: (id: string) => void
+  onRevealProjectInFinder?: (id: string) => void
   onReorderProjects?: (fromId: string, toId: string) => void
   sidebarOpen?: boolean
   onToggleSidebar?: () => void
@@ -41,6 +42,7 @@ export function TitleBar({
   onCloseOtherProjects,
   onCloseProjectsToRight,
   onOpenProjectInVSCode,
+  onRevealProjectInFinder,
   onReorderProjects,
   sidebarOpen,
   onToggleSidebar,
@@ -66,6 +68,7 @@ export function TitleBar({
         onCloseOthers={onCloseOtherProjects}
         onCloseToRight={onCloseProjectsToRight}
         onOpenInVSCode={onOpenProjectInVSCode}
+        onRevealInFinder={onRevealProjectInFinder}
         onReorder={onReorderProjects}
       />
       <div className="flex-1" />

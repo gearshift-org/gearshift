@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactElement } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
+import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { setPathDragData } from "@/lib/pathDrag"
 import { cn } from "@/lib/utils"
@@ -61,31 +69,37 @@ function FolderNode({
   })
   const entries = entriesQuery.data
 
+  const folderButton = depth > 0 && (
+    <button
+      type="button"
+      draggable
+      onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
+      onClick={() => setManuallyOpen((v) => !v)}
+      className={cn(
+        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
+      )}
+      style={{ paddingLeft: depth * 12 }}
+    >
+      {open ? (
+        <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+      ) : (
+        <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+      )}
+      <FolderIcon
+        name={relPath.split("/").pop() ?? relPath}
+        open={open}
+        className="size-4 shrink-0"
+      />
+      <span className="truncate">{relPath.split("/").pop()}</span>
+    </button>
+  )
+
   return (
     <div>
-      {depth > 0 && (
-        <button
-          type="button"
-          draggable
-          onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
-          onClick={() => setManuallyOpen((v) => !v)}
-          className={cn(
-            "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
-          )}
-          style={{ paddingLeft: depth * 12 }}
-        >
-          {open ? (
-            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
-          )}
-          <FolderIcon
-            name={relPath.split("/").pop() ?? relPath}
-            open={open}
-            className="size-4 shrink-0"
-          />
-          <span className="truncate">{relPath.split("/").pop()}</span>
-        </button>
+      {folderButton && (
+        <FileTreeContextMenu absPath={absPath}>
+          {folderButton}
+        </FileTreeContextMenu>
       )}
       {open && (
         <div>
@@ -131,6 +145,45 @@ function FolderNode({
   )
 }
 
+function FileTreeContextMenu({
+  absPath,
+  children,
+}: {
+  absPath: string
+  children: ReactElement
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={children} />
+      <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+        <ContextMenuItem
+          onClick={() => {
+            void window.shellApi.openInVSCode(absPath)
+          }}
+        >
+          <VSCodeIcon className="size-3.5" />
+          Open in VS Code
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => {
+            void window.shellApi.revealInFinder(absPath)
+          }}
+        >
+          Reveal in Finder
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() => {
+            void navigator.clipboard.writeText(absPath)
+          }}
+        >
+          Copy Path
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
 function FileNode({
   name,
   absPath,
@@ -154,21 +207,23 @@ function FileNode({
   }, [active])
 
   return (
-    <button
-      ref={ref}
-      type="button"
-      draggable
-      onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
-      onClick={() => onOpenFile(relPath)}
-      className={cn(
-        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
-        active && "bg-foreground/10 dark:bg-foreground/15"
-      )}
-      style={{ paddingLeft: (depth + 1) * 12 + 12 }}
-    >
-      <FileIcon name={name} className="size-4 shrink-0" />
-      <span className="truncate">{name}</span>
-    </button>
+    <FileTreeContextMenu absPath={absPath}>
+      <button
+        ref={ref}
+        type="button"
+        draggable
+        onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
+        onClick={() => onOpenFile(relPath)}
+        className={cn(
+          "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+          active && "bg-foreground/10 dark:bg-foreground/15"
+        )}
+        style={{ paddingLeft: (depth + 1) * 12 + 12 }}
+      >
+        <FileIcon name={name} className="size-4 shrink-0" />
+        <span className="truncate">{name}</span>
+      </button>
+    </FileTreeContextMenu>
   )
 }
 
@@ -208,15 +263,19 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
 
   return (
     <ScrollArea className="h-full">
-      <FolderNode
-        key={cwd}
-        cwd={cwd}
-        absPath={cwd}
-        relPath=""
-        depth={0}
-        onOpenFile={onOpenFile}
-        activePath={activePath}
-      />
+      <FileTreeContextMenu absPath={cwd}>
+        <div className="min-h-full">
+          <FolderNode
+            key={cwd}
+            cwd={cwd}
+            absPath={cwd}
+            relPath=""
+            depth={0}
+            onOpenFile={onOpenFile}
+            activePath={activePath}
+          />
+        </div>
+      </FileTreeContextMenu>
     </ScrollArea>
   )
 }

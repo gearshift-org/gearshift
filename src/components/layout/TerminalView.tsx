@@ -995,6 +995,14 @@ export function TerminalView({
         <ContextMenuItem
           onClick={async () => {
             const cwd = await window.term.getCwd(sessionId)
+            if (cwd) await window.shellApi.revealInFinder(cwd)
+          }}
+        >
+          Reveal in Finder
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={async () => {
+            const cwd = await window.term.getCwd(sessionId)
             if (cwd) await window.shellApi.openInVSCode(cwd)
           }}
         >

@@ -476,6 +476,12 @@ export function AppShell() {
     void window.shellApi.openInVSCode(target.path)
   }
 
+  const revealProjectInFinder = (id: string) => {
+    const target = projects.find((p) => p.id === id)
+    if (!target) return
+    void window.shellApi.revealInFinder(target.path)
+  }
+
   const reorderProjects = (fromId: string, toId: string) => {
     if (fromId === toId) return
     setProjects((prev) => {
@@ -1372,6 +1378,7 @@ export function AppShell() {
             onCloseOtherProjects={closeOtherProjects}
             onCloseProjectsToRight={closeProjectsToRight}
             onOpenProjectInVSCode={openProjectInVSCode}
+            onRevealProjectInFinder={revealProjectInFinder}
             onReorderProjects={reorderProjects}
             sidebarOpen={sidebarOpen}
             onToggleSidebar={toggleSidebar}

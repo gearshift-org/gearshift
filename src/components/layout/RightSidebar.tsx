@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
 import { FileIcon } from "@/components/icons/FileIcon"
+import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { ChangeCountBadge } from "./ChangeCountBadge"
 import { FilesTree } from "./FilesTree"
 import { setPathDragData } from "@/lib/pathDrag"
@@ -1133,15 +1134,15 @@ function FileRow({
   onOpenFile: () => void
   busy: boolean
 }) {
+  const fileAbsPath = absolutePath(cwd, file.path)
+
   return (
     <ContextMenu>
       <ContextMenuTrigger
         render={
           <li
             draggable
-            onDragStart={(e) =>
-              setPathDragData(e.dataTransfer, [absolutePath(cwd, file.path)])
-            }
+            onDragStart={(e) => setPathDragData(e.dataTransfer, [fileAbsPath])}
             onClick={onOpen}
             className="group/row flex cursor-pointer items-center gap-3 px-4 py-1.5 text-xs hover:bg-accent/40"
           >
@@ -1219,6 +1220,22 @@ function FileRow({
             {secondaryActionLabel}
           </ContextMenuItem>
         )}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() => {
+            void window.shellApi.openInVSCode(fileAbsPath)
+          }}
+        >
+          <VSCodeIcon className="size-3.5" />
+          Open in VS Code
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => {
+            void window.shellApi.revealInFinder(fileAbsPath)
+          }}
+        >
+          Reveal in Finder
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           onClick={() => {

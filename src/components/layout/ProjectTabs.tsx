@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { X } from "lucide-react"
 import {
   DndContext,
@@ -27,6 +27,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { AddProjectMenu } from "./AddProjectMenu"
 import { AgentSpinner } from "./AgentSpinner"
 import {
@@ -70,7 +75,7 @@ function projectHasWorkingAgent(project: Project): boolean {
 function projectHasHiddenWorkingAgent(project: Project): boolean {
   const activeTab = project.tabs.find((tab) => tab.id === project.activeTabId)
   return project.tabs.some(
-    (tab) => tabHasWorkingAgent(tab) && tab.id !== activeTab?.id,
+    (tab) => tabHasWorkingAgent(tab) && tab.id !== activeTab?.id
   )
 }
 
@@ -90,6 +95,7 @@ type Props = {
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onOpenInVSCode?: (id: string) => void
+  onRevealInFinder?: (id: string) => void
   onReorder?: (fromId: string, toId: string) => void
 }
 
@@ -107,6 +113,7 @@ type TabItemProps = {
   onCloseToRight?: (id: string) => void
   onAdd: () => void
   onOpenInVSCode?: (id: string) => void
+  onRevealInFinder?: (id: string) => void
 }
 
 function ProjectTabItem({
@@ -122,8 +129,11 @@ function ProjectTabItem({
   onCloseToRight,
   onAdd,
   onOpenInVSCode,
+  onRevealInFinder,
 }: TabItemProps) {
   const [, setColorVersion] = useState(0)
+  const [showSummary, setShowSummary] = useState(false)
+  const summaryTimerRef = useRef<number | null>(null)
   const {
     attributes,
     listeners,
@@ -139,6 +149,32 @@ function ProjectTabItem({
     zIndex: isDragging ? 30 : undefined,
   }
 
+  useEffect(() => {
+    return () => {
+      if (summaryTimerRef.current !== null) {
+        window.clearTimeout(summaryTimerRef.current)
+      }
+    }
+  }, [])
+
+  const openSummaryAfterDelay = () => {
+    if (summaryTimerRef.current !== null) {
+      window.clearTimeout(summaryTimerRef.current)
+    }
+    summaryTimerRef.current = window.setTimeout(() => {
+      setShowSummary(true)
+      summaryTimerRef.current = null
+    }, 1000)
+  }
+
+  const closeSummary = () => {
+    if (summaryTimerRef.current !== null) {
+      window.clearTimeout(summaryTimerRef.current)
+      summaryTimerRef.current = null
+    }
+    setShowSummary(false)
+  }
+
   const randomizeAvatarColor = () => {
     randomizeProjectColor(p.path)
     setColorVersion((v) => v + 1)
@@ -151,68 +187,83 @@ function ProjectTabItem({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger
-        ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}
-        style={style}
-        onClick={() => onSelect(p.id)}
-        className={cn(
-          "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
-          isActive
-            ? "bg-secondary text-foreground"
-            : "text-foreground hover:bg-accent/40",
-          isDragging && "opacity-80 shadow-lg",
-        )}
-        {...attributes}
-        {...listeners}
-      >
-        {(() => {
-          const bg = getProjectColor(p.path)
-          return (
-            <span
-              aria-hidden
-              style={{ backgroundColor: bg, color: readableTextOn(bg) }}
-              className="grid size-4 shrink-0 place-items-center rounded-[3px] text-[9px] font-semibold leading-none"
+      <Popover open={showSummary} onOpenChange={setShowSummary}>
+        <PopoverTrigger
+          render={
+            <ContextMenuTrigger
+              ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}
+              style={style}
+              onClick={() => onSelect(p.id)}
+              onPointerEnter={openSummaryAfterDelay}
+              onPointerLeave={closeSummary}
+              onPointerDown={closeSummary}
+              className={cn(
+                "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
+                isActive
+                  ? "bg-secondary text-foreground"
+                  : "text-foreground hover:bg-accent/40",
+                isDragging && "opacity-80 shadow-lg"
+              )}
+              {...attributes}
+              {...listeners}
             >
-              {projectInitials(p.name)}
-            </span>
-          )
-        })()}
-        {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
-        {!hasWorkingAgent && hasDoneAgent && (
-          <span
-            aria-label="Coding agent done"
-            title="Coding agent done"
-            className="relative -ml-0.5 grid size-2.5 shrink-0 animate-bounce place-items-center"
-          >
-            <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
-          </span>
-        )}
-        <span className="truncate">{p.name}</span>
-        {canClose && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
+              {(() => {
+                const bg = getProjectColor(p.path)
+                return (
+                  <span
+                    aria-hidden
+                    style={{ backgroundColor: bg, color: readableTextOn(bg) }}
+                    className="grid size-4 shrink-0 place-items-center rounded-[3px] text-[9px] leading-none font-semibold"
+                  >
+                    {projectInitials(p.name)}
+                  </span>
+                )
+              })()}
+              {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
+              {!hasWorkingAgent && hasDoneAgent && (
                 <span
-                  role="button"
-                  tabIndex={-1}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClose?.(p.id)
-                  }}
-                  className={cn(
-                    "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
-                    isActive && "opacity-60",
-                  )}
+                  aria-label="Coding agent done"
+                  title="Coding agent done"
+                  className="relative -ml-0.5 grid size-2.5 shrink-0 animate-bounce place-items-center"
                 >
-                  <X className="size-3.5" />
+                  <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
                 </span>
-              }
-            />
-            <TooltipContent>Close project</TooltipContent>
-          </Tooltip>
-        )}
-      </ContextMenuTrigger>
+              )}
+              <span className="truncate">{p.name}</span>
+              {canClose && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onClose?.(p.id)
+                        }}
+                        className={cn(
+                          "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground",
+                          isActive && "opacity-60"
+                        )}
+                      >
+                        <X className="size-3.5" />
+                      </span>
+                    }
+                  />
+                  <TooltipContent>Close project</TooltipContent>
+                </Tooltip>
+              )}
+            </ContextMenuTrigger>
+          }
+        />
+        <PopoverContent className="w-auto min-w-[180px] px-3 py-2 text-xs">
+          <div className="font-medium">{p.name}</div>
+          <div className="mt-1 text-muted-foreground">
+            {terminalCount} {terminalCount === 1 ? "terminal" : "terminals"}
+          </div>
+        </PopoverContent>
+      </Popover>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
         <ContextMenuItem onClick={() => onClose?.(p.id)} disabled={!canClose}>
           Close
@@ -241,13 +292,20 @@ function ProjectTabItem({
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={onAdd}>New Project</ContextMenuItem>
-        {onOpenInVSCode && (
+        {(onOpenInVSCode || onRevealInFinder) && (
           <>
             <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => onOpenInVSCode(p.id)}>
-              <VSCodeIcon className="size-3.5" />
-              Open in VSCode
-            </ContextMenuItem>
+            {onRevealInFinder && (
+              <ContextMenuItem onClick={() => onRevealInFinder(p.id)}>
+                Reveal in Finder
+              </ContextMenuItem>
+            )}
+            {onOpenInVSCode && (
+              <ContextMenuItem onClick={() => onOpenInVSCode(p.id)}>
+                <VSCodeIcon className="size-3.5" />
+                Open in VSCode
+              </ContextMenuItem>
+            )}
           </>
         )}
       </ContextMenuContent>
@@ -267,10 +325,11 @@ export function ProjectTabs({
   onCloseOthers,
   onCloseToRight,
   onOpenInVSCode,
+  onRevealInFinder,
   onReorder,
 }: Props) {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -302,6 +361,7 @@ export function ProjectTabs({
               onCloseToRight={onCloseToRight}
               onAdd={onAdd}
               onOpenInVSCode={onOpenInVSCode}
+              onRevealInFinder={onRevealInFinder}
             />
           ))}
         </SortableContext>

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 
 export type ChatHistoryMessage = {
   id: string
@@ -17,6 +17,8 @@ const dialogApi = {
 const shellApi = {
   openInVSCode: (path: string) =>
     ipcRenderer.invoke("shell:openInVSCode", path) as Promise<boolean>,
+  revealInFinder: (path: string) =>
+    ipcRenderer.invoke("shell:revealInFinder", path) as Promise<boolean>,
 }
 
 const termApi = {
@@ -36,8 +38,7 @@ const termApi = {
     }>,
   snapshot: (id: string) =>
     ipcRenderer.invoke("term:snapshot", id) as Promise<string>,
-  write: (id: string, data: string) =>
-    ipcRenderer.send("term:write", id, data),
+  write: (id: string, data: string) => ipcRenderer.send("term:write", id, data),
   resize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send("term:resize", id, cols, rows),
   kill: (id: string) => ipcRenderer.send("term:kill", id),
@@ -54,7 +55,7 @@ const termApi = {
       agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
       event: "stop" | "notification" | "start"
       body?: string
-    }) => void,
+    }) => void
   ) => {
     const channel = `term:agentEvent:${id}`
     const listener = (
@@ -63,7 +64,7 @@ const termApi = {
         agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
         event: "stop" | "notification" | "start"
         body?: string
-      },
+      }
     ) => cb(event)
     ipcRenderer.on(channel, listener)
     return () => {
@@ -78,12 +79,12 @@ const termApi = {
   },
   onExit: (
     id: string,
-    cb: (info: { exitCode: number; signal?: number }) => void,
+    cb: (info: { exitCode: number; signal?: number }) => void
   ) => {
     const channel = `term:exit:${id}`
     const listener = (
       _e: unknown,
-      info: { exitCode: number; signal?: number },
+      info: { exitCode: number; signal?: number }
     ) => cb(info)
     ipcRenderer.on(channel, listener)
     return () => ipcRenderer.removeListener(channel, listener)
@@ -133,11 +134,11 @@ const fsApi = {
   unwatchProject: (watchId: string) =>
     ipcRenderer.send("fs:unwatchProject", watchId),
   onChanged: (
-    cb: (event: { watchId: string; cwd: string; paths?: string[] }) => void,
+    cb: (event: { watchId: string; cwd: string; paths?: string[] }) => void
   ) => {
     const listener = (
       _e: unknown,
-      event: { watchId: string; cwd: string; paths?: string[] },
+      event: { watchId: string; cwd: string; paths?: string[] }
     ) => cb(event)
     ipcRenderer.on("fs:changed", listener)
     return () => ipcRenderer.removeListener("fs:changed", listener)
@@ -261,14 +262,14 @@ const gitApi = {
     cwd: string,
     currentBranch: string | null,
     hasUpstream: boolean,
-    ahead: number,
+    ahead: number
   ) =>
     ipcRenderer.invoke(
       "git:pullRequestStatus",
       cwd,
       currentBranch,
       hasUpstream,
-      ahead,
+      ahead
     ) as Promise<{
       ok: boolean
       error?: string
@@ -301,7 +302,7 @@ const stateApi = {
 
 const menuApi = {
   updateAccelerators: (
-    map: Partial<{ "terminal.new": string; "terminal.close": string }>,
+    map: Partial<{ "terminal.new": string; "terminal.close": string }>
   ) =>
     ipcRenderer.invoke("menu:update-accelerators", map) as Promise<{
       ok: true

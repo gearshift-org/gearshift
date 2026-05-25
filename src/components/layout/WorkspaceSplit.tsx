@@ -8,7 +8,7 @@ import { store } from "@/lib/store"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type { Project, TerminalAgentStatus } from "./types"
 
-const SIDEBAR_DEFAULT_PX = 410
+const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
 
@@ -176,6 +176,7 @@ export function WorkspaceSplit({
       {sidebarOpen && (
         <div
           onMouseDown={startDrag}
+          onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_PX)}
           role="separator"
           aria-orientation="vertical"
           className="group relative -mx-[3px] w-[7px] shrink-0 cursor-col-resize"

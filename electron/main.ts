@@ -119,7 +119,7 @@ async function captureInput(sessionId: string, data: string) {
     const pid = daemonClient?.getPid(sessionId)
     if (pid) {
       const status = await detectPtyAgent(pid)
-      agent = status.running ? status.agentName ?? null : null
+      agent = status.running ? (status.agentName ?? null) : null
     }
   }
   inputCapture.feed(sessionId, projectId, data, agent, (msg) => {
@@ -755,6 +755,16 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle("shell:revealInFinder", (_event, targetPath: string) => {
+    if (!targetPath) return false
+    try {
+      shell.showItemInFolder(targetPath)
+      return true
+    } catch {
+      return false
+    }
+  })
+
   ipcMain.handle("shell:openInVSCode", async (_event, targetPath: string) => {
     if (!targetPath) return false
     // Match the original Gearshift app: on macOS prefer `/usr/bin/open -a`
@@ -1157,7 +1167,11 @@ app.whenReady().then(async () => {
             !isDefaultBranch(currentBranch, defaultBranch),
         }
       } catch (err) {
-        const e = err as { signal?: string; stderr?: string; message?: string } | null
+        const e = err as {
+          signal?: string
+          stderr?: string
+          message?: string
+        } | null
         const signal = e?.signal
         const message = `${e?.stderr ?? ""}\n${e?.message ?? ""}`
         const expectedMissingRemote = message.includes("no git remotes found")
@@ -1368,7 +1382,7 @@ app.whenReady().then(async () => {
         rows?: number
         theme?: "light" | "dark"
         projectId?: string | null
-      },
+      }
     ) => {
       const client = await getDaemonClient()
       const resolved = buildOpenOptions({
@@ -1405,7 +1419,7 @@ app.whenReady().then(async () => {
         cols: res.cols,
         rows: res.rows,
       }
-    },
+    }
   )
 
   ipcMain.handle("term:snapshot", async (_e, id: string) => {

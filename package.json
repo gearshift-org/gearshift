@@ -14,6 +14,7 @@
     "electron:build": "bun run build && electron-builder",
     "dist": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --config.mac.identity=null --config.mac.notarize=false",
     "dist:dmg": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --config.mac.identity=null --config.mac.notarize=false",
+    "dist:dmg:signed": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && bun run build && electron-builder --mac dmg",
     "install:app": "bun run dist && node scripts/install-macos-app.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -28,7 +29,13 @@
       "dist-electron/**/*"
     ],
     "mac": {
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     }
   },
   "dependencies": {

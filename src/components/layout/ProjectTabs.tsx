@@ -34,7 +34,12 @@ import {
 } from "@/components/ui/popover"
 import { AddProjectMenu } from "./AddProjectMenu"
 import { AgentSpinner } from "./AgentSpinner"
-import { TAB_LABEL_CLASS, TAB_WIDTH_CLASS } from "./tabSizing"
+import {
+  TAB_LABEL_CLASS,
+  TAB_OPEN_TRANSITION_CLASS,
+  TAB_WIDTH_CLASS,
+  useTabOpenAnimation,
+} from "./tabSizing"
 import { randomizeProjectColor, type RecentProject } from "@/lib/projects"
 import { ProjectAvatar } from "./ProjectAvatar"
 import type { Project } from "./types"
@@ -118,10 +123,12 @@ function ProjectTabItem({
     isDragging,
   } = useSortable({ id: p.id })
 
+  const openAnim = useTabOpenAnimation()
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
     zIndex: isDragging ? 30 : undefined,
+    ...openAnim.style,
   }
 
   useEffect(() => {
@@ -199,6 +206,8 @@ function ProjectTabItem({
               className={cn(
                 "project-tab group relative flex h-full cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors outline-none focus:outline-none focus-visible:ring-0 focus-visible:outline-none",
                 TAB_WIDTH_CLASS,
+                TAB_OPEN_TRANSITION_CLASS,
+                openAnim.isOpening && "overflow-hidden",
                 isActive
                   ? "bg-secondary text-foreground"
                   : "text-foreground hover:bg-accent/40",

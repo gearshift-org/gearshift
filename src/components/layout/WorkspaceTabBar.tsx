@@ -20,7 +20,9 @@ import { AgentSpinner } from "./AgentSpinner"
 import {
   TAB_LABEL_CLASS,
   TAB_NAME_TOOLTIP_DELAY_MS,
+  TAB_OPEN_TRANSITION_CLASS,
   TAB_WIDTH_CLASS,
+  useTabOpenAnimation,
 } from "./tabSizing"
 import { displayName, tabDisplayName } from "./terminalName"
 import type { TerminalTab, WorkspaceTab } from "./types"
@@ -124,10 +126,12 @@ function WorkspaceTabItem({
     isDragging,
   } = useSortable({ id: t.id, disabled: isRenaming })
 
+  const openAnim = useTabOpenAnimation()
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
     zIndex: isDragging ? 30 : undefined,
+    ...openAnim.style,
   }
 
   return (
@@ -138,6 +142,8 @@ function WorkspaceTabItem({
         className={cn(
           "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
           TAB_WIDTH_CLASS,
+          TAB_OPEN_TRANSITION_CLASS,
+          openAnim.isOpening && "overflow-hidden",
           isActive
             ? "bg-secondary text-foreground"
             : "text-foreground hover:bg-accent/40",

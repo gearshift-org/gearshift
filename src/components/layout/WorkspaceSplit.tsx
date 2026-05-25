@@ -85,6 +85,7 @@ export function WorkspaceSplit({
   )
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   // Persist whenever width settles (debounced via effect-cleanup style).
   useEffect(() => {
@@ -110,7 +111,9 @@ export function WorkspaceSplit({
       setSidebarWidth(clampWidth(d.startWidth + dx))
     }
     const onUp = () => {
+      if (!dragRef.current) return
       dragRef.current = null
+      setIsDragging(false)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
     }
@@ -124,6 +127,7 @@ export function WorkspaceSplit({
 
   const startDrag = (e: React.MouseEvent) => {
     dragRef.current = { startX: e.clientX, startWidth: sidebarWidth }
+    setIsDragging(true)
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
   }
@@ -177,17 +181,22 @@ export function WorkspaceSplit({
   return (
     <div ref={containerRef} className="relative flex min-h-0 flex-1">
       <div className="min-w-0 flex-1">{workspaceSection}</div>
-      {sidebarOpen && (
-        <div
-          onMouseDown={startDrag}
-          onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_PX)}
-          role="separator"
-          aria-orientation="vertical"
-          className="group relative -mx-[3px] w-[7px] shrink-0 cursor-col-resize"
-        >
-          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
-        </div>
-      )}
+      <div
+        onMouseDown={sidebarOpen ? startDrag : undefined}
+        onDoubleClick={
+          sidebarOpen ? () => setSidebarWidth(SIDEBAR_DEFAULT_PX) : undefined
+        }
+        role="separator"
+        aria-orientation="vertical"
+        aria-hidden={!sidebarOpen}
+        className={cn(
+          "group relative -mx-[3px] shrink-0 cursor-col-resize",
+          sidebarOpen ? "w-[7px]" : "pointer-events-none w-0",
+          !isDragging && "transition-[width] duration-150 ease-out"
+        )}
+      >
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
+      </div>
       <div
         style={{
           width: sidebarIsOverlay
@@ -204,6 +213,9 @@ export function WorkspaceSplit({
           sidebarIsOverlay &&
             sidebarOverlayExiting &&
             "animate-[gs-slide-out-right_180ms_ease_forwards]",
+          !sidebarIsOverlay &&
+            !isDragging &&
+            "transition-[width] duration-150 ease-out",
           !showSidebar && "pointer-events-none"
         )}
         aria-hidden={!showSidebar}

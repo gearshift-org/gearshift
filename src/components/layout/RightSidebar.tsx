@@ -122,8 +122,11 @@ export function RightSidebar({
   const [commitMessage, setCommitMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
-    null | "commit" | "push" | "sync"
+    null | "commit" | "push" | "sync" | "pull"
   >(null)
+  // Distinguishes the "push" phase of a sync vs the "push" phase of Commit&Push
+  // so the right button can show the loading label.
+  const [syncing, setSyncing] = useState(false)
   const [switchingBranch, setSwitchingBranch] = useState(false)
   const [pullRequestBusy, setPullRequestBusy] = useState<
     null | "create" | "open"
@@ -674,42 +677,52 @@ export function RightSidebar({
 
   const sync = useCallback(async () => {
     if (!cwd || busy) return
+    inflightActionsRef.current += 1
     setBusy(true)
+    setSyncing(true)
     setCommitting("sync")
     setActionError(null)
     try {
       if (behind > 0) {
+        setCommitting("pull")
         const pullRes = await window.git.pull(cwd)
         if (!pullRes.ok) {
           setActionError(pullRes.error ?? "Pull failed")
-          void runRefresh()
           return
         }
         updateCachedGitMeta({ behind: 0 })
       }
       if (ahead > 0) {
+        setCommitting("push")
         const pushRes = await window.git.push(cwd)
         if (!pushRes.ok) {
           setActionError(pushRes.error ?? "Push failed")
-          void runRefresh()
           return
         }
         updateCachedGitMeta({ ahead: 0 })
       }
-      void runRefresh()
     } finally {
       setBusy(false)
+      setSyncing(false)
       setCommitting(null)
+      inflightActionsRef.current = Math.max(0, inflightActionsRef.current - 1)
+      settleUntilRef.current = Math.max(
+        settleUntilRef.current,
+        Date.now() + 700
+      )
+      void runRefresh()
     }
   }, [cwd, busy, ahead, behind, updateCachedGitMeta, runRefresh])
 
   // Show the Sync button only when nothing is staged and the branch is out of
-  // sync with its upstream.
+  // sync with its upstream. Keep it visible while syncing so the loading
+  // state actually appears on the same button the user clicked.
   const showSync =
-    !busy &&
-    stagedFiles.length === 0 &&
-    hasUpstream &&
-    (ahead > 0 || behind > 0)
+    syncing ||
+    (!busy &&
+      stagedFiles.length === 0 &&
+      hasUpstream &&
+      (ahead > 0 || behind > 0))
 
   const largeChangeSet = files.length > LARGE_CHANGESET_THRESHOLD
   useEffect(() => {
@@ -836,10 +849,14 @@ export function RightSidebar({
                   onClick={() => void sync()}
                   className="w-full"
                 >
-                  {committing === "sync" ? (
+                  {syncing ? (
                     <>
                       <Loader2 className="size-3.5 animate-spin" />
-                      Syncing…
+                      {committing === "pull"
+                        ? "Pulling…"
+                        : committing === "push"
+                          ? "Pushing…"
+                          : "Syncing…"}
                     </>
                   ) : (
                     <>

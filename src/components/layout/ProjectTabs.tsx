@@ -72,13 +72,6 @@ function projectHasWorkingAgent(project: Project): boolean {
   return project.tabs.some(tabHasWorkingAgent)
 }
 
-function projectHasHiddenWorkingAgent(project: Project): boolean {
-  const activeTab = project.tabs.find((tab) => tab.id === project.activeTabId)
-  return project.tabs.some(
-    (tab) => tabHasWorkingAgent(tab) && tab.id !== activeTab?.id
-  )
-}
-
 function projectHasDoneAgent(project: Project): boolean {
   return !!project.agentDone && !projectHasWorkingAgent(project)
 }
@@ -179,9 +172,7 @@ function ProjectTabItem({
     randomizeProjectColor(p.path)
     setColorVersion((v) => v + 1)
   }
-  const hasWorkingAgent = isActive
-    ? projectHasHiddenWorkingAgent(p)
-    : projectHasWorkingAgent(p)
+  const hasWorkingAgent = projectHasWorkingAgent(p)
   const hasDoneAgent = projectHasDoneAgent(p)
   const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
 

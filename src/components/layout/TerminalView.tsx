@@ -7,6 +7,7 @@ import { WebglAddon } from "@xterm/addon-webgl"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { useTheme } from "@/components/theme-provider"
 import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
+import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
 import { agentActivityTitleSignal } from "./terminalName"
 import type { TerminalAgentStatus } from "./types"
@@ -149,10 +150,13 @@ export function TerminalView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
+  const fitTerminalRef = useRef<(() => boolean) | null>(null)
   const webglRef = useRef<WebglAddon | null>(null)
   const searchRef = useRef<SearchAddon | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { resolvedTheme } = useTheme()
+  const { appearance } = useTerminalAppearance()
   const isDark = resolvedTheme === "dark"
   const themeRef = useRef({ isDark })
   themeRef.current.isDark = isDark
@@ -280,9 +284,8 @@ export function TerminalView({
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
-      fontFamily:
-        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+      fontSize: appearance.fontSize,
+      fontFamily: appearance.fontFamily,
       scrollback: 5000,
       // We hide xterm's native scrollbar and keep the background stable during
       // resize, so avoid reserving the default 14px scrollbar gutter.
@@ -296,6 +299,7 @@ export function TerminalView({
     term.loadAddon(search)
     term.open(container)
     termRef.current = term
+    fitRef.current = fit
     searchRef.current = search
 
     const scrollSub = term.onScroll(() => {
@@ -488,6 +492,8 @@ export function TerminalView({
       return true
     })
 
+    let unmounted = false
+
     // Initial size + send to PTY. Use proposeDimensions() instead of fit() so
     // we avoid FitAddon's render clear, which can visibly blink during live
     // resize. Also ignore transient tiny widths from split-pane layout because
@@ -513,7 +519,23 @@ export function TerminalView({
         return false
       }
     }
+    fitTerminalRef.current = fitTerminal
+
+    const startupFitTimers: number[] = []
+    const queueStartupFit = (delay: number) => {
+      const id = window.setTimeout(() => {
+        requestAnimationFrame(() => fitTerminal())
+      }, delay)
+      startupFitTimers.push(id)
+    }
     fitTerminal()
+    queueStartupFit(0)
+    queueStartupFit(50)
+    queueStartupFit(150)
+    queueStartupFit(350)
+    void document.fonts?.ready.then(() => {
+      if (!unmounted) fitTerminal()
+    })
     if (isActive) term.focus()
 
     // Pull whatever scrollback the daemon captured before this view mounted
@@ -523,7 +545,6 @@ export function TerminalView({
     // producing duplicated/out-of-order output. The daemon-client side of
     // snapshot() drops its pendingData buffer so the post-snapshot subscribe
     // only receives bytes that arrived after the snapshot was taken.
-    let unmounted = false
     let offData: (() => void) | null = null
     const onDataChunk = (chunk: string) => {
       term.write(chunk)
@@ -641,6 +662,7 @@ export function TerminalView({
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
       if (resizeTimer) window.clearTimeout(resizeTimer)
+      for (const timer of startupFitTimers) window.clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
       if (agentWorkingTimerRef.current) {
         window.clearTimeout(agentWorkingTimerRef.current)
@@ -664,10 +686,20 @@ export function TerminalView({
       webglRef.current = null
       term.dispose()
       termRef.current = null
+      fitRef.current = null
+      fitTerminalRef.current = null
       searchRef.current = null
       emitAgentStatus({ running: false, working: false, completed: false })
     }
   }, [sessionId, openSearch, markAgentWorking, emitAgentStatus])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.fontFamily = appearance.fontFamily
+    term.options.fontSize = appearance.fontSize
+    requestAnimationFrame(() => fitTerminalRef.current?.())
+  }, [appearance.fontFamily, appearance.fontSize])
 
   useEffect(() => {
     let cancelled = false

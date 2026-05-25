@@ -153,7 +153,9 @@ export function AppearancePanel() {
               <Combobox
                 items={fontChoices}
                 value={selectedFont}
-                onValueChange={(family) => setFontFamily(fontStack(family))}
+                onValueChange={(family) => {
+                  if (family) setFontFamily(fontStack(family))
+                }}
                 autoHighlight
               >
                 <ComboboxInput

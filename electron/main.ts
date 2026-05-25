@@ -243,6 +243,10 @@ async function readGitignoreGlobs(cwd: string): Promise<string[]> {
   }
 }
 
+function isAllowlistedDotenv(name: string) {
+  return name === ".env" || name.startsWith(".env.")
+}
+
 function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
   const lower = command.toLowerCase()
   const tokens = lower.trim().split(/\s+/)
@@ -1070,9 +1074,6 @@ app.whenReady().then(async () => {
       // Allow-list: .env, .env.local, .env.production etc. should appear in
       // the tree even when gitignored, since the user often needs to view
       // them in the app.
-      const isAllowlistedDotenv = (name: string) =>
-        name === ".env" || name.startsWith(".env.")
-
       const entries = candidates.filter((c) => {
         if (isAllowlistedDotenv(c.name)) return true
         const full = path.join(absPath, c.name)
@@ -1097,7 +1098,27 @@ app.whenReady().then(async () => {
         "-z",
       ])
       const files = out.split("\0").filter(Boolean)
-      return { ok: true, files }
+
+      // Global command palette should also show gitignored .env files.
+      // `ls-files --exclude-standard` hides them, so query ignored dotenv
+      // pathspecs separately and merge them back in.
+      const dotenvOut = await runGit(cwd, [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "-z",
+        "--",
+        ".env",
+        ".env.*",
+        ":(glob)**/.env",
+        ":(glob)**/.env.*",
+      ])
+      for (const file of dotenvOut.split("\0").filter(Boolean)) {
+        if (isAllowlistedDotenv(path.basename(file))) files.push(file)
+      }
+
+      return { ok: true, files: [...new Set(files)] }
     } catch (err) {
       return { ok: false, error: (err as Error).message, files: [] }
     }

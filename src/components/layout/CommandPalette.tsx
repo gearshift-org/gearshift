@@ -38,18 +38,19 @@ function tabIcon(t: WorkspaceTab) {
   return <TerminalSquare />
 }
 
+function terminalSessionIds(t: WorkspaceTab): string[] {
+  if (t.kind !== "terminal") return []
+  return t.panes.flatMap((pane) => (pane.sessionId ? [pane.sessionId] : []))
+}
+
 function tabCommandValue(t: WorkspaceTab): string {
-  const sessionIds =
-    t.kind === "terminal"
-      ? t.panes.map((pane) => pane.sessionId).filter(Boolean).join(" ")
-      : ""
-  return `tab ${t.kind} ${t.id} ${sessionIds}`
+  return `tab ${t.kind} ${t.id} ${terminalSessionIds(t).join(" ")}`
 }
 
 function tabCommandKeywords(t: WorkspaceTab): string[] {
   const title = tabDisplayName(t)
   if (t.kind === "diff" || t.kind === "file") return [title, t.path]
-  return [title, ...t.panes.map((pane) => pane.sessionId).filter(Boolean)]
+  return [title, ...terminalSessionIds(t)]
 }
 
 /**

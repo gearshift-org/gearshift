@@ -23,6 +23,8 @@ type Props = {
   sidebarTopActions?: ReactNode
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
+  sidebarOverlayOpen?: boolean
+  sidebarOverlayExiting?: boolean
   onTerminalTitleChange?: (tabId: string, paneId: string, title: string) => void
   onTerminalAgentStatusChange?: (
     tabId: string,
@@ -50,6 +52,8 @@ export function WorkspaceSplit({
   sidebarTopActions,
   workspaceTabs,
   sidebarOpen = true,
+  sidebarOverlayOpen = false,
+  sidebarOverlayExiting = false,
   onTerminalTitleChange,
   onTerminalAgentStatusChange,
   onStartTerminal,
@@ -125,6 +129,8 @@ export function WorkspaceSplit({
   }
 
   const activeProjectHasTabs = !!activeProject?.tabs.length
+  const showSidebar = sidebarOpen || sidebarOverlayOpen
+  const sidebarIsOverlay = sidebarOverlayOpen && !sidebarOpen
 
   const workspaceSection = (
     <div className="flex h-full flex-col">
@@ -169,7 +175,7 @@ export function WorkspaceSplit({
   // toggling unmounts `WorkspacePane`/`TerminalView`, the xterm remeasures
   // before layout settles, and TUIs (Claude Code, etc.) get stuck at cols=1.
   return (
-    <div ref={containerRef} className="flex min-h-0 flex-1">
+    <div ref={containerRef} className="relative flex min-h-0 flex-1">
       <div className="min-w-0 flex-1">{workspaceSection}</div>
       {sidebarOpen && (
         <div
@@ -183,12 +189,24 @@ export function WorkspaceSplit({
         </div>
       )}
       <div
-        style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+        style={{
+          width: sidebarIsOverlay
+            ? sidebarWidth
+            : showSidebar
+              ? sidebarWidth
+              : 0,
+        }}
         className={cn(
-          "relative h-full shrink-0 overflow-hidden",
-          !sidebarOpen && "pointer-events-none"
+          "h-full overflow-hidden",
+          sidebarIsOverlay
+            ? "absolute inset-y-0 right-0 z-[180] shrink-0 animate-[gs-slide-in-right_180ms_ease] border-l border-border bg-background shadow-2xl [-webkit-app-region:no-drag] [&_*]:[-webkit-app-region:no-drag]"
+            : "relative shrink-0",
+          sidebarIsOverlay &&
+            sidebarOverlayExiting &&
+            "animate-[gs-slide-out-right_180ms_ease_forwards]",
+          !showSidebar && "pointer-events-none"
         )}
-        aria-hidden={!sidebarOpen}
+        aria-hidden={!showSidebar}
       >
         <div className="absolute inset-0" style={{ width: sidebarWidth }}>
           <RightSidebar

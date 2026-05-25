@@ -322,3 +322,21 @@
 .diff-viewer-error {
   color: #e5484d;
 }
+
+@keyframes gs-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes gs-slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}

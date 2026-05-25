@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  screen,
   shell,
 } from "electron"
 import path from "node:path"
@@ -353,6 +354,21 @@ function createWindow() {
     },
   })
 
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) {
+      void openExternalHttpUrl(url)
+    }
+
+    // Prevent Electron from creating in-app popup/sub windows.
+    return { action: "deny" }
+  })
+
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!isExternalHttpUrl(url)) return
+    event.preventDefault()
+    void openExternalHttpUrl(url)
+  })
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
   } else {
@@ -430,6 +446,33 @@ async function runGitAllowExit1(cwd: string, args: string[]): Promise<string> {
     const e = err as { code?: number; stdout?: string }
     if (e.code === 1 && typeof e.stdout === "string") return e.stdout
     throw err
+  }
+}
+
+function isExternalHttpUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false
+
+    // In dev, the Vite dev server is the app itself, so don't redirect it.
+    if (VITE_DEV_SERVER_URL) {
+      const appUrl = new URL(VITE_DEV_SERVER_URL)
+      if (url.origin === appUrl.origin) return false
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function openExternalHttpUrl(rawUrl: string): Promise<boolean> {
+  if (!isExternalHttpUrl(rawUrl)) return false
+  try {
+    await shell.openExternal(new URL(rawUrl).toString())
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -739,6 +782,66 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle("window:pointerState", (event, outsideLimit = 0) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return { ok: false, nearWindow: false }
+    const bounds = win.getBounds()
+    const cursor = screen.getCursorScreenPoint()
+    const limit = Number.isFinite(outsideLimit)
+      ? Math.max(0, Number(outsideLimit))
+      : 0
+    const nearWindow =
+      cursor.x >= bounds.x - limit &&
+      cursor.x <= bounds.x + bounds.width + limit &&
+      cursor.y >= bounds.y - limit &&
+      cursor.y <= bounds.y + bounds.height + limit
+    return { ok: true, nearWindow, cursor, bounds }
+  })
+
+  ipcMain.handle(
+    "menu:showEditContext",
+    (
+      event,
+      flags: { canCut?: boolean; canCopy?: boolean; canPaste?: boolean } = {}
+    ) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win || win.isDestroyed()) return
+      return new Promise<"cut" | "copy" | "paste" | null>((resolve) => {
+        let resolved: "cut" | "copy" | "paste" | null = null
+        const template: Electron.MenuItemConstructorOptions[] = [
+          {
+            label: "Cut",
+            accelerator: "CmdOrCtrl+X",
+            enabled: flags.canCut !== false,
+            click: () => {
+              resolved = "cut"
+            },
+          },
+          {
+            label: "Copy",
+            accelerator: "CmdOrCtrl+C",
+            enabled: flags.canCopy !== false,
+            click: () => {
+              resolved = "copy"
+            },
+          },
+          {
+            label: "Paste",
+            accelerator: "CmdOrCtrl+V",
+            enabled: flags.canPaste !== false,
+            click: () => {
+              resolved = "paste"
+            },
+          },
+        ]
+        Menu.buildFromTemplate(template).popup({
+          window: win,
+          callback: () => resolve(resolved),
+        })
+      })
+    }
+  )
+
   ipcMain.handle("state:read", () => readState())
 
   ipcMain.handle("state:write", async (_e, data: Record<string, string>) => {
@@ -839,16 +942,7 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle("shell:openExternal", async (_event, url: string) => {
-    try {
-      const parsed = new URL(url)
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        return false
-      }
-      await shell.openExternal(parsed.toString())
-      return true
-    } catch {
-      return false
-    }
+    return openExternalHttpUrl(url)
   })
 
   ipcMain.handle("dialog:openProject", async (event) => {

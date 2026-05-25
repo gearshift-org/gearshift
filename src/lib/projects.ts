@@ -273,6 +273,10 @@ export function saveSidebarOpen(open: boolean): void {
 }
 
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
+const RIGHT_SIDEBAR_EDGE_REVEAL_KEY = "gearshift.rightSidebarEdgeReveal"
+
+export const RIGHT_SIDEBAR_EDGE_REVEAL_EVENT =
+  "gearshift:rightSidebarEdgeRevealChanged"
 
 export type RightSidebarTab = "changes" | "files"
 
@@ -287,6 +291,30 @@ export function loadRightSidebarTab(): RightSidebarTab {
 export function saveRightSidebarTab(tab: RightSidebarTab): void {
   try {
     store.set(RIGHT_SIDEBAR_TAB_KEY, tab)
+  } catch {
+    // ignore
+  }
+}
+
+export function loadRightSidebarEdgeReveal(): boolean {
+  try {
+    // Default enabled unless explicitly disabled.
+    return store.get(RIGHT_SIDEBAR_EDGE_REVEAL_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveRightSidebarEdgeReveal(enabled: boolean): void {
+  try {
+    store.set(RIGHT_SIDEBAR_EDGE_REVEAL_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(RIGHT_SIDEBAR_EDGE_REVEAL_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
   } catch {
     // ignore
   }

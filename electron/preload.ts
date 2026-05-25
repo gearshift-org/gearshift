@@ -128,6 +128,16 @@ const appApi = {
   },
 }
 
+const appWindowApi = {
+  pointerState: (outsideLimit = 0) =>
+    ipcRenderer.invoke("window:pointerState", outsideLimit) as Promise<{
+      ok: boolean
+      nearWindow: boolean
+      cursor?: { x: number; y: number }
+      bounds?: { x: number; y: number; width: number; height: number }
+    }>,
+}
+
 const fsApi = {
   watchProject: (cwd: string) =>
     ipcRenderer.invoke("fs:watchProject", cwd) as Promise<{
@@ -316,6 +326,14 @@ const menuApi = {
     ipcRenderer.invoke("menu:update-accelerators", map) as Promise<{
       ok: true
     }>,
+  showEditContext: (flags: {
+    canCut?: boolean
+    canCopy?: boolean
+    canPaste?: boolean
+  }) =>
+    ipcRenderer.invoke("menu:showEditContext", flags) as Promise<
+      "cut" | "copy" | "paste" | null
+    >,
 }
 
 contextBridge.exposeInMainWorld("dialogApi", dialogApi)
@@ -324,6 +342,7 @@ contextBridge.exposeInMainWorld("term", termApi)
 contextBridge.exposeInMainWorld("clipboardApi", clipboardApi)
 contextBridge.exposeInMainWorld("electronUtils", electronUtils)
 contextBridge.exposeInMainWorld("appApi", appApi)
+contextBridge.exposeInMainWorld("appWindow", appWindowApi)
 contextBridge.exposeInMainWorld("git", gitApi)
 contextBridge.exposeInMainWorld("fsApi", fsApi)
 contextBridge.exposeInMainWorld("stateApi", stateApi)
@@ -335,6 +354,7 @@ export type TermApi = typeof termApi
 export type ClipboardApi = typeof clipboardApi
 export type ElectronUtils = typeof electronUtils
 export type AppApi = typeof appApi
+export type AppWindowApi = typeof appWindowApi
 export type GitApi = typeof gitApi
 export type FsApi = typeof fsApi
 export type StateApi = typeof stateApi

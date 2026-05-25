@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState, type ReactElement } from "react"
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, ChevronsDownUp } from "lucide-react"
 import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
@@ -27,6 +34,8 @@ type NodeProps = {
   onOpenFile: (relPath: string) => void
   activePath?: string
 }
+
+const CollapseSignalContext = createContext(0)
 
 function joinPath(a: string, b: string): string {
   return `${a.replace(/\/+$/, "")}/${b}`
@@ -58,9 +67,21 @@ function FolderNode({
   activePath,
 }: NodeProps) {
   const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
+  const [forceClosed, setForceClosed] = useState(false)
+  const collapseSignal = useContext(CollapseSignalContext)
+  useEffect(() => {
+    if (collapseSignal > 0 && depth > 0) {
+      setManuallyOpen(false)
+      setForceClosed(true)
+    }
+  }, [collapseSignal, depth])
+  useEffect(() => {
+    setForceClosed(false)
+  }, [activePath])
   const isActiveAncestor =
     !!activePath && (depth === 0 || activePath.startsWith(`${relPath}/`))
-  const open = depth === 0 || manuallyOpen || isActiveAncestor
+  const open =
+    depth === 0 || (!forceClosed && (manuallyOpen || isActiveAncestor))
 
   const entriesQuery = useQuery({
     queryKey: fileTreeDirQueryKey(cwd, absPath),
@@ -74,7 +95,10 @@ function FolderNode({
       type="button"
       draggable
       onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
-      onClick={() => setManuallyOpen((v) => !v)}
+      onClick={() => {
+        setForceClosed(false)
+        setManuallyOpen((v) => !v)
+      }}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
       )}
@@ -235,6 +259,7 @@ type Props = {
 
 export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   const queryClient = useQueryClient()
+  const [collapseSignal, setCollapseSignal] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -262,20 +287,36 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   }, [cwd, queryClient])
 
   return (
-    <ScrollArea className="h-full">
-      <FileTreeContextMenu absPath={cwd}>
-        <div className="min-h-full">
-          <FolderNode
-            key={cwd}
-            cwd={cwd}
-            absPath={cwd}
-            relPath=""
-            depth={0}
-            onOpenFile={onOpenFile}
-            activePath={activePath}
-          />
-        </div>
-      </FileTreeContextMenu>
-    </ScrollArea>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span>Files</span>
+        <button
+          type="button"
+          onClick={() => setCollapseSignal((n) => n + 1)}
+          aria-label="Collapse all folders"
+          title="Collapse all folders"
+          className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+        >
+          <ChevronsDownUp className="size-3.5" />
+        </button>
+      </div>
+      <CollapseSignalContext.Provider value={collapseSignal}>
+        <ScrollArea className="min-h-0 flex-1">
+          <FileTreeContextMenu absPath={cwd}>
+            <div className="min-h-full">
+              <FolderNode
+                key={cwd}
+                cwd={cwd}
+                absPath={cwd}
+                relPath=""
+                depth={0}
+                onOpenFile={onOpenFile}
+                activePath={activePath}
+              />
+            </div>
+          </FileTreeContextMenu>
+        </ScrollArea>
+      </CollapseSignalContext.Provider>
+    </div>
   )
 }

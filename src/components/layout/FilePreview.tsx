@@ -1,14 +1,13 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
-import { codeToHtml } from "shiki"
-import { ChevronDown, ChevronUp, X } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { LanguageDescription } from "@codemirror/language"
+import { languages } from "@codemirror/language-data"
+import { Compartment, EditorState, Prec } from "@codemirror/state"
+import { keymap } from "@codemirror/view"
+import { SearchQuery, setSearchQuery } from "@codemirror/search"
+import { basicSetup, EditorView } from "codemirror"
+import { oneDark } from "@codemirror/theme-one-dark"
 import { cn } from "@/lib/utils"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 
 type Props = {
   cwd: string
@@ -23,64 +22,6 @@ type LoadState =
   | { kind: "binary" }
   | { kind: "error"; message: string }
 
-const HIGHLIGHT_NAME = "gearshift-file-search"
-const HIGHLIGHT_ACTIVE_NAME = "gearshift-file-search-active"
-const HIGHLIGHT_STYLE = `
-::highlight(${HIGHLIGHT_NAME}) { background-color: rgba(250, 204, 21, 0.5); color: inherit; }
-::highlight(${HIGHLIGHT_ACTIVE_NAME}) { background-color: rgb(250, 204, 21); color: black; }
-`
-
-const EXT_TO_LANG: Record<string, string> = {
-  astro: "astro",
-  bash: "bash",
-  c: "c",
-  cjs: "javascript",
-  cpp: "cpp",
-  cs: "csharp",
-  css: "css",
-  go: "go",
-  graphql: "graphql",
-  h: "c",
-  hpp: "cpp",
-  html: "html",
-  java: "java",
-  js: "javascript",
-  json: "json",
-  jsonc: "jsonc",
-  jsx: "jsx",
-  kt: "kotlin",
-  less: "less",
-  lua: "lua",
-  md: "markdown",
-  mdx: "mdx",
-  mjs: "javascript",
-  php: "php",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  scss: "scss",
-  sh: "shellscript",
-  sql: "sql",
-  svelte: "svelte",
-  swift: "swift",
-  toml: "toml",
-  ts: "typescript",
-  tsx: "tsx",
-  vue: "vue",
-  xml: "xml",
-  yaml: "yaml",
-  yml: "yaml",
-  zsh: "shellscript",
-}
-
-function detectLang(filePath: string): string {
-  const base = filePath.split("/").pop()?.toLowerCase() ?? ""
-  if (base.startsWith("dockerfile")) return "dockerfile"
-  if (base.startsWith("makefile")) return "makefile"
-  const ext = base.includes(".") ? base.split(".").pop() : ""
-  return (ext && EXT_TO_LANG[ext]) || "text"
-}
-
 function currentThemeType(): "light" | "dark" {
   return document.documentElement.dataset.theme === "light" ? "light" : "dark"
 }
@@ -92,17 +33,233 @@ function joinPath(cwd: string, rel: string): string {
 
 function findAllMatches(text: string, query: string): [number, number][] {
   if (!query) return []
-  const res: [number, number][] = []
+  const result: [number, number][] = []
   const needle = query.toLowerCase()
-  const hay = text.toLowerCase()
-  let i = 0
-  while (i <= hay.length - needle.length) {
-    const idx = hay.indexOf(needle, i)
-    if (idx === -1) break
-    res.push([idx, idx + needle.length])
-    i = idx + Math.max(needle.length, 1)
+  const haystack = text.toLowerCase()
+  let index = 0
+  while (index <= haystack.length - needle.length) {
+    const match = haystack.indexOf(needle, index)
+    if (match === -1) break
+    result.push([match, match + needle.length])
+    index = match + Math.max(needle.length, 1)
   }
-  return res
+  return result
+}
+
+type CodeEditorProps = {
+  value: string
+  path: string
+  themeType: "light" | "dark"
+  onChange: (value: string) => void
+  onSave: () => void
+  onOpenSearch: () => void
+  onViewReady: (view: EditorView | null) => void
+}
+
+function CodeEditor({
+  value,
+  path,
+  themeType,
+  onChange,
+  onSave,
+  onOpenSearch,
+  onViewReady,
+}: CodeEditorProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const viewRef = useRef<EditorView | null>(null)
+  const languageCompartment = useMemo(() => new Compartment(), [])
+  const themeCompartment = useMemo(() => new Compartment(), [])
+  const onChangeRef = useRef(onChange)
+  const onSaveRef = useRef(onSave)
+  const onOpenSearchRef = useRef(onOpenSearch)
+  const onViewReadyRef = useRef(onViewReady)
+  useEffect(() => {
+    onChangeRef.current = onChange
+    onSaveRef.current = onSave
+    onOpenSearchRef.current = onOpenSearch
+    onViewReadyRef.current = onViewReady
+  })
+
+  const editorTheme = useMemo(
+    () =>
+      EditorView.theme(
+        {
+          "&": {
+            height: "100%",
+            backgroundColor: "var(--card)",
+            color: "var(--foreground)",
+          },
+          "&.cm-editor, .cm-scroller": {
+            backgroundColor: "var(--card)",
+          },
+          "&.cm-focused": {
+            outline: "none",
+          },
+          ".cm-scroller": {
+            fontFamily:
+              '"SF Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace',
+            fontSize: "12px",
+            lineHeight: "1.625",
+          },
+          ".cm-content": {
+            minHeight: "100%",
+            padding: "16px",
+            userSelect: "text",
+            WebkitUserSelect: "text",
+          },
+          ".cm-gutters, .cm-gutter": {
+            backgroundColor: "var(--card)",
+            color: "var(--muted-foreground)",
+          },
+          ".cm-gutters": {
+            borderRight: "1px solid var(--border)",
+          },
+          ".cm-activeLine": {
+            backgroundColor:
+              "color-mix(in srgb, var(--accent) 42%, transparent)",
+          },
+          ".cm-activeLineGutter": {
+            backgroundColor:
+              "color-mix(in srgb, var(--accent) 52%, transparent)",
+            color: "var(--foreground)",
+          },
+          "&.cm-editor .cm-selectionBackground, &.cm-editor.cm-focused > .cm-scroller .cm-selectionBackground, & ::selection":
+            {
+              backgroundColor:
+                themeType === "dark"
+                  ? "rgba(120, 150, 200, 0.45)"
+                  : "rgba(70, 110, 180, 0.30)",
+            },
+          ".cm-cursor": {
+            borderLeftColor: "var(--foreground)",
+          },
+          ".cm-panels": {
+            display: "none",
+          },
+          ".cm-searchMatch": {
+            backgroundColor: "rgba(250, 204, 21, 0.35)",
+            outline: "1px solid rgba(250, 204, 21, 0.9)",
+            borderRadius: "2px",
+            color: themeType === "dark" ? "#fff" : "inherit",
+          },
+          ".cm-searchMatch-selected, &.cm-focused .cm-selectionBackground.cm-searchMatch, .cm-searchMatch.cm-searchMatch-selected":
+            {
+              backgroundColor: "rgb(250, 204, 21)",
+              color: "#000",
+            },
+        },
+        { dark: themeType === "dark" }
+      ),
+    [themeType]
+  )
+
+  const themeExtension = useMemo(
+    () => [themeType === "dark" ? oneDark : [], editorTheme],
+    [editorTheme, themeType]
+  )
+
+  const extensions = useMemo(
+    () => [
+      basicSetup,
+      themeCompartment.of(themeExtension),
+      languageCompartment.of([]),
+      Prec.highest(
+        keymap.of([
+          {
+            key: "Mod-s",
+            preventDefault: true,
+            run: () => {
+              onSaveRef.current()
+              return true
+            },
+          },
+          {
+            key: "Mod-f",
+            preventDefault: true,
+            run: () => {
+              onOpenSearchRef.current()
+              return true
+            },
+          },
+        ])
+      ),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged)
+          onChangeRef.current(update.state.doc.toString())
+      }),
+    ],
+    // Intentionally stable: theme/language swaps via Compartment, handlers via refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [languageCompartment, themeCompartment]
+  )
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: themeCompartment.reconfigure(themeExtension),
+    })
+  }, [themeCompartment, themeExtension])
+
+  useEffect(() => {
+    const parent = containerRef.current
+    if (!parent) return
+
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({ doc: value, extensions }),
+    })
+    viewRef.current = view
+    onViewReadyRef.current(view)
+    view.focus()
+
+    return () => {
+      view.destroy()
+      if (viewRef.current === view) viewRef.current = null
+      onViewReadyRef.current(null)
+    }
+    // Create/recreate only when editor setup changes. Document changes are
+    // synchronized by the value effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extensions])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const current = view.state.doc.toString()
+    if (current === value) return
+    view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
+  }, [value])
+
+  useEffect(() => {
+    let cancelled = false
+    const description = LanguageDescription.matchFilename(languages, path)
+    if (!description) {
+      viewRef.current?.dispatch({
+        effects: languageCompartment.reconfigure([]),
+      })
+      return
+    }
+
+    description
+      .load()
+      .then((support) => {
+        if (cancelled) return
+        viewRef.current?.dispatch({
+          effects: languageCompartment.reconfigure(support),
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        viewRef.current?.dispatch({
+          effects: languageCompartment.reconfigure([]),
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [languageCompartment, path])
+
+  return <div ref={containerRef} className="h-full min-h-0" />
 }
 
 export function FilePreview({ cwd, path }: Props) {
@@ -113,62 +270,134 @@ export function FilePreview({ cwd, path }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [themeType, setThemeType] = useState<"light" | "dark">(() =>
-    currentThemeType(),
-  )
-  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const bgRef = useRef<HTMLDivElement>(null)
-  // Snapshot of the textarea selection at the moment the context menu opens.
-  // base-ui moves focus to the menu, which can collapse the selection — we
-  // use this snapshot so Copy still works on what the user had highlighted.
-  const selectionSnapshotRef = useRef<{ start: number; end: number } | null>(
-    null,
+    currentThemeType()
   )
 
-  // Search overlay state.
+  useEffect(() => {
+    if (document.head.querySelector("style[data-gearshift-cm-selection]")) return
+    const s = document.createElement("style")
+    s.dataset.gearshiftCmSelection = "1"
+    s.textContent = `
+      .cm-editor .cm-selectionLayer { z-index: 1 !important; }
+      .cm-editor ::selection,
+      .cm-editor *::selection,
+      .cm-editor ::-moz-selection,
+      .cm-editor *::-moz-selection {
+        background: transparent !important;
+        color: inherit !important;
+      }
+      .cm-editor .cm-selectionLayer { opacity: 1 !important; }
+      .cm-editor .cm-selectionBackground,
+      .cm-editor.cm-focused .cm-selectionBackground {
+        background: rgba(100, 120, 160, 0.22) !important;
+      }
+      [data-theme="dark"] .cm-editor .cm-selectionBackground,
+      [data-theme="dark"] .cm-editor.cm-focused .cm-selectionBackground,
+      .dark .cm-editor .cm-selectionBackground,
+      .dark .cm-editor.cm-focused .cm-selectionBackground {
+        background: rgba(140, 165, 210, 0.22) !important;
+      }
+    `
+    document.head.appendChild(s)
+  }, [])
+
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const [matchIdx, setMatchIdx] = useState(0)
+  const editorViewRef = useRef<EditorView | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const dirty = state.kind === "ready" && draft !== savedContent
-  const deferredDraft = useDeferredValue(draft)
-  const lang = useMemo(() => detectLang(path), [path])
+
+  const matches = useMemo(
+    () => (state.kind === "ready" ? findAllMatches(draft, query) : []),
+    [state, draft, query]
+  )
+  const matchCount = matches.length
+
+  useEffect(() => {
+    const view = editorViewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: setSearchQuery.of(
+        new SearchQuery({ search: query, caseSensitive: false })
+      ),
+    })
+    if (!query || matches.length === 0) return
+    const cursor = view.state.selection.main.from
+    const target =
+      matches.find(([from]) => from >= cursor) ?? matches[0]
+    const [from, to] = target
+    view.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: "center" }),
+    })
+  }, [query, searchOpen, matches])
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true)
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }, [])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    const view = editorViewRef.current
+    if (view) {
+      view.dispatch({
+        effects: setSearchQuery.of(new SearchQuery({ search: "" })),
+      })
+      view.focus()
+    }
+  }, [])
+
+  const jumpTo = useCallback(
+    (direction: 1 | -1) => {
+      const view = editorViewRef.current
+      if (!view || matches.length === 0) return
+      const cursor = view.state.selection.main
+      let idx: number
+      if (direction === 1) {
+        idx = matches.findIndex(([from]) => from > cursor.from)
+        if (idx === -1) idx = 0
+      } else {
+        for (idx = matches.length - 1; idx >= 0; idx--) {
+          if (matches[idx][0] < cursor.from) break
+        }
+        if (idx < 0) idx = matches.length - 1
+      }
+      const [from, to] = matches[idx]
+      view.dispatch({
+        selection: { anchor: from, head: to },
+        effects: EditorView.scrollIntoView(from, { y: "center" }),
+      })
+    },
+    [matches]
+  )
+
+  const nextMatch = useCallback(() => jumpTo(1), [jumpTo])
+  const prevMatch = useCallback(() => jumpTo(-1), [jumpTo])
 
   useEffect(() => {
     const root = document.documentElement
-    const observer = new MutationObserver(() => setThemeType(currentThemeType()))
-    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-theme"] })
+    const observer = new MutationObserver(() =>
+      setThemeType(currentThemeType())
+    )
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme"],
+    })
     return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    if (state.kind !== "ready" || query) {
-      setHighlightedHtml(null)
-      return
-    }
-
     let cancelled = false
-    codeToHtml(deferredDraft, {
-      lang,
-      theme: themeType === "dark" ? "github-dark" : "github-light",
+    queueMicrotask(() => {
+      if (cancelled) return
+      setState({ kind: "loading" })
+      setSaveError(null)
     })
-      .then((html) => {
-        if (!cancelled) setHighlightedHtml(html)
-      })
-      .catch(() => {
-        if (!cancelled) setHighlightedHtml(null)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [deferredDraft, lang, query, state.kind, themeType])
-
-  useEffect(() => {
-    let cancelled = false
-    setState({ kind: "loading" })
-    setSaveError(null)
     window.fsApi.readFile(abs).then((res) => {
       if (cancelled) return
       if (!res.ok) {
@@ -178,37 +407,10 @@ export function FilePreview({ cwd, path }: Props) {
       } else if (res.binary) {
         setState({ kind: "binary" })
       } else {
-        const c = res.content ?? ""
-        setState({ kind: "ready", content: c })
-        setSavedContent(c)
-        setDraft(c)
-        // Reset scroll + caret to the top whenever a new file finishes
-        // loading so opening a file from the palette or sidebar always lands
-        // at the beginning. We focus a few times across frames because the
-        // Command Palette's dialog restores focus to its trigger when it
-        // closes — that happens after our first focus attempt and would
-        // otherwise steal it back.
-        const focusToTop = () => {
-          if (cancelled) return
-          const ta = textareaRef.current
-          const pre = bgRef.current
-          if (ta) {
-            ta.scrollTop = 0
-            ta.scrollLeft = 0
-            try {
-              ta.setSelectionRange(0, 0)
-            } catch {
-              // ignore
-            }
-            ta.focus({ preventScroll: true })
-          }
-          if (pre) {
-            pre.scrollTop = 0
-            pre.scrollLeft = 0
-          }
-        }
-        requestAnimationFrame(focusToTop)
-        setTimeout(focusToTop, 80)
+        const content = res.content ?? ""
+        setState({ kind: "ready", content })
+        setSavedContent(content)
+        setDraft(content)
       }
     })
     return () => {
@@ -216,18 +418,7 @@ export function FilePreview({ cwd, path }: Props) {
     }
   }, [abs])
 
-  // One-time global stylesheet for the highlight names.
-  useEffect(() => {
-    if (typeof document === "undefined") return
-    if (document.head.querySelector("style[data-gearshift-file-search]"))
-      return
-    const s = document.createElement("style")
-    s.dataset.gearshiftFileSearch = "1"
-    s.textContent = HIGHLIGHT_STYLE
-    document.head.appendChild(s)
-  }, [])
-
-  const save = async () => {
+  const save = useCallback(async () => {
     if (state.kind !== "ready" || !dirty || saving) return
     setSaving(true)
     setSaveError(null)
@@ -238,124 +429,7 @@ export function FilePreview({ cwd, path }: Props) {
       return
     }
     setSavedContent(draft)
-  }
-
-  const matches = useMemo(
-    () => (state.kind === "ready" ? findAllMatches(draft, query) : []),
-    [state, draft, query],
-  )
-  const matchCount = matches.length
-
-  useEffect(() => {
-    setMatchIdx(0)
-  }, [query])
-
-  // Apply highlights to the bg <pre>'s text node.
-  useEffect(() => {
-    if (
-      typeof CSS === "undefined" ||
-      !("highlights" in CSS) ||
-      typeof Highlight === "undefined"
-    )
-      return
-    const highlights = CSS.highlights as Map<string, Highlight>
-    const pre = bgRef.current
-    const textNode = pre?.firstChild as Text | null | undefined
-    if (!textNode || matchCount === 0 || !query) {
-      highlights.delete(HIGHLIGHT_NAME)
-      highlights.delete(HIGHLIGHT_ACTIVE_NAME)
-      return
-    }
-    const currentIdx = matchIdx >= matchCount ? 0 : matchIdx
-    const restRanges: Range[] = []
-    let activeRange: Range | null = null
-    for (let i = 0; i < matches.length; i++) {
-      const [s, e] = matches[i]
-      const r = document.createRange()
-      try {
-        r.setStart(textNode, s)
-        r.setEnd(textNode, e)
-      } catch {
-        continue
-      }
-      if (i === currentIdx) activeRange = r
-      else restRanges.push(r)
-    }
-    highlights.set(HIGHLIGHT_NAME, new Highlight(...restRanges))
-    if (activeRange) {
-      highlights.set(HIGHLIGHT_ACTIVE_NAME, new Highlight(activeRange))
-    } else {
-      highlights.delete(HIGHLIGHT_ACTIVE_NAME)
-    }
-  }, [matches, matchCount, matchIdx, query, draft])
-
-  // Clean up on unmount.
-  useEffect(() => {
-    return () => {
-      if (typeof CSS !== "undefined" && "highlights" in CSS) {
-        ;(CSS.highlights as Map<string, Highlight>).delete(HIGHLIGHT_NAME)
-        ;(CSS.highlights as Map<string, Highlight>).delete(
-          HIGHLIGHT_ACTIVE_NAME,
-        )
-      }
-    }
-  }, [])
-
-  const scrollMatchIntoView = (idx: number) => {
-    if (!matchCount) return
-    const [start, end] = matches[((idx % matchCount) + matchCount) % matchCount]
-    const ta = textareaRef.current
-    const pre = bgRef.current
-    if (!ta) return
-    // setSelectionRange doesn't reliably auto-scroll across browsers, so
-    // compute the line and scroll manually. Keep the bg <pre> in sync.
-    const cs = window.getComputedStyle(ta)
-    const lineHeight =
-      parseFloat(cs.lineHeight) ||
-      parseFloat(cs.fontSize) * 1.4 ||
-      16
-    const linesBefore = draft.slice(0, start).split("\n").length - 1
-    const target = Math.max(
-      0,
-      linesBefore * lineHeight - ta.clientHeight / 2 + lineHeight / 2,
-    )
-    ta.scrollTop = target
-    if (pre) pre.scrollTop = target
-    // Selection (visible even when textarea isn't focused, just muted).
-    ta.setSelectionRange(start, end)
-  }
-
-  const nextMatch = () => {
-    if (!matchCount) return
-    const next = (matchIdx + 1) % matchCount
-    setMatchIdx(next)
-    scrollMatchIntoView(next)
-  }
-  const prevMatch = () => {
-    if (!matchCount) return
-    const next = (matchIdx - 1 + matchCount) % matchCount
-    setMatchIdx(next)
-    scrollMatchIntoView(next)
-  }
-
-  // Cmd/Ctrl+F opens search; Cmd/Ctrl+S saves; Escape closes search.
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const mod = e.metaKey || e.ctrlKey
-    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
-      e.preventDefault()
-      setSearchOpen(true)
-      requestAnimationFrame(() => {
-        searchInputRef.current?.focus()
-        searchInputRef.current?.select()
-      })
-    } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
-      e.preventDefault()
-      void save()
-    } else if (e.key === "Escape" && searchOpen) {
-      setSearchOpen(false)
-      textareaRef.current?.focus()
-    }
-  }
+  }, [abs, dirty, draft, saving, state.kind])
 
   if (state.kind === "loading") {
     return (
@@ -389,7 +463,51 @@ export function FilePreview({ cwd, path }: Props) {
   return (
     <div
       className="relative flex h-full flex-col bg-card"
-      onKeyDown={onKeyDown}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && searchOpen) {
+          e.preventDefault()
+          closeSearch()
+        }
+      }}
+      onContextMenu={(e) => {
+        const view = editorViewRef.current
+        if (!view) return
+        const target = e.target as HTMLElement | null
+        if (!target || !view.dom.contains(target)) return
+        e.preventDefault()
+        const sel = view.state.selection.main
+        const canCopy = !sel.empty
+        ;(async () => {
+          const action = await window.menuApi?.showEditContext({
+            canCut: canCopy,
+            canCopy,
+            canPaste: true,
+          })
+          if (!action) return
+          view.focus()
+          if (action === "copy" || action === "cut") {
+            const text = view.state.sliceDoc(sel.from, sel.to)
+            if (text) await navigator.clipboard.writeText(text)
+            if (action === "cut" && text) {
+              view.dispatch({
+                changes: { from: sel.from, to: sel.to, insert: "" },
+              })
+            }
+          } else if (action === "paste") {
+            try {
+              const text = await navigator.clipboard.readText()
+              if (text) {
+                view.dispatch({
+                  changes: { from: sel.from, to: sel.to, insert: text },
+                  selection: { anchor: sel.from + text.length },
+                })
+              }
+            } catch {
+              // clipboard permission denied — ignore
+            }
+          }
+        })()
+      }}
     >
       {searchOpen && (
         <div className="absolute right-3 top-2 z-20 flex items-center gap-1 rounded-md border border-border bg-popover px-1 py-1 text-xs shadow-md">
@@ -408,11 +526,7 @@ export function FilePreview({ cwd, path }: Props) {
             className="w-44 bg-transparent px-2 py-0.5 outline-none placeholder:text-muted-foreground"
           />
           <span className="px-1 text-muted-foreground">
-            {matchCount === 0
-              ? query
-                ? "0/0"
-                : ""
-              : `${matchIdx + 1}/${matchCount}`}
+            {matchCount === 0 ? (query ? "0/0" : "") : `${matchCount}`}
           </span>
           <button
             type="button"
@@ -434,10 +548,7 @@ export function FilePreview({ cwd, path }: Props) {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setSearchOpen(false)
-              textareaRef.current?.focus()
-            }}
+            onClick={closeSearch}
             aria-label="Close search"
             className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
           >
@@ -448,158 +559,24 @@ export function FilePreview({ cwd, path }: Props) {
       {(dirty || saveError) && (
         <div className="flex h-6 shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px]">
           <span className={cn(dirty ? "text-muted-foreground" : "")}>
-            {dirty
-              ? saving
-                ? "Saving…"
-                : "Modified — ⌘S to save"
-              : null}
+            {dirty ? (saving ? "Saving…" : "Modified — ⌘S to save") : null}
           </span>
           {saveError && <span className="text-red-500">{saveError}</span>}
         </div>
       )}
-      <ContextMenu
-        onOpenChange={(o) => {
-          if (!o) {
-            // After the menu closes, restore the visual selection from the
-            // snapshot so the user's highlight reappears.
-            const snap = selectionSnapshotRef.current
-            const ta = textareaRef.current
-            if (snap && ta && snap.start !== snap.end) {
-              requestAnimationFrame(() => {
-                try {
-                  ta.focus({ preventScroll: true })
-                  ta.setSelectionRange(snap.start, snap.end)
-                } catch {
-                  // ignore
-                }
-              })
-            }
-          }
-        }}
-      >
-        <ContextMenuTrigger
-          render={
-            <div className="relative flex-1 min-h-0">
-              {/* Background: the text rendered as real text nodes so the CSS
-                  Highlight API has something to highlight. */}
-              <div
-                ref={bgRef}
-                aria-hidden
-                className="file-preview-highlight pointer-events-none absolute inset-0 m-0 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre text-foreground"
-                {...(highlightedHtml
-                  ? { dangerouslySetInnerHTML: { __html: highlightedHtml } }
-                  : { children: draft })}
-              />
-              {/* Foreground: invisible-text textarea that still accepts input and
-                  shows the caret. Keep scroll/size identical so highlights line up. */}
-              <textarea
-                ref={textareaRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onScroll={(e) => {
-                  const pre = bgRef.current
-                  if (!pre) return
-                  pre.scrollTop = e.currentTarget.scrollTop
-                  pre.scrollLeft = e.currentTarget.scrollLeft
-                }}
-                onContextMenu={(e) => {
-                  const ta = e.currentTarget
-                  selectionSnapshotRef.current = {
-                    start: ta.selectionStart,
-                    end: ta.selectionEnd,
-                  }
-                }}
-                spellCheck={false}
-                className="absolute inset-0 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed whitespace-pre text-transparent caret-foreground outline-none selection:bg-foreground/20 [-webkit-text-fill-color:transparent]"
-              />
-            </div>
-          }
+      <div className="min-h-0 flex-1">
+        <CodeEditor
+          value={draft}
+          path={path}
+          themeType={themeType}
+          onChange={setDraft}
+          onSave={save}
+          onOpenSearch={openSearch}
+          onViewReady={(view) => {
+            editorViewRef.current = view
+          }}
         />
-        <ContextMenuContent className="min-w-[160px]">
-          <ContextMenuItem
-            disabled={state.kind !== "ready"}
-            onClick={() => {
-              const ta = textareaRef.current
-              if (!ta) return
-              // Prefer the live selection; fall back to the snapshot taken
-              // when the context menu opened in case focus moved into the
-              // menu and collapsed the textarea's selection.
-              let start = ta.selectionStart
-              let end = ta.selectionEnd
-              if (start === end && selectionSnapshotRef.current) {
-                start = selectionSnapshotRef.current.start
-                end = selectionSnapshotRef.current.end
-              }
-              const sel = ta.value.substring(start, end)
-              const text = sel || ta.value
-              void navigator.clipboard.writeText(text)
-            }}
-          >
-            Copy
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={state.kind !== "ready"}
-            onClick={async () => {
-              const ta = textareaRef.current
-              if (!ta) return
-              try {
-                const text = await navigator.clipboard.readText()
-                let start = ta.selectionStart
-                let end = ta.selectionEnd
-                if (start === end && selectionSnapshotRef.current) {
-                  start = selectionSnapshotRef.current.start
-                  end = selectionSnapshotRef.current.end
-                }
-                const next = ta.value.slice(0, start) + text + ta.value.slice(end)
-                setDraft(next)
-                const caret = start + text.length
-                requestAnimationFrame(() => {
-                  ta.focus()
-                  try {
-                    ta.setSelectionRange(caret, caret)
-                  } catch {
-                    // ignore
-                  }
-                })
-              } catch {
-                // ignore
-              }
-            }}
-          >
-            Paste
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            disabled={state.kind !== "ready"}
-            onClick={() => {
-              const ta = textareaRef.current
-              if (!ta) return
-              ta.focus()
-              ta.select()
-            }}
-          >
-            Select all
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={state.kind !== "ready" || draft.length === 0}
-            onClick={() => {
-              setDraft("")
-              requestAnimationFrame(() => {
-                const ta = textareaRef.current
-                if (!ta) return
-                ta.focus()
-                try {
-                  ta.setSelectionRange(0, 0)
-                } catch {
-                  // ignore
-                }
-              })
-            }}
-          >
-            Clear
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+      </div>
     </div>
   )
 }

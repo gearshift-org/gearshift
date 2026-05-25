@@ -1,19 +1,25 @@
 import * as React from "react"
-import { X, Keyboard, Palette } from "lucide-react"
+import { X, Keyboard, Palette, SlidersHorizontal } from "lucide-react"
 import { router } from "@/router"
 import { cn } from "@/lib/utils"
 import { KeybindingsPanel } from "./KeybindingsPanel"
 import { AppearancePanel } from "./AppearancePanel"
+import { GeneralPanel } from "./GeneralPanel"
 
-type Section = "keybindings" | "appearance"
+type Section = "general" | "keybindings" | "appearance"
 
-const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const SECTIONS: {
+  id: Section
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}[] = [
+  { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
   { id: "appearance", label: "Appearance", icon: Palette },
 ]
 
 export function SettingsRoute() {
-  const [section, setSection] = React.useState<Section>("keybindings")
+  const [section, setSection] = React.useState<Section>("general")
 
   const close = React.useCallback(() => {
     const idx = router.history.length
@@ -63,7 +69,7 @@ export function SettingsRoute() {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted",
-                  active && "bg-muted font-medium",
+                  active && "bg-muted font-medium"
                 )}
               >
                 <Icon className="size-4 text-muted-foreground" />
@@ -74,6 +80,7 @@ export function SettingsRoute() {
         </aside>
         <main className="min-w-0 flex-1 overflow-auto p-6">
           <div className="mx-auto max-w-3xl">
+            {section === "general" ? <GeneralPanel /> : null}
             {section === "keybindings" ? <KeybindingsPanel /> : null}
             {section === "appearance" ? <AppearancePanel /> : null}
           </div>

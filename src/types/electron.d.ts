@@ -1,5 +1,6 @@
 import type {
   AppApi,
+  AppWindowApi,
   ClipboardApi,
   DialogApi,
   ElectronUtils,
@@ -19,6 +20,7 @@ declare global {
     clipboardApi: ClipboardApi
     electronUtils: ElectronUtils
     appApi: AppApi
+    appWindow: AppWindowApi
     git: GitApi
     fsApi: FsApi
     stateApi?: StateApi

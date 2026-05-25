@@ -93,6 +93,18 @@ export async function listForSession(
   return rows
 }
 
+export async function projectIdForSession(
+  sessionId: string
+): Promise<string | null> {
+  const handle = await ensureDb()
+  const rows = await handle
+    .select({ projectId: chatMessages.projectId })
+    .from(chatMessages)
+    .where(eq(chatMessages.sessionId, sessionId))
+    .limit(1)
+  return rows[0]?.projectId ?? null
+}
+
 export async function clearForSession(sessionId: string): Promise<void> {
   const handle = await ensureDb()
   await handle.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId))
@@ -101,6 +113,22 @@ export async function clearForSession(sessionId: string): Promise<void> {
 export async function clearForProject(projectId: string): Promise<void> {
   const handle = await ensureDb()
   await handle.delete(chatMessages).where(eq(chatMessages.projectId, projectId))
+}
+
+export async function migrateProjectIds(
+  migrations: Array<{ from: string; to: string }>
+): Promise<void> {
+  if (migrations.length === 0) return
+  const handle = await ensureDb()
+  for (const migration of migrations) {
+    if (!migration.from || !migration.to || migration.from === migration.to) {
+      continue
+    }
+    await handle
+      .update(chatMessages)
+      .set({ projectId: migration.to })
+      .where(eq(chatMessages.projectId, migration.from))
+  }
 }
 
 export async function closeDb(): Promise<void> {

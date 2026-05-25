@@ -1894,8 +1894,23 @@ app.whenReady().then(async () => {
     }
   )
 
-  ipcMain.handle("term:history:clear", async (_e, sessionId: string) => {
+  ipcMain.handle(
+    "term:history:migrateProjectIds",
+    async (_event, migrations: Array<{ from: string; to: string }>) => {
+      await chatDb.migrateProjectIds(Array.isArray(migrations) ? migrations : [])
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle("term:history:clear", async (event, sessionId: string) => {
+    const projectId =
+      sessionProjects.get(sessionId) ??
+      (await chatDb.projectIdForSession(sessionId))
     await chatDb.clearForSession(sessionId)
+    const sender = event.sender
+    if (projectId && sender && !sender.isDestroyed()) {
+      sender.send(`term:history:projectSessionCleared:${projectId}`, sessionId)
+    }
     return { ok: true }
   })
 

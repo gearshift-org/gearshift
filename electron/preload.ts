@@ -112,6 +112,10 @@ const termApi = {
       ipcRenderer.invoke("term:history:clearProject", projectId) as Promise<{
         ok: boolean
       }>,
+    migrateProjectIds: (migrations: Array<{ from: string; to: string }>) =>
+      ipcRenderer.invoke("term:history:migrateProjectIds", migrations) as Promise<{
+        ok: boolean
+      }>,
     onProjectAppended: (
       projectId: string,
       cb: (msg: ChatHistoryMessage) => void
@@ -124,6 +128,15 @@ const termApi = {
     onProjectCleared: (projectId: string, cb: () => void) => {
       const channel = `term:history:projectCleared:${projectId}`
       const listener = () => cb()
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onProjectSessionCleared: (
+      projectId: string,
+      cb: (sessionId: string) => void
+    ) => {
+      const channel = `term:history:projectSessionCleared:${projectId}`
+      const listener = (_e: unknown, sessionId: string) => cb(sessionId)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },

@@ -35,6 +35,20 @@ const PALETTE_RECENTS_MAX = 200
 
 export type RecentProject = { name: string; path: string }
 
+export function stableProjectId(projectPath: string): string {
+  const normalized = projectPath.replace(/\/+$/, "")
+  let hashA = 0x811c9dc5
+  let hashB = 0x01000193
+  for (let i = 0; i < normalized.length; i += 1) {
+    const code = normalized.charCodeAt(i)
+    hashA ^= code
+    hashA = Math.imul(hashA, 0x01000193)
+    hashB ^= code
+    hashB = Math.imul(hashB, 0x811c9dc5)
+  }
+  return `project-${(hashA >>> 0).toString(36)}${(hashB >>> 0).toString(36)}`
+}
+
 export type PaletteRecents = {
   projects: string[]
   tabsByProject: Record<string, string[]>

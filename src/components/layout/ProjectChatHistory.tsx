@@ -60,10 +60,17 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
     const offClear = window.term.history.onProjectCleared(projectId, () => {
       setMessages([])
     })
+    const offSessionClear = window.term.history.onProjectSessionCleared(
+      projectId,
+      (sessionId) => {
+        setMessages((prev) => prev.filter((msg) => msg.sessionId !== sessionId))
+      }
+    )
     return () => {
       cancelled = true
       offAppend()
       offClear()
+      offSessionClear()
     }
   }, [projectId, reloadKey])
 

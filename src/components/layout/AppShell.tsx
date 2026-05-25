@@ -42,6 +42,7 @@ import {
   saveProjects,
   saveRightSidebarTab,
   saveSidebarOpen,
+  stableProjectId,
   type PaletteRecents,
   RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
   type RecentProject,
@@ -50,35 +51,65 @@ import {
 } from "@/lib/projects"
 import { store } from "@/lib/store"
 
+type ProjectIdMigration = { from: string; to: string }
+
+function hydrateProjectSnapshot(): {
+  projects: Project[]
+  migrations: ProjectIdMigration[]
+} {
+  const migrations: ProjectIdMigration[] = []
+  const seen = new Set<string>()
+  const projects = loadProjects().flatMap((p: StoredProject) => {
+    const id = stableProjectId(p.path)
+    if (seen.has(id)) return []
+    seen.add(id)
+    if (p.id !== id) migrations.push({ from: p.id, to: id })
+    return [
+      {
+        id,
+        name: p.name,
+        path: p.path,
+        tabs: (p.tabs ?? []).map((t) => {
+          const storedPanes =
+            t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
+          const panes = storedPanes.map((sp) => ({
+            id: sp.id,
+            pendingStart: true,
+            ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
+            ...(sp.customName ? { customName: sp.customName } : {}),
+          }))
+          const activePaneId =
+            (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
+              ? t.activePaneId
+              : panes[0]?.id) ?? t.id
+          return {
+            kind: "terminal" as const,
+            id: t.id,
+            name: t.name,
+            customName: t.customName,
+            panes,
+            activePaneId,
+          }
+        }),
+        activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
+      },
+    ]
+  })
+  return { projects, migrations }
+}
+
 function hydrateProjects(): Project[] {
-  return loadProjects().map((p: StoredProject) => ({
-    id: p.id,
-    name: p.name,
-    path: p.path,
-    tabs: (p.tabs ?? []).map((t) => {
-      const storedPanes =
-        t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
-      const panes = storedPanes.map((sp) => ({
-        id: sp.id,
-        pendingStart: true,
-        ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
-        ...(sp.customName ? { customName: sp.customName } : {}),
-      }))
-      const activePaneId =
-        (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
-          ? t.activePaneId
-          : panes[0]?.id) ?? t.id
-      return {
-        kind: "terminal" as const,
-        id: t.id,
-        name: t.name,
-        customName: t.customName,
-        panes,
-        activePaneId,
-      }
-    }),
-    activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
-  }))
+  return hydrateProjectSnapshot().projects
+}
+
+function resolveMigratedProjectId(
+  id: string | null,
+  projects: Project[],
+  migrations: ProjectIdMigration[]
+): string | null {
+  if (!id) return null
+  if (projects.some((p) => p.id === id)) return id
+  return migrations.find((migration) => migration.from === id)?.to ?? null
 }
 
 function makeId() {
@@ -232,8 +263,11 @@ export function AppShell() {
   }
   const routeProjectId = params.projectId ?? null
   const routeTabId = params.tabId ?? null
+  const initialProjectSnapshot = useMemo(() => hydrateProjectSnapshot(), [])
 
-  const [projects, setProjects] = useState<Project[]>(() => hydrateProjects())
+  const [projects, setProjects] = useState<Project[]>(() =>
+    initialProjectSnapshot.projects
+  )
   const [recents, setRecents] = useState<RecentProject[]>(() =>
     loadRecentProjects()
   )
@@ -251,10 +285,21 @@ export function AppShell() {
   const [stateRestored, setStateRestored] = useState(() => store.isReady())
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
     string | null
-  >(() => loadActiveProjectId())
+  >(() => {
+    return resolveMigratedProjectId(
+      loadActiveProjectId(),
+      initialProjectSnapshot.projects,
+      initialProjectSnapshot.migrations
+    )
+  })
   const [openingTerminalTabId, setOpeningTerminalTabId] = useState<string | null>(
     null,
   )
+
+  useEffect(() => {
+    if (initialProjectSnapshot.migrations.length === 0) return
+    void window.term.history.migrateProjectIds(initialProjectSnapshot.migrations)
+  }, [initialProjectSnapshot.migrations])
 
   // Disk snapshot arrives async — re-sync once it lands so the UI can paint
   // immediately with empty state and then fill in. Also restores the last
@@ -262,14 +307,23 @@ export function AppShell() {
   useEffect(
     () =>
       store.onReady(() => {
-        const hydrated = hydrateProjects()
+        const snapshot = hydrateProjectSnapshot()
+        const hydrated = snapshot.projects
+        if (snapshot.migrations.length > 0) {
+          saveProjects(serializeProjects(hydrated))
+          void window.term.history.migrateProjectIds(snapshot.migrations)
+        }
         setProjects(hydrated)
         setRecents(loadRecentProjects())
         setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
         setRightSidebarEdgeReveal(loadRightSidebarEdgeReveal())
         setRightSidebarTab(loadRightSidebarTab())
-        const storedActiveId = loadActiveProjectId()
+        const storedActiveId = resolveMigratedProjectId(
+          loadActiveProjectId(),
+          hydrated,
+          snapshot.migrations
+        )
         const validStoredActiveId =
           storedActiveId && hydrated.some((p) => p.id === storedActiveId)
             ? storedActiveId
@@ -635,7 +689,7 @@ export function AppShell() {
       navigateToProject(existing.id, existing.activeTabId || undefined)
       return
     }
-    const id = makeId()
+    const id = stableProjectId(path)
     const tabId = makeId()
     const resolvedName = name || basename(path)
     const { id: paneId } = await window.term.create({

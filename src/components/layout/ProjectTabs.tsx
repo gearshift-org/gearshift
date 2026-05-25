@@ -34,11 +34,7 @@ import {
 } from "@/components/ui/popover"
 import { AddProjectMenu } from "./AddProjectMenu"
 import { AgentSpinner } from "./AgentSpinner"
-import {
-  TAB_LABEL_CLASS,
-  TAB_NAME_TOOLTIP_DELAY_MS,
-  TAB_WIDTH_CLASS,
-} from "./tabSizing"
+import { TAB_LABEL_CLASS, TAB_WIDTH_CLASS } from "./tabSizing"
 import { randomizeProjectColor, type RecentProject } from "@/lib/projects"
 import { ProjectAvatar } from "./ProjectAvatar"
 import type { Project } from "./types"
@@ -108,6 +104,8 @@ function ProjectTabItem({
 }: TabItemProps) {
   const [, setColorVersion] = useState(0)
   const [showSummary, setShowSummary] = useState(false)
+  const [isCompact, setIsCompact] = useState(false)
+  const [triggerNode, setTriggerNode] = useState<HTMLDivElement | null>(null)
   const summaryTimerRef = useRef<number | null>(null)
   const triggerRef = useRef<HTMLDivElement | null>(null)
   const summaryTimerOpenRef = useRef(false)
@@ -134,6 +132,15 @@ function ProjectTabItem({
     }
   }, [])
 
+  useEffect(() => {
+    if (!triggerNode) return
+    const updateCompact = () => setIsCompact(triggerNode.offsetWidth < 88)
+    updateCompact()
+    const observer = new ResizeObserver(updateCompact)
+    observer.observe(triggerNode)
+    return () => observer.disconnect()
+  }, [triggerNode])
+
   const openSummaryAfterDelay = () => {
     if (summaryTimerRef.current !== null) {
       window.clearTimeout(summaryTimerRef.current)
@@ -142,7 +149,7 @@ function ProjectTabItem({
       summaryTimerOpenRef.current = true
       setShowSummary(true)
       summaryTimerRef.current = null
-    }, 3000)
+    }, 700)
   }
 
   const closeSummary = () => {
@@ -182,6 +189,7 @@ function ProjectTabItem({
               ref={(node) => {
                 setNodeRef(node)
                 triggerRef.current = node
+                setTriggerNode(node)
               }}
               style={style}
               onClick={() => onSelect(p.id)}
@@ -189,7 +197,7 @@ function ProjectTabItem({
               onPointerLeave={closeSummary}
               onPointerDown={closeSummary}
               className={cn(
-                "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+                "project-tab group relative flex h-full cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors outline-none focus:outline-none focus-visible:ring-0 focus-visible:outline-none",
                 TAB_WIDTH_CLASS,
                 isActive
                   ? "bg-secondary text-foreground"
@@ -199,55 +207,60 @@ function ProjectTabItem({
               {...attributes}
               {...listeners}
             >
-              <ProjectAvatar name={p.name} path={p.path} />
-              {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
-              {!hasWorkingAgent && hasDoneAgent && (
-                <span
-                  aria-label="Coding agent done"
-                  title="Coding agent done"
-                  className="relative -ml-0.5 grid size-2.5 shrink-0 animate-bounce place-items-center"
-                >
-                  <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
-                </span>
-              )}
-              <Tooltip>
-                <TooltipTrigger
-                  delay={TAB_NAME_TOOLTIP_DELAY_MS}
-                  render={<span className={TAB_LABEL_CLASS}>{p.name}</span>}
-                />
-                <TooltipContent side="bottom" className="max-w-[480px] break-all">
+              <div
+                className={cn(
+                  "project-tab-content flex min-w-0 flex-1 items-center gap-2",
+                  isCompact && "justify-center"
+                )}
+              >
+                <ProjectAvatar name={p.name} path={p.path} />
+                {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
+                {!hasWorkingAgent && hasDoneAgent && (
+                  <span
+                    aria-label="Coding agent done"
+                    title="Coding agent done"
+                    className="relative -ml-0.5 grid size-2.5 shrink-0 animate-bounce place-items-center"
+                  >
+                    <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+                  </span>
+                )}
+                <span className={cn(TAB_LABEL_CLASS, isCompact && "hidden")}>
                   {p.name}
-                </TooltipContent>
-              </Tooltip>
-              {canClose && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span
-                        role="button"
-                        tabIndex={-1}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onClose?.(p.id)
-                        }}
-                        className={cn(
-                          "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground",
-                          isActive && "opacity-60"
-                        )}
-                      >
-                        <X className="size-3.5" />
-                      </span>
-                    }
-                  />
-                  <TooltipContent>Close project</TooltipContent>
-                </Tooltip>
-              )}
+                </span>
+                {canClose && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span
+                          role="button"
+                          tabIndex={-1}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onClose?.(p.id)
+                          }}
+                          className={cn(
+                            "project-tab-close ml-auto size-5 place-items-center rounded-sm opacity-0 transition-colors group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground",
+                            isCompact ? "hidden" : "grid",
+                            isActive && "opacity-60"
+                          )}
+                        >
+                          <X className="size-3.5" />
+                        </span>
+                      }
+                    />
+                    <TooltipContent>Close project</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
             </ContextMenuTrigger>
           }
         />
-        <PopoverContent className="w-auto min-w-[180px] px-3 py-2 text-xs">
-          <div className="font-medium">{p.name}</div>
+        <PopoverContent className="w-auto min-w-[200px] px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 font-medium">
+            <ProjectAvatar name={p.name} path={p.path} />
+            <span className="max-w-[260px] truncate">{p.name}</span>
+          </div>
           <div className="mt-1 text-muted-foreground">
             {terminalCount} {terminalCount === 1 ? "terminal" : "terminals"}
           </div>
@@ -328,7 +341,7 @@ export function ProjectTabs({
   }
 
   return (
-    <div className="flex h-full items-stretch [-webkit-app-region:no-drag]">
+    <div className="flex h-full min-w-0 shrink items-stretch overflow-hidden [-webkit-app-region:no-drag]">
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <SortableContext
           items={projects.map((p) => p.id)}

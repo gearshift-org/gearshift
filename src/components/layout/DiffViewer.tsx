@@ -146,6 +146,14 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
       [files, pathToId],
     )
 
+    const patchVersion = useMemo(() => {
+      let hash = 0
+      for (let i = 0; i < patch.length; i++) {
+        hash = (hash * 31 + patch.charCodeAt(i)) | 0
+      }
+      return hash
+    }, [patch])
+
     const items = useMemo<CodeViewItem[]>(
       () =>
         files.map((file, index) => {
@@ -156,10 +164,10 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
             type: "diff",
             fileDiff: file,
             collapsed: isCollapsed,
-            version: isCollapsed ? 1 : 0,
+            version: patchVersion + (isCollapsed ? 1 : 0),
           }
         }),
-      [files, collapsed],
+      [files, collapsed, patchVersion],
     )
 
     const options = useMemo(

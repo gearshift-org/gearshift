@@ -16,7 +16,13 @@ import fs from "node:fs/promises"
 import { readFileSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import parcelWatcher from "@parcel/watcher"
-import { initUpdater } from "./updater"
+import {
+  initUpdater,
+  getUpdaterState,
+  onUpdaterStateChange,
+  checkForUpdatesNow,
+  quitAndInstall,
+} from "./updater"
 import { ensureDaemonRunning } from "./daemonSupervisor"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
@@ -509,6 +515,12 @@ const menuAccelerators: { "terminal.new": string; "terminal.close": string } = {
 
 function buildMenu() {
   const isMac = process.platform === "darwin"
+  const updater = getUpdaterState()
+  const updateReady = updater.status === "ready"
+  const checkingForUpdate = updater.status === "checking"
+  const installLabel = updateReady
+    ? `Install Update (v${updater.version}) and Restart`
+    : "Install Update"
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
       ? ([
@@ -516,6 +528,22 @@ function buildMenu() {
             label: app.name,
             submenu: [
               { role: "about" },
+              { type: "separator" },
+              {
+                label: checkingForUpdate
+                  ? "Checking for Updates…"
+                  : "Check for Updates…",
+                enabled: !checkingForUpdate,
+                click: () => {
+                  void checkForUpdatesNow()
+                },
+              },
+              {
+                label: installLabel,
+                enabled: updateReady,
+                visible: updateReady,
+                click: () => quitAndInstall(),
+              },
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -871,6 +899,7 @@ async function flushState() {
 app.whenReady().then(async () => {
   buildMenu()
   initUpdater()
+  onUpdaterStateChange(() => buildMenu())
   // The socket server must be listening before any agent tries to connect, so
   // we still await it — but it's just a Unix-socket bind, milliseconds.
   try {

@@ -16,12 +16,49 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 let lastState: UpdaterState = { status: "idle" }
 let initialized = false
+const stateChangeListeners: Array<(state: UpdaterState) => void> = []
 
-function broadcast(state: UpdaterState) {
-  lastState = state
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(CHANNEL, state)
+export function getUpdaterState(): UpdaterState {
+  return lastState
+}
+
+export function onUpdaterStateChange(cb: (state: UpdaterState) => void) {
+  stateChangeListeners.push(cb)
+}
+
+function broadcast(next: UpdaterState) {
+  // Stickiness: once an update is downloaded and ready to install, don't
+  // downgrade the visible state to "checking" / "available" / "idle" just
+  // because a background re-check ran. Only accept a strictly newer "ready"
+  // version (or an error, so the user sees failures).
+  if (lastState.status === "ready") {
+    if (next.status === "ready") {
+      if (next.version === lastState.version) return
+    } else if (next.status !== "error") {
+      return
+    }
   }
+  lastState = next
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(CHANNEL, next)
+  }
+  for (const cb of stateChangeListeners) cb(next)
+}
+
+export async function checkForUpdatesNow() {
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (err) {
+    broadcast({
+      status: "error",
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+  return lastState
+}
+
+export function quitAndInstall() {
+  autoUpdater.quitAndInstall()
 }
 
 export function initUpdater() {
@@ -29,7 +66,6 @@ export function initUpdater() {
   initialized = true
 
   if (!app.isPackaged) {
-    // electron-updater is a no-op in dev; skip wiring to avoid noisy errors.
     ipcMain.handle("updater:check", () => lastState)
     ipcMain.handle("updater:quitAndInstall", () => ({ ok: false, dev: true }))
     ipcMain.handle("updater:getState", () => lastState)
@@ -58,32 +94,15 @@ export function initUpdater() {
     broadcast({ status: "error", message: err?.message ?? String(err) })
   )
 
-  ipcMain.handle("updater:check", async () => {
-    try {
-      await autoUpdater.checkForUpdates()
-    } catch (err) {
-      broadcast({
-        status: "error",
-        message: err instanceof Error ? err.message : String(err),
-      })
-    }
-    return lastState
-  })
-
+  ipcMain.handle("updater:check", () => checkForUpdatesNow())
   ipcMain.handle("updater:quitAndInstall", () => {
-    autoUpdater.quitAndInstall()
+    quitAndInstall()
     return { ok: true }
   })
-
   ipcMain.handle("updater:getState", () => lastState)
 
-  void autoUpdater.checkForUpdates().catch((err) => {
-    broadcast({
-      status: "error",
-      message: err instanceof Error ? err.message : String(err),
-    })
-  })
+  void checkForUpdatesNow()
   setInterval(() => {
-    void autoUpdater.checkForUpdates().catch(() => {})
+    void checkForUpdatesNow()
   }, CHECK_INTERVAL_MS)
 }

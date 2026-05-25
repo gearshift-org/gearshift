@@ -35,6 +35,11 @@ import {
 import { AddProjectMenu } from "./AddProjectMenu"
 import { AgentSpinner } from "./AgentSpinner"
 import {
+  TAB_LABEL_CLASS,
+  TAB_NAME_TOOLTIP_DELAY_MS,
+  TAB_WIDTH_CLASS,
+} from "./tabSizing"
+import {
   getProjectColor,
   randomizeProjectColor,
   type RecentProject,
@@ -208,6 +213,7 @@ function ProjectTabItem({
               onPointerDown={closeSummary}
               className={cn(
                 "group relative flex h-full min-w-[160px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+                TAB_WIDTH_CLASS,
                 isActive
                   ? "bg-secondary text-foreground"
                   : "text-foreground hover:bg-accent/40",
@@ -238,7 +244,15 @@ function ProjectTabItem({
                   <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
                 </span>
               )}
-              <span className="truncate">{p.name}</span>
+              <Tooltip>
+                <TooltipTrigger
+                  delay={TAB_NAME_TOOLTIP_DELAY_MS}
+                  render={<span className={TAB_LABEL_CLASS}>{p.name}</span>}
+                />
+                <TooltipContent side="bottom" className="max-w-[480px] break-all">
+                  {p.name}
+                </TooltipContent>
+              </Tooltip>
               {canClose && (
                 <Tooltip>
                   <TooltipTrigger

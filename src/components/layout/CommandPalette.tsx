@@ -38,6 +38,20 @@ function tabIcon(t: WorkspaceTab) {
   return <TerminalSquare />
 }
 
+function tabCommandValue(t: WorkspaceTab): string {
+  const sessionIds =
+    t.kind === "terminal"
+      ? t.panes.map((pane) => pane.sessionId).filter(Boolean).join(" ")
+      : ""
+  return `tab ${t.kind} ${t.id} ${sessionIds}`
+}
+
+function tabCommandKeywords(t: WorkspaceTab): string[] {
+  const title = tabDisplayName(t)
+  if (t.kind === "diff" || t.kind === "file") return [title, t.path]
+  return [title, ...t.panes.map((pane) => pane.sessionId).filter(Boolean)]
+}
+
 /**
  * Lightweight scorer: prefers basename matches, then path matches, then
  * subsequence matches. Returns null when nothing matches. Designed to be
@@ -221,21 +235,25 @@ export function CommandPalette({
           <>
             {filteredProjects.length > 0 && <CommandSeparator />}
             <CommandGroup heading="Terminals">
-              {filteredTabs.map((t) => (
-                <CommandItem
-                  key={t.id}
-                  value={`tab ${tabDisplayName(t)} ${t.kind === "diff" || t.kind === "file" ? t.path : ""}`}
-                  onSelect={() => run(() => onSelectTab(t.id))}
-                >
-                  {tabIcon(t)}
-                  <span className="truncate">{tabDisplayName(t)}</span>
-                  {(t.kind === "diff" || t.kind === "file") && (
-                    <span className="ml-auto truncate text-xs text-muted-foreground">
-                      {shortenHomePath(t.path)}
-                    </span>
-                  )}
-                </CommandItem>
-              ))}
+              {filteredTabs.map((t) => {
+                const title = tabDisplayName(t)
+                return (
+                  <CommandItem
+                    key={t.id}
+                    value={tabCommandValue(t)}
+                    keywords={tabCommandKeywords(t)}
+                    onSelect={() => run(() => onSelectTab(t.id))}
+                  >
+                    {tabIcon(t)}
+                    <span className="truncate">{title}</span>
+                    {(t.kind === "diff" || t.kind === "file") && (
+                      <span className="ml-auto truncate text-xs text-muted-foreground">
+                        {shortenHomePath(t.path)}
+                      </span>
+                    )}
+                  </CommandItem>
+                )
+              })}
             </CommandGroup>
           </>
         )}

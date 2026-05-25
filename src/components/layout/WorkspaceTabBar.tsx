@@ -17,6 +17,11 @@ import { CSS } from "@dnd-kit/utilities"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
 import { AgentSpinner } from "./AgentSpinner"
+import {
+  TAB_LABEL_CLASS,
+  TAB_NAME_TOOLTIP_DELAY_MS,
+  TAB_WIDTH_CLASS,
+} from "./tabSizing"
 import { displayName, tabDisplayName } from "./terminalName"
 import type { TerminalTab, WorkspaceTab } from "./types"
 import {
@@ -103,6 +108,7 @@ function WorkspaceTabItem({
 }: TabItemProps) {
   const isRenaming = t.id === renamingId
   const isTerminal = t.kind === "terminal"
+  const tabTitle = tabDisplayName(t)
   const isPreview =
     (t.kind === "diff" || t.kind === "file") && t.preview === true
   const hasHiddenWorkingAgent =
@@ -130,7 +136,8 @@ function WorkspaceTabItem({
         ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}
         style={style}
         className={cn(
-          "group relative flex h-full min-w-[140px] shrink-0 cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
+          "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
+          TAB_WIDTH_CLASS,
           isActive
             ? "bg-secondary text-foreground"
             : "text-foreground hover:bg-accent/40",
@@ -161,12 +168,22 @@ function WorkspaceTabItem({
             }}
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            className="w-full bg-transparent text-xs outline-none"
+            className="min-w-0 flex-1 bg-transparent text-xs outline-none"
           />
         ) : (
-          <span className={cn("truncate", isPreview && "italic")}>
-            {tabDisplayName(t)}
-          </span>
+          <Tooltip>
+            <TooltipTrigger
+              delay={TAB_NAME_TOOLTIP_DELAY_MS}
+              render={
+                <span className={cn(TAB_LABEL_CLASS, isPreview && "italic")}>
+                  {tabTitle}
+                </span>
+              }
+            />
+            <TooltipContent side="bottom" className="max-w-[480px] break-all">
+              {tabTitle}
+            </TooltipContent>
+          </Tooltip>
         )}
         {!isRenaming && (
           <Tooltip>

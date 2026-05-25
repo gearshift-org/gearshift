@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react"
-import { Columns2, Rows3 } from "lucide-react"
+import { Columns2, Eye, FileCode, Rows3 } from "lucide-react"
 import {
   closestCenter,
   DndContext,
@@ -15,7 +15,14 @@ import {
 import { cn } from "@/lib/utils"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
-import { FilePreview } from "./FilePreview"
+import {
+  FilePreview,
+  isImagePath,
+  isMarkdownPath,
+  readMdMode,
+  writeMdMode,
+  type MdMode,
+} from "./FilePreview"
 import { PaneHeader } from "./PaneHeader"
 import {
   ResizableHandle,
@@ -272,6 +279,7 @@ function PaneContent({
   project,
   isActive,
   diffViewMode,
+  mdMode,
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
@@ -286,6 +294,7 @@ function PaneContent({
   project: Project
   isActive: boolean
   diffViewMode: "unified" | "split"
+  mdMode: MdMode
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onAgentStatusChange?: (
     tabId: string,
@@ -323,11 +332,12 @@ function PaneContent({
         path={tab.path}
         staged={tab.staged}
         viewMode={diffViewMode}
+        mdMode={mdMode}
         onOpenFile={onOpenFile}
       />
     )
   }
-  return <FilePreview cwd={project.path} path={tab.path} />
+  return <FilePreview cwd={project.path} path={tab.path} mdMode={mdMode} />
 }
 
 export function WorkspacePane({
@@ -367,6 +377,26 @@ export function WorkspacePane({
   const activeDiffMode =
     (activeTab && diffViewModes[activeTab.id]) || defaultDiffMode
 
+  const [mdMode, setMdMode] = useState<MdMode>(() => readMdMode())
+  useEffect(() => store.onReady(() => setMdMode(readMdMode())), [])
+  const activeTabPath =
+    activeTab && (activeTab.kind === "file" || activeTab.kind === "diff")
+      ? activeTab.path
+      : null
+  const isMarkdownActive = !!activeTabPath && isMarkdownPath(activeTabPath)
+  const isImageActive = !!activeTabPath && isImagePath(activeTabPath)
+  // Only the diff tab benefits from a raw/preview switch on images — the
+  // file tab always renders the image. So the toggle is shown when:
+  //   - active tab is a markdown file/diff (preview vs source), or
+  //   - active tab is a diff for an image (preview image vs the textual diff)
+  const showMdToggle =
+    isMarkdownActive || (isImageActive && activeTab?.kind === "diff")
+  const toggleMdMode = () => {
+    const next: MdMode = mdMode === "preview" ? "raw" : "preview"
+    setMdMode(next)
+    writeMdMode(next)
+  }
+
   return (
     <div className="flex h-full flex-col bg-card">
       {!hideSharedHeader && (
@@ -378,42 +408,72 @@ export function WorkspacePane({
                 ? "No tab"
                 : "No project"}
           </span>
-          {isDiffActive && activeTab && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next =
-                        activeDiffMode === "unified" ? "split" : "unified"
-                      setDiffViewModes((prev) => ({
-                        ...prev,
-                        [activeTab.id]: next,
-                      }))
-                      setDefaultDiffMode(next)
-                      saveDiffViewMode(next)
-                    }}
-                    aria-label={
-                      activeDiffMode === "unified"
-                        ? "Switch to split diff"
-                        : "Switch to inline diff"
-                    }
-                    className="ml-auto grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-                  >
-                    {activeDiffMode === "unified" ? (
-                      <Columns2 className="size-3.5" />
-                    ) : (
-                      <Rows3 className="size-3.5" />
-                    )}
-                  </button>
-                }
-              />
-              <TooltipContent>
-                {activeDiffMode === "unified" ? "Split diff" : "Inline diff"}
-              </TooltipContent>
-            </Tooltip>
-          )}
+          <div className="ml-auto flex items-center gap-1">
+            {showMdToggle && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={toggleMdMode}
+                      aria-label={
+                        mdMode === "preview"
+                          ? "Show raw markdown"
+                          : "Show markdown preview"
+                      }
+                      aria-pressed={mdMode === "preview"}
+                      className="grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                    >
+                      {mdMode === "preview" ? (
+                        <Eye className="size-3.5" />
+                      ) : (
+                        <FileCode className="size-3.5" />
+                      )}
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {mdMode === "preview" ? "Show raw" : "Show preview"}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {isDiffActive && activeTab && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next =
+                          activeDiffMode === "unified" ? "split" : "unified"
+                        setDiffViewModes((prev) => ({
+                          ...prev,
+                          [activeTab.id]: next,
+                        }))
+                        setDefaultDiffMode(next)
+                        saveDiffViewMode(next)
+                      }}
+                      aria-label={
+                        activeDiffMode === "unified"
+                          ? "Switch to split diff"
+                          : "Switch to inline diff"
+                      }
+                      className="grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                    >
+                      {activeDiffMode === "unified" ? (
+                        <Columns2 className="size-3.5" />
+                      ) : (
+                        <Rows3 className="size-3.5" />
+                      )}
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {activeDiffMode === "unified" ? "Split diff" : "Inline diff"}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
       )}
       <div className="relative flex-1">
@@ -433,6 +493,7 @@ export function WorkspacePane({
                 project={project}
                 isActive={isActive && t.id === project.activeTabId}
                 diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
+                mdMode={mdMode}
                 onTitleChange={onTitleChange}
                 onAgentStatusChange={onAgentStatusChange}
                 onStartTerminal={onStartTerminal}

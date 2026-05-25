@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
-import { PanelRight } from "lucide-react"
+import { PanelRight, X } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { TitleBar } from "./TitleBar"
 import { ThemeToggle } from "./ThemeToggle"
@@ -165,15 +165,6 @@ function serializeProjects(projects: Project[]) {
 
 function agentDoneToastId(projectId: string, tabId: string, paneId: string) {
   return `agent-done:${projectId}:${tabId}:${paneId}`
-}
-
-function dismissProjectAgentDoneToasts(project: Project) {
-  for (const tab of project.tabs) {
-    if (tab.kind !== "terminal") continue
-    for (const pane of tab.panes) {
-      toast.dismiss(agentDoneToastId(project.id, tab.id, pane.id))
-    }
-  }
 }
 
 function isAppVisibleAndFocused() {
@@ -541,7 +532,6 @@ export function AppShell() {
   useEffect(() => {
     if (!activeProjectId) return
     const activeProject = projects.find((p) => p.id === activeProjectId)
-    if (activeProject) dismissProjectAgentDoneToasts(activeProject)
     if (!activeProject?.agentDone) return
     setProjects((prev) =>
       prev.map((p) =>
@@ -635,7 +625,6 @@ export function AppShell() {
 
   const selectProject = (id: string) => {
     const p = projects.find((x) => x.id === id)
-    if (p) dismissProjectAgentDoneToasts(p)
     setProjects((prev) =>
       prev.map((project) =>
         project.id === id && project.agentDone
@@ -1368,27 +1357,37 @@ export function AppShell() {
         console.info("Agent complete: showing in-app toast")
         toast.custom(
           (id) => (
-            <button
-              type="button"
-              onClick={() =>
-                openAgentDoneTarget(targetProject.id, tabId, paneId, id)
-              }
-              className="flex w-full min-w-72 items-start gap-3 rounded-md border border-border bg-popover p-3 text-left text-popover-foreground shadow-lg"
-            >
-              <span className="mt-1 size-2 shrink-0 rounded-full bg-emerald-500" />
-              <span className="flex min-w-0 flex-col gap-1">
-                <span className="text-sm font-medium">Agent finished</span>
-                <span className="flex min-w-0 items-baseline gap-1 text-xs">
-                  <span className="max-w-36 truncate font-semibold text-foreground">
-                    {targetProject.name}
-                  </span>
-                  <span className="shrink-0 text-muted-foreground">·</span>
-                  <span className="min-w-0 truncate text-muted-foreground">
-                    {terminalName}
+            <div className="flex w-full min-w-72 items-start gap-2 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg">
+              <button
+                type="button"
+                onClick={() =>
+                  openAgentDoneTarget(targetProject.id, tabId, paneId)
+                }
+                className="flex min-w-0 flex-1 items-start gap-3 text-left"
+              >
+                <span className="mt-1 size-2 shrink-0 rounded-full bg-emerald-500" />
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="text-sm font-medium">Agent finished</span>
+                  <span className="flex min-w-0 items-baseline gap-1 text-xs">
+                    <span className="max-w-36 truncate font-semibold text-foreground">
+                      {targetProject.name}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">·</span>
+                    <span className="min-w-0 truncate text-muted-foreground">
+                      {terminalName}
+                    </span>
                   </span>
                 </span>
-              </span>
-            </button>
+              </button>
+              <button
+                type="button"
+                aria-label="Close notification"
+                onClick={() => toast.dismiss(id)}
+                className="-mr-1 -mt-1 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
           ),
           {
             id: toastId,

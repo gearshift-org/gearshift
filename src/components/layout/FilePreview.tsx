@@ -6,13 +6,87 @@ import { keymap } from "@codemirror/view"
 import { SearchQuery, setSearchQuery } from "@codemirror/search"
 import { basicSetup, EditorView } from "codemirror"
 import { oneDark } from "@codemirror/theme-one-dark"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
+import { store } from "@/lib/store"
+
+const IMAGE_EXTS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "svg",
+  "bmp",
+  "ico",
+  "avif",
+])
+
+const MARKDOWN_EXTS = new Set(["md", "markdown", "mdown", "mkd"])
+
+function extOf(path: string): string {
+  const i = path.lastIndexOf(".")
+  return i < 0 ? "" : path.slice(i + 1).toLowerCase()
+}
+
+export type MdMode = "raw" | "preview"
+
+const MD_MODE_KEY = "fp:md-mode"
+
+export function readMdMode(): MdMode {
+  const v = store.get(MD_MODE_KEY)
+  return v === "raw" ? "raw" : "preview"
+}
+
+export function writeMdMode(mode: MdMode): void {
+  store.set(MD_MODE_KEY, mode)
+}
+
+export function isMarkdownPath(path: string): boolean {
+  return MARKDOWN_EXTS.has(extOf(path))
+}
+
+export function isImagePath(path: string): boolean {
+  return IMAGE_EXTS.has(extOf(path))
+}
+
+export function MarkdownView({ source }: { source: string }) {
+  return (
+    <div
+      className={cn(
+        "h-full max-w-none overflow-auto px-8 py-6 text-sm leading-relaxed",
+        "[&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold",
+        "[&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-semibold",
+        "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold",
+        "[&_h4]:mt-3 [&_h4]:mb-1 [&_h4]:text-base [&_h4]:font-semibold",
+        "[&_p]:my-2",
+        "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6",
+        "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6",
+        "[&_li]:my-0.5",
+        "[&_a]:text-blue-500 [&_a]:underline-offset-2 hover:[&_a]:underline",
+        "[&_code]:rounded [&_code]:bg-foreground/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em]",
+        "[&_pre]:my-3 [&_pre]:overflow-auto [&_pre]:rounded [&_pre]:bg-foreground/5 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0",
+        "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-foreground/20 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
+        "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse",
+        "[&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left",
+        "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
+        "[&_hr]:my-4 [&_hr]:border-border",
+        "[&_img]:my-3 [&_img]:max-w-full"
+      )}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{source}</ReactMarkdown>
+    </div>
+  )
+}
 
 type Props = {
   cwd: string
   /** Path relative to project root. */
   path: string
+  /** Markdown render mode — used only when the file is markdown. */
+  mdMode?: MdMode
 }
 
 type LoadState =
@@ -262,8 +336,37 @@ function CodeEditor({
   return <div ref={containerRef} className="h-full min-h-0" />
 }
 
-export function FilePreview({ cwd, path }: Props) {
+export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
   const abs = useMemo(() => joinPath(cwd, path), [cwd, path])
+  const ext = useMemo(() => extOf(path), [path])
+  const isImage = IMAGE_EXTS.has(ext)
+  const isMarkdown = MARKDOWN_EXTS.has(ext)
+
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isImage) {
+      setImageUrl(null)
+      setImageError(null)
+      return
+    }
+    let cancelled = false
+    setImageUrl(null)
+    setImageError(null)
+    window.fsApi.readImage(abs).then((res) => {
+      if (cancelled) return
+      if (!res.ok || !res.dataUrl) {
+        setImageError(res.error ?? "Failed to load image")
+      } else {
+        setImageUrl(res.dataUrl)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [abs, isImage])
+
   const [state, setState] = useState<LoadState>({ kind: "loading" })
   const [savedContent, setSavedContent] = useState<string>("")
   const [draft, setDraft] = useState<string>("")
@@ -392,6 +495,7 @@ export function FilePreview({ cwd, path }: Props) {
   }, [])
 
   useEffect(() => {
+    if (isImage) return
     let cancelled = false
     queueMicrotask(() => {
       if (cancelled) return
@@ -416,7 +520,7 @@ export function FilePreview({ cwd, path }: Props) {
     return () => {
       cancelled = true
     }
-  }, [abs])
+  }, [abs, isImage])
 
   const save = useCallback(async () => {
     if (state.kind !== "ready" || !dirty || saving) return
@@ -430,6 +534,33 @@ export function FilePreview({ cwd, path }: Props) {
     }
     setSavedContent(draft)
   }, [abs, dirty, draft, saving, state.kind])
+
+  if (isImage) {
+    if (imageError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {imageError}
+        </div>
+      )
+    }
+    if (!imageUrl) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    return (
+      <div className="grid h-full place-items-center overflow-auto bg-card p-4">
+        <img
+          src={imageUrl}
+          alt={path}
+          className="max-h-full max-w-full object-contain"
+          style={{ imageRendering: "auto" }}
+        />
+      </div>
+    )
+  }
 
   if (state.kind === "loading") {
     return (
@@ -565,17 +696,21 @@ export function FilePreview({ cwd, path }: Props) {
         </div>
       )}
       <div className="min-h-0 flex-1">
-        <CodeEditor
-          value={draft}
-          path={path}
-          themeType={themeType}
-          onChange={setDraft}
-          onSave={save}
-          onOpenSearch={openSearch}
-          onViewReady={(view) => {
-            editorViewRef.current = view
-          }}
-        />
+        {isMarkdown && mdMode === "preview" ? (
+          <MarkdownView source={draft} />
+        ) : (
+          <CodeEditor
+            value={draft}
+            path={path}
+            themeType={themeType}
+            onChange={setDraft}
+            onSave={save}
+            onOpenSearch={openSearch}
+            onViewReady={(view) => {
+              editorViewRef.current = view
+            }}
+          />
+        )}
       </div>
     </div>
   )

@@ -4,6 +4,12 @@ import { WorkerPoolContextProvider } from "@pierre/diffs/react"
 import { useTheme } from "@/components/theme-provider"
 import { DiffViewer } from "./DiffViewer"
 import {
+  MarkdownView,
+  isImagePath,
+  isMarkdownPath,
+  type MdMode,
+} from "./FilePreview"
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -16,6 +22,7 @@ type Props = {
   path: string
   staged: boolean
   viewMode?: "unified" | "split"
+  mdMode?: MdMode
   onOpenFile?: (path: string) => void
 }
 
@@ -122,8 +129,60 @@ export function SingleFileDiff({
   path,
   staged,
   viewMode = "unified",
+  mdMode = "preview",
   onOpenFile,
 }: Props) {
+  const showMarkdownPreview = isMarkdownPath(path) && mdMode === "preview"
+  const showImagePreview = isImagePath(path) && mdMode === "preview"
+  const absPath = path.startsWith("/")
+    ? path
+    : `${cwd.replace(/\/+$/, "")}/${path}`
+
+  const [mdSource, setMdSource] = useState<string>("")
+  const [mdLoading, setMdLoading] = useState(false)
+  const [mdError, setMdError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showMarkdownPreview) return
+    let cancelled = false
+    setMdLoading(true)
+    setMdError(null)
+    window.fsApi.readFile(absPath).then((res) => {
+      if (cancelled) return
+      if (!res.ok) {
+        setMdError(res.error ?? "Failed to read file")
+      } else if (res.tooLarge) {
+        setMdError("File too large to preview")
+      } else if (res.binary) {
+        setMdError("Binary file")
+      } else {
+        setMdSource(res.content ?? "")
+      }
+      setMdLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [absPath, showMarkdownPreview])
+
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+  const [imgError, setImgError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showImagePreview) return
+    let cancelled = false
+    setImgUrl(null)
+    setImgError(null)
+    window.fsApi.readImage(absPath).then((res) => {
+      if (cancelled) return
+      if (!res.ok || !res.dataUrl) {
+        setImgError(res.error ?? "Failed to load image")
+      } else {
+        setImgUrl(res.dataUrl)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [absPath, showImagePreview])
   const { resolvedTheme } = useTheme()
   const [patch, setPatch] = useState("")
   const [loading, setLoading] = useState(true)
@@ -302,6 +361,50 @@ export function SingleFileDiff({
     const text = sel || patch
     if (!text) return
     void navigator.clipboard.writeText(text)
+  }
+
+  if (showMarkdownPreview) {
+    if (mdLoading) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    if (mdError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {mdError}
+        </div>
+      )
+    }
+    return <MarkdownView source={mdSource} />
+  }
+
+  if (showImagePreview) {
+    if (imgError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {imgError}
+        </div>
+      )
+    }
+    if (!imgUrl) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    return (
+      <div className="grid h-full place-items-center overflow-auto bg-card p-4">
+        <img
+          src={imgUrl}
+          alt={path}
+          className="max-h-full max-w-full object-contain"
+        />
+      </div>
+    )
   }
 
   return (

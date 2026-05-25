@@ -197,6 +197,14 @@ const fsApi = {
       binary?: boolean
       size?: number
     }>,
+  readImage: (absPath: string) =>
+    ipcRenderer.invoke("fs:readImage", absPath) as Promise<{
+      ok: boolean
+      error?: string
+      dataUrl?: string
+      mime?: string
+      size?: number
+    }>,
   writeFile: (absPath: string, content: string) =>
     ipcRenderer.invoke("fs:writeFile", absPath, content) as Promise<{
       ok: boolean

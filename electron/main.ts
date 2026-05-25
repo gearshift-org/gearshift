@@ -1116,6 +1116,36 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle("fs:readImage", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path" }
+    try {
+      const stat = await fs.stat(absPath)
+      const MAX = 25 * 1024 * 1024
+      if (stat.size > MAX) {
+        return { ok: false, error: "too-large", size: stat.size }
+      }
+      const ext = path.extname(absPath).toLowerCase()
+      const mimeByExt: Record<string, string> = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".bmp": "image/bmp",
+        ".ico": "image/x-icon",
+        ".avif": "image/avif",
+      }
+      const mime = mimeByExt[ext]
+      if (!mime) return { ok: false, error: "unsupported-type" }
+      const buf = await fs.readFile(absPath)
+      const dataUrl = `data:${mime};base64,${buf.toString("base64")}`
+      return { ok: true, dataUrl, mime, size: stat.size }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }
     try {

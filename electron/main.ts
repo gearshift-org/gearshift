@@ -46,17 +46,17 @@ type AgentStatusInfo = {
   agentName?: TerminalAgentName
 }
 
-app.setName("GearShift V2")
+app.setName("GearShift")
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.gearshift.v2")
+  app.setAppUserModelId("com.gearshift")
 }
 
 if (VITE_DEV_SERVER_URL) {
-  app.setPath("userData", path.join(app.getPath("appData"), "gearshift-v2-dev"))
+  app.setPath("userData", path.join(app.getPath("appData"), "gearshift-dev"))
 } else {
   // Use the bundle id as the userData folder name so uninstallers
   // (Raycast, AppCleaner, etc.) can correlate leftover state to the app.
-  app.setPath("userData", path.join(app.getPath("appData"), "com.gearshift.v2"))
+  app.setPath("userData", path.join(app.getPath("appData"), "com.gearshift"))
 }
 
 let daemonClient: DaemonClient | null = null

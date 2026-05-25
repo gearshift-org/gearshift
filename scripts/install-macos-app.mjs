@@ -4,10 +4,10 @@ import { rm } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { join } from "node:path"
 
-const PRODUCT_NAME = "GearShift V2"
+const PRODUCT_NAME = "GearShift"
 const APP_NAME = `${PRODUCT_NAME}.app`
 const APPLICATIONS_APP = `/Applications/${APP_NAME}`
-const APP_ID = "com.netlinkvoice.gearshift-v2"
+const APP_ID = "com.gearshift"
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {

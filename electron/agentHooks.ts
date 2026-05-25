@@ -355,14 +355,14 @@ async function installCodexHooks(scriptPath: string): Promise<void> {
 }
 
 async function writeOpenCodePlugin(): Promise<void> {
-  const plugin = `// Gearshift opencode plugin v2
+  const plugin = `// Gearshift opencode plugin
 // State-machine notifier: locks onto the first "busy" session as root, sends
 // start on idle→busy edges and stop on busy→idle edges. Subagent (child)
 // sessions are filtered so they don't toggle the pane indicator.
 
 export const GearShiftNotificationPlugin = async ({ client }) => {
-  if (globalThis.__gearshiftOpencodeNotifyPluginV2) return {}
-  globalThis.__gearshiftOpencodeNotifyPluginV2 = true
+  if (globalThis.__gearshiftOpencodeNotifyPlugin) return {}
+  globalThis.__gearshiftOpencodeNotifyPlugin = true
 
   const socketPath = process?.env?.GEARSHIFT_AGENT_SOCKET
   const sessionEnvId = process?.env?.GEARSHIFT_SESSION_ID
@@ -543,7 +543,7 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
 }
 
 async function writePiExtension(): Promise<void> {
-  const extension = `// Gearshift pi extension v2
+  const extension = `// Gearshift pi extension
 // Maps pi lifecycle events onto the Gearshift Unix socket directly (no shell
 // shim, matching the opencode plugin) so the pane indicator turns off as fast
 // for pi as it does for opencode.

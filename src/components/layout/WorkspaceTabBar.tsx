@@ -196,30 +196,21 @@ function WorkspaceTabItem({
           </Tooltip>
         )}
         {!isRenaming && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  role="button"
-                  tabIndex={-1}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClose?.(t.id)
-                  }}
-                  className={cn(
-                    "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
-                    isActive && "opacity-60",
-                  )}
-                >
-                  <X className="size-3.5" />
-                </span>
-              }
-            />
-            <TooltipContent>
-              {t.kind === "terminal" ? "Close terminal" : "Close tab"}
-            </TooltipContent>
-          </Tooltip>
+          <span
+            role="button"
+            tabIndex={-1}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose?.(t.id)
+            }}
+            className={cn(
+              "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
+              isActive && "opacity-60",
+            )}
+          >
+            <X className="size-3.5" />
+          </span>
         )}
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">

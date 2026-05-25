@@ -298,17 +298,13 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   }, [searchOpen])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey
-      if (mod && e.shiftKey && (e.key === "f" || e.key === "F")) {
-        e.preventDefault()
-        setSearchOpen(true)
-        searchInputRef.current?.focus()
-        searchInputRef.current?.select()
-      }
+    const openSearch = () => {
+      setSearchOpen(true)
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    window.addEventListener("gearshift:file-search", openSearch)
+    return () => window.removeEventListener("gearshift:file-search", openSearch)
   }, [])
 
   const closeSearch = () => {

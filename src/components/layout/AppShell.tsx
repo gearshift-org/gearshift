@@ -1590,12 +1590,23 @@ export function AppShell() {
   const { bindings, findActionForEvent } = useKeybindings()
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.dataset?.keycapture === "true") return
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.shiftKey && !e.altKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault()
+        setRightSidebarOverlayOpen(false)
+        setSidebarOpen(true)
+        setRightSidebarTab("files")
+        window.requestAnimationFrame(() => {
+          window.dispatchEvent(new Event("gearshift:file-search"))
+        })
+        return
+      }
       // Let focused controls/editors handle their own shortcuts first. For
       // example, CodeMirror's Mod+S save binding calls preventDefault(), so a
       // user-customized Mod+S sidebar binding must not also run here.
       if (e.defaultPrevented) return
-      const target = e.target as HTMLElement | null
-      if (target?.dataset?.keycapture === "true") return
       const action = findActionForEvent(e)
       if (!action) return
       switch (action) {

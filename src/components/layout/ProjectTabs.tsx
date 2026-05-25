@@ -23,11 +23,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -237,29 +232,22 @@ function ProjectTabItem({
                   {p.name}
                 </span>
                 {canClose && (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span
-                          role="button"
-                          tabIndex={-1}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onClose?.(p.id)
-                          }}
-                          className={cn(
-                            "project-tab-close ml-auto size-5 place-items-center rounded-sm opacity-0 transition-colors group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground",
-                            isCompact ? "hidden" : "grid",
-                            isActive && "opacity-60"
-                          )}
-                        >
-                          <X className="size-3.5" />
-                        </span>
-                      }
-                    />
-                    <TooltipContent>Close project</TooltipContent>
-                  </Tooltip>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onClose?.(p.id)
+                    }}
+                    className={cn(
+                      "project-tab-close ml-auto size-5 place-items-center rounded-sm opacity-0 transition-colors group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground",
+                      isCompact ? "hidden" : "grid",
+                      isActive && "opacity-60"
+                    )}
+                  >
+                    <X className="size-3.5" />
+                  </span>
                 )}
               </div>
             </ContextMenuTrigger>

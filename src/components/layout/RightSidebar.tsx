@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  CloudUpload,
   ExternalLink,
   GitBranch,
   GitPullRequest,
@@ -122,7 +123,7 @@ export function RightSidebar({
   const [commitMessage, setCommitMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
-    null | "commit" | "push" | "sync" | "pull"
+    null | "commit" | "push" | "sync" | "pull" | "publish"
   >(null)
   // Distinguishes the "push" phase of a sync vs the "push" phase of Commit&Push
   // so the right button can show the loading label.
@@ -714,6 +715,33 @@ export function RightSidebar({
     }
   }, [cwd, busy, ahead, behind, updateCachedGitMeta, runRefresh])
 
+  const publishBranch = useCallback(async () => {
+    if (!cwd || !currentBranch || busy) return
+    inflightActionsRef.current += 1
+    setBusy(true)
+    setSyncing(true)
+    setCommitting("publish")
+    setActionError(null)
+    try {
+      const res = await window.git.publishBranch(cwd, currentBranch)
+      if (!res.ok) {
+        setActionError(res.error ?? "Publish branch failed")
+        return
+      }
+      updateCachedGitMeta({ ahead: 0, hasUpstream: true })
+    } finally {
+      setBusy(false)
+      setSyncing(false)
+      setCommitting(null)
+      inflightActionsRef.current = Math.max(0, inflightActionsRef.current - 1)
+      settleUntilRef.current = Math.max(
+        settleUntilRef.current,
+        Date.now() + 700
+      )
+      void runRefresh()
+    }
+  }, [cwd, currentBranch, busy, updateCachedGitMeta, runRefresh])
+
   // Show the Sync button only when nothing is staged and the branch is out of
   // sync with its upstream. Keep it visible while syncing so the loading
   // state actually appears on the same button the user clicked.
@@ -721,8 +749,9 @@ export function RightSidebar({
     syncing ||
     (!busy &&
       stagedFiles.length === 0 &&
-      hasUpstream &&
-      (ahead > 0 || behind > 0))
+      ((hasUpstream && (ahead > 0 || behind > 0)) ||
+        (!hasUpstream && !!currentBranch)))
+  const showPublishBranch = !hasUpstream && !!currentBranch
 
   const largeChangeSet = files.length > LARGE_CHANGESET_THRESHOLD
   useEffect(() => {
@@ -846,17 +875,26 @@ export function RightSidebar({
                   variant="default"
                   size="sm"
                   disabled={busy}
-                  onClick={() => void sync()}
+                  onClick={() =>
+                    showPublishBranch ? void publishBranch() : void sync()
+                  }
                   className="w-full"
                 >
                   {syncing ? (
                     <>
                       <Loader2 className="size-3.5 animate-spin" />
-                      {committing === "pull"
+                      {committing === "publish"
+                        ? "Publishing…"
+                        : committing === "pull"
                         ? "Pulling…"
                         : committing === "push"
                           ? "Pushing…"
                           : "Syncing…"}
+                    </>
+                  ) : showPublishBranch ? (
+                    <>
+                      <CloudUpload className="size-3.5" />
+                      <span>Publish Branch</span>
                     </>
                   ) : (
                     <>

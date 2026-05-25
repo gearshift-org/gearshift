@@ -273,6 +273,11 @@ const gitApi = {
       ok: boolean
       error?: string
     }>,
+  publishBranch: (cwd: string, branch: string) =>
+    ipcRenderer.invoke("git:publishBranch", cwd, branch) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   pull: (cwd: string) =>
     ipcRenderer.invoke("git:pull", cwd) as Promise<{
       ok: boolean

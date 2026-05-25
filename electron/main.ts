@@ -1629,6 +1629,24 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle(
+    "git:publishBranch",
+    async (_event, cwd: string, branch: string) => {
+      const currentBranch = branch?.trim()
+      if (!cwd || !currentBranch) return { ok: false, error: "no-branch" }
+      try {
+        await runGit(cwd, ["push", "-u", "origin", currentBranch])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "publish branch failed",
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
     "git:openPullRequest",
     async (_event, cwd: string, number: number) => {
       if (!cwd || !Number.isInteger(number) || number <= 0) {

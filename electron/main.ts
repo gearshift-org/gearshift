@@ -586,6 +586,19 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   return stdout
 }
 
+async function runGitWithProjectEnv(
+  cwd: string,
+  args: string[]
+): Promise<string> {
+  const env = await projectCommandEnv(cwd)
+  const { stdout } = await execFileP("git", args, {
+    cwd,
+    env,
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  return stdout
+}
+
 async function runGitAllowExit1(cwd: string, args: string[]): Promise<string> {
   try {
     return await runGit(cwd, args)
@@ -1640,7 +1653,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("git:pull", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {
-      await runGit(cwd, ["pull", "--ff-only"])
+      await runGitWithProjectEnv(cwd, ["pull", "--ff-only"])
       return { ok: true }
     } catch (err) {
       const e = err as { stderr?: string; message?: string }
@@ -1651,7 +1664,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("git:push", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {
-      await runGit(cwd, ["push"])
+      await runGitWithProjectEnv(cwd, ["push"])
       return { ok: true }
     } catch (err) {
       const e = err as { stderr?: string; message?: string }
@@ -1665,7 +1678,7 @@ app.whenReady().then(async () => {
       const currentBranch = branch?.trim()
       if (!cwd || !currentBranch) return { ok: false, error: "no-branch" }
       try {
-        await runGit(cwd, ["push", "-u", "origin", currentBranch])
+        await runGitWithProjectEnv(cwd, ["push", "-u", "origin", currentBranch])
         return { ok: true }
       } catch (err) {
         const e = err as { stderr?: string; message?: string }

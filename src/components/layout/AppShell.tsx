@@ -228,6 +228,14 @@ function agentDoneToastId(projectId: string, tabId: string, paneId: string) {
   return `agent-done:${projectId}:${tabId}:${paneId}`
 }
 
+function agentAttentionToastId(
+  projectId: string,
+  tabId: string,
+  paneId: string
+) {
+  return `agent-attention:${projectId}:${tabId}:${paneId}`
+}
+
 function isAppVisibleAndFocused() {
   return document.visibilityState === "visible" && document.hasFocus()
 }
@@ -1513,9 +1521,19 @@ export function AppShell() {
       previousStatus?.working ?? fallbackPane?.agentStatus?.working ?? false
     const finishedWork =
       wasWorking && !status.working && status.completed === true
+    const wasNeedsAttention =
+      previousStatus?.needsAttention ??
+      fallbackPane?.agentStatus?.needsAttention ??
+      false
+    const becameNeedsAttention =
+      !wasNeedsAttention && status.needsAttention === true
     const appVisibleAndFocused = isAppVisibleAndFocused()
     const finishedAwayFromAttention =
       finishedWork &&
+      !!targetProject &&
+      (targetProject.id !== activeProjectId || !appVisibleAndFocused)
+    const needsAttentionAway =
+      becameNeedsAttention &&
       !!targetProject &&
       (targetProject.id !== activeProjectId || !appVisibleAndFocused)
 
@@ -1646,6 +1664,91 @@ export function AppShell() {
           } catch (err) {
             console.warn("Desktop notification failed", err)
           }
+        }
+      }
+    }
+
+    if (
+      needsAttentionAway &&
+      targetProject &&
+      targetTab?.kind === "terminal"
+    ) {
+      playAgentCompleteSound()
+
+      const terminalName = tabDisplayName(targetTab)
+      const toastId = agentAttentionToastId(targetProject.id, tabId, paneId)
+      const toastsForProject =
+        agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
+      toastsForProject.add(toastId)
+      agentDoneToastsByProjectRef.current.set(targetProject.id, toastsForProject)
+      console.info("Agent needs attention: showing in-app toast")
+      const cleanupToast = () => {
+        const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
+        set?.delete(toastId)
+        if (set && set.size === 0) {
+          agentDoneToastsByProjectRef.current.delete(targetProject.id)
+        }
+      }
+      toast.custom(
+        (id) => (
+          <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
+            <button
+              type="button"
+              onClick={() =>
+                openAgentDoneTarget(targetProject.id, tabId, paneId, id)
+              }
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            >
+              <ProjectAvatar
+                name={targetProject.name}
+                path={targetProject.path}
+                className="size-10 shrink-0 rounded-md text-sm"
+              />
+              <span className="flex min-w-0 flex-col justify-center gap-0.5 pr-6">
+                <span className="text-xs font-medium">Agent needs input</span>
+                <span className="flex min-w-0 items-baseline gap-1 text-xs">
+                  <span className="max-w-28 truncate font-semibold text-foreground">
+                    {targetProject.name}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">·</span>
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {terminalName}
+                  </span>
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label="Close notification"
+              onClick={() => toast.dismiss(id)}
+              className="absolute top-1.5 right-1.5 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ),
+        {
+          id: toastId,
+          duration: Infinity,
+          onDismiss: cleanupToast,
+          onAutoClose: cleanupToast,
+        }
+      )
+
+      if (!appVisibleAndFocused && typeof Notification !== "undefined") {
+        try {
+          const notification = new Notification(
+            targetProject.name || "GearShift",
+            {
+              body: `Agent needs input in ${terminalName}`,
+              silent: true,
+            }
+          )
+          notification.onclick = () => {
+            openAgentDoneTarget(targetProject.id, tabId, paneId)
+          }
+        } catch (err) {
+          console.warn("Desktop notification failed", err)
         }
       }
     }

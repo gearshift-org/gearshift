@@ -11,6 +11,7 @@ import {
 import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
 import { AgentSpinner } from "./AgentSpinner"
+import { AgentAttention } from "./AgentAttention"
 import type { TerminalPane } from "./types"
 
 type Props = {
@@ -72,6 +73,7 @@ export function PaneHeader({
   const cancel = () => setEditing(false)
 
   const agentWorking = pane.agentStatus?.working
+  const agentNeedsAttention = pane.agentStatus?.needsAttention
 
   return (
     <div
@@ -87,7 +89,11 @@ export function PaneHeader({
         isActive && "bg-muted/60 text-foreground",
       )}
     >
-      {agentWorking ? <AgentSpinner className="mr-0.5" /> : null}
+      {agentWorking ? (
+        <AgentSpinner className="mr-0.5" />
+      ) : agentNeedsAttention ? (
+        <AgentAttention className="mr-0.5" />
+      ) : null}
       {editing ? (
         <input
           ref={inputRef}

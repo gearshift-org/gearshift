@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
 import { AgentSpinner } from "./AgentSpinner"
+import { AgentAttention } from "./AgentAttention"
 import {
   TAB_LABEL_CLASS,
   TAB_NAME_TOOLTIP_DELAY_MS,
@@ -139,6 +140,11 @@ function WorkspaceTabItem({
     isTerminal &&
     !isActive &&
     t.panes.some((pane) => pane.agentStatus?.working)
+  const hasHiddenAttentionAgent =
+    isTerminal &&
+    !isActive &&
+    !hasHiddenWorkingAgent &&
+    t.panes.some((pane) => pane.agentStatus?.needsAttention)
   const {
     attributes,
     listeners,
@@ -183,7 +189,11 @@ function WorkspaceTabItem({
         {...listeners}
       >
         <TabIcon tab={t} />
-        {hasHiddenWorkingAgent ? <AgentSpinner className="-ml-1" /> : null}
+        {hasHiddenWorkingAgent ? (
+          <AgentSpinner className="-ml-1" />
+        ) : hasHiddenAttentionAgent ? (
+          <AgentAttention className="-ml-1" />
+        ) : null}
         {isRenaming && isTerminal ? (
           <input
             ref={inputRef}

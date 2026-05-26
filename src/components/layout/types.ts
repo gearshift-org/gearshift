@@ -32,6 +32,8 @@ export type TerminalAgentStatus = {
   completedAt?: number
   /** True only when an authoritative completion signal was received. */
   completed?: boolean
+  /** True when the agent is blocked waiting on the user (permission/idle prompt). */
+  needsAttention?: boolean
 }
 
 export type TerminalTab = {

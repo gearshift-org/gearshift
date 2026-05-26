@@ -374,7 +374,8 @@ export function TerminalView({
       prev.agentName === next.agentName &&
       prev.workStartedAt === next.workStartedAt &&
       prev.completedAt === next.completedAt &&
-      prev.completed === next.completed
+      prev.completed === next.completed &&
+      prev.needsAttention === next.needsAttention
     ) {
       return
     }
@@ -391,8 +392,13 @@ export function TerminalView({
     lastAgentActivityAtRef.current = 0
     hasSubmittedToAgentRef.current = false
     const current = agentStatusRef.current
-    if (current.working) {
-      emitAgentStatus({ ...current, working: false, completed: false })
+    if (current.working || current.needsAttention) {
+      emitAgentStatus({
+        ...current,
+        working: false,
+        completed: false,
+        needsAttention: false,
+      })
     }
   }, [emitAgentStatus])
 
@@ -415,6 +421,7 @@ export function TerminalView({
       working: true,
       workStartedAt: current.workStartedAt ?? now,
       completedAt: undefined,
+      needsAttention: false,
     })
     if (agentWorkingTimerRef.current) {
       window.clearTimeout(agentWorkingTimerRef.current)
@@ -928,6 +935,7 @@ export function TerminalView({
             workStartedAt: current.workStartedAt,
             completedAt: undefined,
             completed: false,
+            needsAttention: current.needsAttention,
           })
           return
         }
@@ -939,6 +947,7 @@ export function TerminalView({
           workStartedAt: detected.running ? current.workStartedAt : undefined,
           completedAt: undefined,
           completed: false,
+          needsAttention: detected.running ? current.needsAttention : false,
         })
       } catch {
         if (!cancelled) {
@@ -993,20 +1002,23 @@ export function TerminalView({
           workStartedAt: current.workStartedAt ?? now,
           completedAt: undefined,
           completed: false,
+          needsAttention: false,
         })
         return
       }
       if (event.event === "notification") {
-        // Agent notifications can mean "needs attention" (for example a
-        // Claude Code permission request), not "job complete". Preserve the
-        // current working state so AppShell does not fire a false completion.
+        // Agent notifications mean "needs attention" (for example a Claude Code
+        // permission request or idle prompt), not "job complete". Stop the busy
+        // spinner and flag the pane as waiting on the user, but keep completed
+        // false so AppShell does not fire a false completion notification.
         emitAgentStatus({
           running: current.running || activeHookWorkRef.current,
-          working: current.working,
+          working: false,
           agentName: event.agentName,
           workStartedAt: current.workStartedAt,
           completedAt: undefined,
           completed: false,
+          needsAttention: true,
         })
         return
       }
@@ -1021,6 +1033,7 @@ export function TerminalView({
         workStartedAt: current.workStartedAt,
         completedAt: Date.now(),
         completed: true,
+        needsAttention: false,
       })
     })
   }, [sessionId, emitAgentStatus])

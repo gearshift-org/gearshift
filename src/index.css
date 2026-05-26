@@ -608,3 +608,31 @@
     transform: translateX(100%);
   }
 }
+
+/* Springier, higher-amplitude bounce for the agent status dots
+   (needs-attention and done). */
+@keyframes gs-status-bounce {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
+  }
+  35% {
+    transform: translateY(-65%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  70% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
+  }
+  82% {
+    transform: translateY(-22%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.gs-status-bounce {
+  animation: gs-status-bounce 0.9s infinite;
+}

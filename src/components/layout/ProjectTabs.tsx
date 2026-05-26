@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/popover"
 import { AddProjectMenu } from "./AddProjectMenu"
 import { AgentSpinner } from "./AgentSpinner"
+import { AgentAttention } from "./AgentAttention"
 import {
   TAB_LABEL_CLASS,
   TAB_OPEN_TRANSITION_CLASS,
@@ -52,6 +53,14 @@ function projectHasWorkingAgent(project: Project): boolean {
 
 function projectHasDoneAgent(project: Project): boolean {
   return !!project.agentDone && !projectHasWorkingAgent(project)
+}
+
+function projectHasAttentionAgent(project: Project): boolean {
+  return project.tabs.some(
+    (tab) =>
+      tab.kind === "terminal" &&
+      tab.panes.some((pane) => pane.agentStatus?.needsAttention),
+  )
 }
 
 type Props = {
@@ -190,6 +199,7 @@ function ProjectTabItem({
     setColorVersion((v) => v + 1)
   }
   const hasWorkingAgent = projectHasWorkingAgent(p)
+  const hasAttentionAgent = !hasWorkingAgent && projectHasAttentionAgent(p)
   const hasDoneAgent = projectHasDoneAgent(p)
   const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
 
@@ -231,13 +241,14 @@ function ProjectTabItem({
               >
                 <ProjectAvatar name={p.name} path={p.path} />
                 {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
-                {!hasWorkingAgent && hasDoneAgent && (
+                {hasAttentionAgent && <AgentAttention className="-ml-0.5" />}
+                {!hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && (
                   <span
                     aria-label="Coding agent done"
                     title="Coding agent done"
-                    className="relative -ml-0.5 grid size-2.5 shrink-0 animate-bounce place-items-center"
+                    className="relative -ml-0.5 grid size-2.5 shrink-0 place-items-center"
                   >
-                    <span className="relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+                    <span className="gs-status-bounce relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
                   </span>
                 )}
                 <span className={cn(TAB_LABEL_CLASS, isCompact && "hidden")}>

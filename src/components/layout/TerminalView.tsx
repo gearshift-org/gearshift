@@ -319,11 +319,17 @@ export function TerminalView({
       fontSize: appearance.fontSize,
       fontFamily: appearance.fontFamily,
       scrollback: 5000,
-      // We hide xterm's native scrollbar and keep the background stable during
-      // resize, so avoid reserving the default 14px scrollbar gutter.
       overviewRuler: { width: 1 },
       theme: isDark ? DARK_THEME : LIGHT_THEME,
       allowProposedApi: true,
+      linkHandler: {
+        activate: (event, uri) => {
+          event.preventDefault()
+          void window.shellApi.openExternal(uri)
+        },
+        hover: () => {},
+        leave: () => {},
+      },
     })
     const fit = new FitAddon()
     const search = new SearchAddon()

@@ -113,6 +113,15 @@ function trimUrlEnd(value: string): string {
   return value.replace(/[),.!?;:]+$/g, "")
 }
 
+function trimTerminalSelection(value: string): string {
+  if (!value) return value
+  const lines = value.split("\n").map((line) => line.replace(/[ \t]+$/g, ""))
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop()
+  }
+  return lines.join("\n")
+}
+
 function expandWrappedTerminalUrl(term: Terminal, uri: string): string {
   const buffer = term.buffer.active
   const maxLine = buffer.length - 1
@@ -501,7 +510,8 @@ export function TerminalView({
       if ((meta || ctrl) && !alt) {
         if (key === "c" && term.hasSelection()) {
           e.preventDefault()
-          void navigator.clipboard.writeText(term.getSelection())
+          const sel = trimTerminalSelection(term.getSelection())
+          if (sel) void navigator.clipboard.writeText(sel)
           return false
         }
         if (key === "v") {
@@ -987,7 +997,7 @@ export function TerminalView({
   const copySelection = async () => {
     const term = termRef.current
     if (!term) return
-    const sel = term.getSelection()
+    const sel = trimTerminalSelection(term.getSelection())
     if (sel) await navigator.clipboard.writeText(sel)
     term.focus()
   }

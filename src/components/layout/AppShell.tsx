@@ -351,6 +351,7 @@ export function AppShell() {
   // Forward reference: closePane (defined below) calls closeTab when the last
   // pane is being closed. Wired via effect once both are defined.
   const closeTabRef = useRef<(id: string) => void>(() => undefined)
+  const lastTerminalByProjectRef = useRef<Record<string, string>>({})
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
   const windowFocusedRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true
@@ -627,6 +628,16 @@ export function AppShell() {
     [navigate, activeProjectId]
   )
 
+  const goToLastTerminal = useCallback(() => {
+    if (!activeProject) return
+    const lastTerminalId = lastTerminalByProjectRef.current[activeProject.id]
+    const terminal =
+      activeProject.tabs.find(
+        (t) => t.kind === "terminal" && t.id === lastTerminalId
+      ) ?? activeProject.tabs.find((t) => t.kind === "terminal")
+    if (terminal) navigateToTab(terminal.id)
+  }, [activeProject, navigateToTab])
+
   useEffect(() => {
     if (!stateRestored) return
     saveActiveProjectId(activeProjectId)
@@ -659,6 +670,13 @@ export function AppShell() {
       )
     )
   }, [activeProjectId, activeTabId])
+
+  useEffect(() => {
+    if (!activeProject || !activeTabId) return
+    const activeTab = activeProject.tabs.find((t) => t.id === activeTabId)
+    if (activeTab?.kind !== "terminal") return
+    lastTerminalByProjectRef.current[activeProject.id] = activeTab.id
+  }, [activeProject, activeTabId])
 
   useEffect(() => {
     if (routeProjectId && !projects.some((p) => p.id === routeProjectId)) {
@@ -1707,9 +1725,11 @@ export function AppShell() {
   const addTerminalRef = useRef<() => void>(() => undefined)
   const closeActiveTabRef = useRef<() => void>(() => undefined)
   const splitActiveTerminalRef = useRef<() => void>(() => undefined)
+  const goToLastTerminalRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     addTerminalRef.current = addTerminal
+    goToLastTerminalRef.current = goToLastTerminal
     closeActiveTabRef.current = () => {
       if (!activeTabId) return
       const active = activeProject?.tabs.find((t) => t.id === activeTabId)
@@ -1794,6 +1814,10 @@ export function AppShell() {
         case "terminal.split":
           e.preventDefault()
           splitActiveTerminalRef.current()
+          break
+        case "terminal.last":
+          e.preventDefault()
+          goToLastTerminalRef.current()
           break
         case "settings.open":
           e.preventDefault()

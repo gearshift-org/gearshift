@@ -149,6 +149,7 @@ type Props = {
   path: string
   /** Markdown render mode — used only when the file is markdown. */
   mdMode?: MdMode
+  onDirtyChange?: (status: { dirty: boolean; saving: boolean }) => void
 }
 
 type LoadState =
@@ -428,7 +429,12 @@ function CodeEditor({
   return <div ref={containerRef} className="h-full min-h-0" />
 }
 
-export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
+export function FilePreview({
+  cwd,
+  path,
+  mdMode = "preview",
+  onDirtyChange,
+}: Props) {
   const abs = useMemo(() => joinPath(cwd, path), [cwd, path])
   const ext = useMemo(() => extOf(path), [path])
   const isImage = IMAGE_EXTS.has(ext)
@@ -500,6 +506,7 @@ export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
   const [query, setQuery] = useState("")
   const editorViewRef = useRef<EditorView | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const lastSelectedQueryRef = useRef("")
 
   const dirty = state.kind === "ready" && draft !== savedContent
 
@@ -517,7 +524,12 @@ export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
         new SearchQuery({ search: query, caseSensitive: false })
       ),
     })
-    if (!query || matches.length === 0) return
+    if (!query || matches.length === 0) {
+      lastSelectedQueryRef.current = query
+      return
+    }
+    if (lastSelectedQueryRef.current === query) return
+    lastSelectedQueryRef.current = query
     const cursor = view.state.selection.main.from
     const target =
       matches.find(([from]) => from >= cursor) ?? matches[0]
@@ -538,6 +550,7 @@ export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
+    lastSelectedQueryRef.current = ""
     const view = editorViewRef.current
     if (view) {
       view.dispatch({
@@ -626,6 +639,11 @@ export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
     }
     setSavedContent(draft)
   }, [abs, dirty, draft, saving, state.kind])
+
+  useEffect(() => {
+    onDirtyChange?.({ dirty, saving })
+    return () => onDirtyChange?.({ dirty: false, saving: false })
+  }, [dirty, onDirtyChange, saving])
 
   if (isImage) {
     if (imageError) {
@@ -779,12 +797,9 @@ export function FilePreview({ cwd, path, mdMode = "preview" }: Props) {
           </button>
         </div>
       )}
-      {(dirty || saveError) && (
-        <div className="flex h-6 shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px]">
-          <span className={cn(dirty ? "text-muted-foreground" : "")}>
-            {dirty ? (saving ? "Saving…" : "Modified — ⌘S to save") : null}
-          </span>
-          {saveError && <span className="text-red-500">{saveError}</span>}
+      {saveError && (
+        <div className="flex h-6 shrink-0 items-center border-b border-border/60 px-3 text-[11px] text-red-500">
+          {saveError}
         </div>
       )}
       <div className="min-h-0 flex-1">

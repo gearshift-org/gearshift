@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState } from "react"
 import { Columns2, Eye, FileCode, Rows3 } from "lucide-react"
 import {
   closestCenter,
@@ -292,6 +292,7 @@ function PaneContent({
   onRenamePane,
   onReorderPanes,
   onOpenFile,
+  onFileDirtyChange,
 }: {
   tab: WorkspaceTab
   project: Project
@@ -311,7 +312,18 @@ function PaneContent({
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
   onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
   onOpenFile?: (path: string) => void
+  onFileDirtyChange?: (
+    tabId: string,
+    status: { dirty: boolean; saving: boolean }
+  ) => void
 }) {
+  const handleDirtyChange = useCallback(
+    (status: { dirty: boolean; saving: boolean }) => {
+      onFileDirtyChange?.(tab.id, status)
+    },
+    [onFileDirtyChange, tab.id]
+  )
+
   if (tab.kind === "terminal") {
     return (
       <TerminalTabContent
@@ -340,7 +352,14 @@ function PaneContent({
       />
     )
   }
-  return <FilePreview cwd={project.path} path={tab.path} mdMode={mdMode} />
+  return (
+    <FilePreview
+      cwd={project.path}
+      path={tab.path}
+      mdMode={mdMode}
+      onDirtyChange={handleDirtyChange}
+    />
+  )
 }
 
 export function WorkspacePane({
@@ -382,6 +401,24 @@ export function WorkspacePane({
     (activeTab && diffViewModes[activeTab.id]) || defaultDiffMode
 
   const [mdMode, setMdMode] = useState<MdMode>(() => readMdMode())
+  const [fileDirtyStatuses, setFileDirtyStatuses] = useState<
+    Record<string, { dirty: boolean; saving: boolean }>
+  >({})
+  const handleFileDirtyChange = useCallback(
+    (tabId: string, status: { dirty: boolean; saving: boolean }) => {
+      setFileDirtyStatuses((prev) => {
+        const current = prev[tabId]
+        if (
+          current?.dirty === status.dirty &&
+          current?.saving === status.saving
+        ) {
+          return prev
+        }
+        return { ...prev, [tabId]: status }
+      })
+    },
+    []
+  )
   useEffect(() => store.onReady(() => setMdMode(readMdMode())), [])
   const activeTabPath =
     activeTab && (activeTab.kind === "file" || activeTab.kind === "diff")
@@ -395,6 +432,9 @@ export function WorkspacePane({
   //   - active tab is a diff for an image (preview image vs the textual diff)
   const showMdToggle =
     isMarkdownActive || (isImageActive && activeTab?.kind === "diff")
+  const activeFileDirtyStatus = activeTab
+    ? fileDirtyStatuses[activeTab.id]
+    : undefined
   const toggleMdMode = () => {
     const next: MdMode = mdMode === "preview" ? "raw" : "preview"
     setMdMode(next)
@@ -412,6 +452,13 @@ export function WorkspacePane({
                 ? "No tab"
                 : "No project"}
           </span>
+          {activeFileDirtyStatus?.dirty && (
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {activeFileDirtyStatus.saving
+                ? "Saving…"
+                : "Modified — ⌘S to save"}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-1">
             {showMdToggle && (
               <Tooltip>
@@ -507,6 +554,7 @@ export function WorkspacePane({
                 onRenamePane={onRenamePane}
                 onReorderPanes={onReorderPanes}
                 onOpenFile={onOpenFile}
+                onFileDirtyChange={handleFileDirtyChange}
               />
             </div>
           ))}

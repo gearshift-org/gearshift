@@ -4,6 +4,7 @@ export type ActionId =
   | "terminal.split"
   | "terminal.new"
   | "terminal.close"
+  | "terminal.last"
   | "settings.open"
 
 export type Scope = "renderer" | "electron-menu"
@@ -46,6 +47,12 @@ export const ACTIONS: readonly ActionDef[] = [
     label: "Close Terminal",
     defaultAccelerator: "CmdOrCtrl+W",
     scope: "electron-menu",
+  },
+  {
+    id: "terminal.last",
+    label: "Go to Last Terminal",
+    defaultAccelerator: "CmdOrCtrl+J",
+    scope: "renderer",
   },
   {
     id: "settings.open",

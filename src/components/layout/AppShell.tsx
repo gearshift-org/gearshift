@@ -7,7 +7,6 @@ import { PanelRight, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { TitleBar } from "./TitleBar"
-import { ThemeToggle } from "./ThemeToggle"
 import { useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
@@ -1910,7 +1909,6 @@ export function AppShell() {
                 onOpenChanges={openChanges}
               />
             )}
-            <ThemeToggle />
             <Tooltip>
               <TooltipTrigger
                 render={

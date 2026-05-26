@@ -2,8 +2,32 @@
 import * as React from "react"
 import { store } from "@/lib/store"
 
-type Theme = "dark" | "light" | "system"
 type ResolvedTheme = "dark" | "light"
+
+type ThemeDefinition = {
+  label: string
+  appearance: ResolvedTheme
+}
+
+// Registry of selectable themes. `system` is handled separately (it follows the
+// OS and resolves to the default light/dark palette).
+export const THEMES = {
+  light: { label: "Default", appearance: "light" },
+  "light-cool": { label: "Cool", appearance: "light" },
+  "light-warm": { label: "Warm", appearance: "light" },
+  "light-rose": { label: "Rosé", appearance: "light" },
+  "light-forest": { label: "Forest", appearance: "light" },
+  "light-violet": { label: "Violet", appearance: "light" },
+  dark: { label: "Default", appearance: "dark" },
+  "dark-cool": { label: "Cool", appearance: "dark" },
+  "dark-warm": { label: "Warm", appearance: "dark" },
+  "dark-rose": { label: "Rosé", appearance: "dark" },
+  "dark-forest": { label: "Forest", appearance: "dark" },
+  "dark-violet": { label: "Violet", appearance: "dark" },
+} as const satisfies Record<string, ThemeDefinition>
+
+export type ThemeId = keyof typeof THEMES
+type Theme = ThemeId | "system"
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -19,7 +43,7 @@ type ThemeProviderState = {
 }
 
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
-const THEME_VALUES: Theme[] = ["dark", "light", "system"]
+const THEME_VALUES: Theme[] = [...(Object.keys(THEMES) as ThemeId[]), "system"]
 
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
@@ -42,14 +66,16 @@ function getSystemTheme(): ResolvedTheme {
 }
 
 function resolveTheme(theme: Theme): ResolvedTheme {
-  return theme === "system" ? getSystemTheme() : theme
+  return theme === "system" ? getSystemTheme() : THEMES[theme].appearance
 }
 
-function applyThemeClass(resolvedTheme: ResolvedTheme) {
+function applyThemeClass(theme: Theme, resolvedTheme: ResolvedTheme) {
   const root = document.documentElement
   root.classList.remove("light", "dark")
   root.classList.add(resolvedTheme)
-  root.dataset.theme = resolvedTheme
+  // `system` maps to the base light/dark palette; explicit themes map to their
+  // own `[data-theme]` palette block (the defaults reuse `:root`/`.dark`).
+  root.dataset.theme = theme === "system" ? resolvedTheme : theme
 }
 
 function disableTransitionsTemporarily() {
@@ -115,7 +141,7 @@ export function ThemeProvider({
         ? disableTransitionsTemporarily()
         : null
 
-      applyThemeClass(nextResolvedTheme)
+      applyThemeClass(nextTheme, nextResolvedTheme)
       setResolvedTheme(nextResolvedTheme)
 
       if (restoreTransitions) {

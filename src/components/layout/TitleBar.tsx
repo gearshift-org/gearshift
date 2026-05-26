@@ -1,7 +1,6 @@
 import { PanelRight } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { ProjectTabs } from "./ProjectTabs"
-import { ThemeToggle } from "./ThemeToggle"
 import { UpdateButton } from "./UpdateButton"
 import {
   Tooltip,
@@ -82,7 +81,6 @@ export function TitleBar({
               onOpenChanges={onOpenChanges}
             />
           )}
-          <ThemeToggle />
           {onToggleSidebar && (
             <div className="flex items-center pr-4 [-webkit-app-region:no-drag]">
               <Tooltip>

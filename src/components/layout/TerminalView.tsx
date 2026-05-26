@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
@@ -6,7 +6,7 @@ import { SearchAddon } from "@xterm/addon-search"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import { WebglAddon } from "@xterm/addon-webgl"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
-import { useTheme } from "@/components/theme-provider"
+import { THEMES, type ThemeId, useTheme } from "@/components/theme-provider"
 import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
@@ -79,6 +79,95 @@ const LIGHT_THEME = {
   brightWhite: "#171717",
 }
 
+// Per-variant "chrome" overrides (background/foreground/cursor/selection) so the
+// terminal matches the selected theme tint. ANSI colors inherit from the base
+// dark/light palette. Keyed by ThemeId; the defaults reuse DARK_THEME/LIGHT_THEME.
+const TERMINAL_VARIANTS: Partial<
+  Record<ThemeId, Partial<typeof DARK_THEME>>
+> = {
+  "light-cool": {
+    background: "#f5f7fa",
+    foreground: "#3a4252",
+    cursor: "#3a4252",
+    selectionBackground: "#cfd9e8",
+    selectionForeground: "#3a4252",
+    selectionInactiveBackground: "#e0e6f0",
+  },
+  "light-warm": {
+    background: "#faf8f4",
+    foreground: "#4a4338",
+    cursor: "#4a4338",
+    selectionBackground: "#e8dec9",
+    selectionForeground: "#4a4338",
+    selectionInactiveBackground: "#efe7d8",
+  },
+  "dark-cool": {
+    background: "#15181d",
+    foreground: "#d3d8e0",
+    cursor: "#d3d8e0",
+    selectionBackground: "#2d4a6b",
+    selectionInactiveBackground: "#33414f",
+  },
+  "dark-warm": {
+    background: "#1a1815",
+    foreground: "#d9d2c7",
+    cursor: "#d9d2c7",
+    selectionBackground: "#5c4a2e",
+    selectionInactiveBackground: "#413a30",
+  },
+  "light-rose": {
+    background: "#faf6f7",
+    foreground: "#4a3a40",
+    cursor: "#4a3a40",
+    selectionBackground: "#ecd6dd",
+    selectionForeground: "#4a3a40",
+    selectionInactiveBackground: "#f0e0e5",
+  },
+  "light-forest": {
+    background: "#f5f8f4",
+    foreground: "#384439",
+    cursor: "#384439",
+    selectionBackground: "#d2e6d4",
+    selectionForeground: "#384439",
+    selectionInactiveBackground: "#e0ece1",
+  },
+  "light-violet": {
+    background: "#f8f6fb",
+    foreground: "#423a52",
+    cursor: "#423a52",
+    selectionBackground: "#ddd2ee",
+    selectionForeground: "#423a52",
+    selectionInactiveBackground: "#e7e0f2",
+  },
+  "dark-rose": {
+    background: "#1d181a",
+    foreground: "#e0d2d6",
+    cursor: "#e0d2d6",
+    selectionBackground: "#6b2d42",
+    selectionInactiveBackground: "#4a3338",
+  },
+  "dark-forest": {
+    background: "#161916",
+    foreground: "#d2dbd0",
+    cursor: "#d2dbd0",
+    selectionBackground: "#2d6b3a",
+    selectionInactiveBackground: "#334a37",
+  },
+  "dark-violet": {
+    background: "#19161f",
+    foreground: "#d8d2e0",
+    cursor: "#d8d2e0",
+    selectionBackground: "#4a2d6b",
+    selectionInactiveBackground: "#3a3349",
+  },
+}
+
+function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {
+  const base = THEMES[themeId].appearance === "dark" ? DARK_THEME : LIGHT_THEME
+  const overrides = TERMINAL_VARIANTS[themeId]
+  return overrides ? { ...base, ...overrides } : base
+}
+
 const SEARCH_DECORATIONS = {
   matchBackground: "#a8a8a833",
   matchBorder: "#a8a8a866",
@@ -104,8 +193,6 @@ function csiParamsInclude(
   }
   return false
 }
-
-const WRAPPER_BG = "[--xterm-bg:#f8f8f8] dark:[--xterm-bg:#151515]"
 
 const URL_CONTINUATION_RE = /^[^\s"'<>`]+/
 
@@ -223,9 +310,13 @@ export function TerminalView({
   const webglRef = useRef<WebglAddon | null>(null)
   const searchRef = useRef<SearchAddon | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const { resolvedTheme } = useTheme()
+  const { theme, resolvedTheme } = useTheme()
   const { appearance } = useTerminalAppearance()
   const isDark = resolvedTheme === "dark"
+  // `system` follows the resolved appearance's default palette; otherwise the
+  // explicit theme id selects its own terminal tint.
+  const themeId: ThemeId = theme === "system" ? resolvedTheme : theme
+  const themeObj = getTerminalTheme(themeId)
   const themeRef = useRef({ isDark })
   themeRef.current.isDark = isDark
   const colorSchemeSubscribedRef = useRef(false)
@@ -377,7 +468,7 @@ export function TerminalView({
       fontFamily: appearance.fontFamily,
       scrollback: 5000,
       overviewRuler: { width: 1 },
-      theme: isDark ? DARK_THEME : LIGHT_THEME,
+      theme: themeObj,
       allowProposedApi: true,
       linkHandler: {
         activate: (event, uri) => openTerminalUrl(term, event, uri),
@@ -953,7 +1044,6 @@ export function TerminalView({
     }
   }, [])
 
-  const themeObj = isDark ? DARK_THEME : LIGHT_THEME
   useEffect(() => {
     const term = termRef.current
     if (!term) return
@@ -1031,7 +1121,8 @@ export function TerminalView({
   return (
     <ContextMenu>
       <ContextMenuTrigger
-        className={`${WRAPPER_BG} relative block h-full w-full bg-[var(--xterm-bg)] px-3 py-3`}
+        className="relative block h-full w-full bg-[var(--xterm-bg)] px-3 py-3"
+        style={{ "--xterm-bg": themeObj.background } as CSSProperties}
       >
         <div ref={containerRef} className="terminal-fit-host" />
         {showScrollToBottom && (

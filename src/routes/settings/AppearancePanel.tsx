@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Monitor, Moon, Sun } from "lucide-react"
-import { useTheme } from "@/components/theme-provider"
+import { THEMES, type ThemeId, useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
@@ -18,13 +18,26 @@ import {
   ComboboxList,
 } from "@/components/ui/combobox"
 
-type Choice = "light" | "dark" | "system"
+const THEME_IDS = Object.keys(THEMES) as ThemeId[]
+const LIGHT_THEMES = THEME_IDS.filter((id) => THEMES[id].appearance === "light")
+const DARK_THEMES = THEME_IDS.filter((id) => THEMES[id].appearance === "dark")
 
-const CHOICES: { value: Choice; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
-]
+// Swatch colors per theme so variants are distinguishable at a glance. Values
+// mirror the palettes in index.css.
+const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
+  light: { bg: "#f8f8f8", fg: "#403f53", accent: "#d9d9d9" },
+  "light-cool": { bg: "#f5f7fa", fg: "#3a4252", accent: "#6b87b3" },
+  "light-warm": { bg: "#faf8f4", fg: "#4a4338", accent: "#b89968" },
+  "light-rose": { bg: "#faf6f7", fg: "#4a3a40", accent: "#c77b91" },
+  "light-forest": { bg: "#f5f8f4", fg: "#384439", accent: "#5b9c63" },
+  "light-violet": { bg: "#f8f6fb", fg: "#423a52", accent: "#8b6bc7" },
+  dark: { bg: "#191919", fg: "#d4d4d4", accent: "#007acc" },
+  "dark-cool": { bg: "#171a1f", fg: "#d3d8e0", accent: "#4c8fd6" },
+  "dark-warm": { bg: "#1c1a18", fg: "#d9d2c7", accent: "#c79a5b" },
+  "dark-rose": { bg: "#1f1a1c", fg: "#e0d2d6", accent: "#d6849b" },
+  "dark-forest": { bg: "#171a17", fg: "#d2dbd0", accent: "#6cc777" },
+  "dark-violet": { bg: "#1b1820", fg: "#d8d2e0", accent: "#a98fd6" },
+}
 
 const COMMON_TERMINAL_FONTS = [
   "SF Mono",
@@ -83,6 +96,64 @@ function useLocalFontFamilies() {
   return { available, families }
 }
 
+function ThemeGroup({
+  label,
+  icon: Icon,
+  ids,
+  active,
+  onSelect,
+}: {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  ids: ThemeId[]
+  active: string
+  onSelect: (id: ThemeId) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <Icon className="size-3.5" />
+        {label}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {ids.map((id) => {
+          const isActive = active === id
+          const swatch = SWATCHES[id]
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onSelect(id)}
+              aria-pressed={isActive}
+              className={cn(
+                "flex flex-col gap-3 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isActive && "border-ring bg-muted/60 ring-2 ring-ring/40",
+              )}
+            >
+              <span
+                className="flex h-10 items-center gap-1.5 rounded-md border border-border/60 px-2"
+                style={{ backgroundColor: swatch.bg }}
+              >
+                <span
+                  className="h-4 w-4 rounded-full"
+                  style={{ backgroundColor: swatch.accent }}
+                />
+                <span
+                  className="h-1.5 flex-1 rounded-full"
+                  style={{ backgroundColor: swatch.fg, opacity: 0.5 }}
+                />
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {THEMES[id].label}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function AppearancePanel() {
   const { theme, setTheme } = useTheme()
   const {
@@ -111,26 +182,38 @@ export function AppearancePanel() {
           Choose how GearShift looks. System matches your operating system.
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        {CHOICES.map(({ value, label, icon: Icon }) => {
-          const active = theme === value
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setTheme(value)}
-              aria-pressed={active}
-              className={cn(
-                "flex flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active && "border-ring bg-muted/60 ring-2 ring-ring/40",
-              )}
-            >
-              <Icon className="size-5 text-foreground" />
-              <span className="text-sm font-medium text-foreground">{label}</span>
-            </button>
-          )
-        })}
-      </div>
+      <button
+        type="button"
+        onClick={() => setTheme("system")}
+        aria-pressed={theme === "system"}
+        className={cn(
+          "flex items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          theme === "system" && "border-ring bg-muted/60 ring-2 ring-ring/40",
+        )}
+      >
+        <Monitor className="size-5 text-foreground" />
+        <div>
+          <span className="block text-sm font-medium text-foreground">System</span>
+          <span className="text-xs text-muted-foreground">
+            Match your operating system appearance.
+          </span>
+        </div>
+      </button>
+
+      <ThemeGroup
+        label="Light"
+        icon={Sun}
+        ids={LIGHT_THEMES}
+        active={theme}
+        onSelect={setTheme}
+      />
+      <ThemeGroup
+        label="Dark"
+        icon={Moon}
+        ids={DARK_THEMES}
+        active={theme}
+        onSelect={setTheme}
+      />
       <div className="mt-2 rounded-lg border border-border bg-background">
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Terminal</h3>

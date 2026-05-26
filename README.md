@@ -15,7 +15,7 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 - Git status, file changes, branch actions, and pull request shortcuts.
 - Agent activity detection for supported CLI coding agents.
 - Desktop and in-app notifications when background agent work finishes.
-- Theme, appearance, and keybinding settings.
+- Theme settings with twelve color variants (Default/Cool/Warm/Rosé/Forest/Violet in light and dark) plus System, appearance, and keybinding settings.
 
 ## Tech Stack
 

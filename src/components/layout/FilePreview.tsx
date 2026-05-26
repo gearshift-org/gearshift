@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toggleLineComment } from "@codemirror/commands"
-import { LanguageDescription } from "@codemirror/language"
+import { LanguageDescription, StreamLanguage } from "@codemirror/language"
 import { languages } from "@codemirror/language-data"
 import { Compartment, EditorState, Prec } from "@codemirror/state"
 import { keymap } from "@codemirror/view"
@@ -31,6 +31,67 @@ function extOf(path: string): string {
   const i = path.lastIndexOf(".")
   return i < 0 ? "" : path.slice(i + 1).toLowerCase()
 }
+
+function isEnvPath(path: string): boolean {
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase() ?? ""
+  return fileName === ".env" || fileName.startsWith(".env.") || extOf(fileName) === "env"
+}
+
+type DotenvState = {
+  afterEquals: boolean
+}
+
+const dotenvLanguage = StreamLanguage.define<DotenvState>({
+  name: "dotenv",
+  startState: () => ({ afterEquals: false }),
+  token(stream, state) {
+    if (stream.sol()) state.afterEquals = false
+    if (stream.eatSpace()) return null
+
+    if (stream.peek() === "#") {
+      stream.skipToEnd()
+      return "comment"
+    }
+
+    if (!state.afterEquals && stream.match("export")) return "keyword"
+
+    if (!state.afterEquals && stream.match(/[A-Za-z_][\w.-]*/)) {
+      return "variableName"
+    }
+
+    if (stream.peek() === "=") {
+      stream.next()
+      state.afterEquals = true
+      return "operator"
+    }
+
+    if (state.afterEquals && stream.match(/\$\{?[A-Za-z_][\w]*\}?/)) {
+      return "variableName.special"
+    }
+
+    const quote = stream.peek()
+    if (state.afterEquals && (quote === '"' || quote === "'")) {
+      stream.next()
+      while (!stream.eol()) {
+        const next = stream.next()
+        if (next === "\\") stream.next()
+        else if (next === quote) break
+      }
+      return "string"
+    }
+
+    if (state.afterEquals) {
+      stream.eatWhile(/[^#\s]/)
+      return "string"
+    }
+
+    stream.next()
+    return null
+  },
+  languageData: {
+    commentTokens: { line: "#" },
+  },
+})
 
 export type MdMode = "raw" | "preview"
 
@@ -143,6 +204,7 @@ function CodeEditor({
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageCompartment = useMemo(() => new Compartment(), [])
+  const envCommentCompartment = useMemo(() => new Compartment(), [])
   const themeCompartment = useMemo(() => new Compartment(), [])
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
@@ -233,11 +295,22 @@ function CodeEditor({
     [editorTheme, themeType]
   )
 
+  const envCommentExtension = useMemo(
+    () =>
+      isEnvPath(path)
+        ? EditorState.languageData.of(() => [
+            { commentTokens: { line: "#" } },
+          ])
+        : [],
+    [path]
+  )
+
   const extensions = useMemo(
     () => [
       basicSetup,
       themeCompartment.of(themeExtension),
       languageCompartment.of([]),
+      envCommentCompartment.of(envCommentExtension),
       Prec.highest(
         keymap.of([
           {
@@ -270,8 +343,14 @@ function CodeEditor({
     ],
     // Intentionally stable: theme/language swaps via Compartment, handlers via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [languageCompartment, themeCompartment]
+    [envCommentCompartment, languageCompartment, themeCompartment]
   )
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: envCommentCompartment.reconfigure(envCommentExtension),
+    })
+  }, [envCommentCompartment, envCommentExtension])
 
   useEffect(() => {
     viewRef.current?.dispatch({
@@ -311,6 +390,13 @@ function CodeEditor({
 
   useEffect(() => {
     let cancelled = false
+    if (isEnvPath(path)) {
+      viewRef.current?.dispatch({
+        effects: languageCompartment.reconfigure(dotenvLanguage),
+      })
+      return
+    }
+
     const description = LanguageDescription.matchFilename(languages, path)
     if (!description) {
       viewRef.current?.dispatch({

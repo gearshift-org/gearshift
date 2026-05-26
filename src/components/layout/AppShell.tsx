@@ -1533,27 +1533,26 @@ export function AppShell() {
           ? formatDuration(status.completedAt - status.workStartedAt)
           : null
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
-      if (appVisibleAndFocused) {
-        console.info("Agent complete: showing in-app toast")
-        toast.custom(
+      console.info("Agent complete: showing in-app toast")
+      toast.custom(
           (id) => (
-            <div className="relative flex w-full min-w-80 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg">
+            <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
               <button
                 type="button"
                 onClick={() =>
                   openAgentDoneTarget(targetProject.id, tabId, paneId, id)
                 }
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
               >
                 <ProjectAvatar
                   name={targetProject.name}
                   path={targetProject.path}
-                  className="size-16 rounded-md text-lg"
+                  className="size-10 shrink-0 rounded-md text-sm"
                 />
-                <span className="flex min-w-0 flex-col justify-center gap-1 pr-9">
-                  <span className="text-sm font-medium">Agent finished</span>
+                <span className="flex min-w-0 flex-col justify-center gap-0.5 pr-6">
+                  <span className="text-xs font-medium">Agent finished</span>
                   <span className="flex min-w-0 items-baseline gap-1 text-xs">
-                    <span className="max-w-36 truncate font-semibold text-foreground">
+                    <span className="max-w-28 truncate font-semibold text-foreground">
                       {targetProject.name}
                     </span>
                     <span className="shrink-0 text-muted-foreground">·</span>
@@ -1562,7 +1561,7 @@ export function AppShell() {
                     </span>
                   </span>
                   {elapsedTime && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-[11px] text-muted-foreground">
                       Completed in {elapsedTime}
                     </span>
                   )}
@@ -1572,9 +1571,9 @@ export function AppShell() {
                 type="button"
                 aria-label="Close notification"
                 onClick={() => toast.dismiss(id)}
-                className="absolute top-2 right-2 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="absolute top-1.5 right-1.5 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
-                <X className="size-4" />
+                <X className="size-3.5" />
               </button>
             </div>
           ),
@@ -1583,8 +1582,9 @@ export function AppShell() {
             duration: Infinity,
           }
         )
-      } else {
-        console.info("Agent complete: showing desktop notification")
+
+      if (!appVisibleAndFocused) {
+        console.info("Agent complete: also showing desktop notification")
         if (typeof Notification !== "undefined") {
           try {
             const notification = new Notification(

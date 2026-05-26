@@ -85,6 +85,8 @@ type TabItemProps = {
   onAdd: () => void
   onOpenInVSCode?: (id: string) => void
   onRevealInFinder?: (id: string) => void
+  hasTriggeredSummary: boolean
+  onSummaryTriggered: () => void
 }
 
 function ProjectTabItem({
@@ -101,6 +103,8 @@ function ProjectTabItem({
   onAdd,
   onOpenInVSCode,
   onRevealInFinder,
+  hasTriggeredSummary,
+  onSummaryTriggered,
 }: TabItemProps) {
   const [, setColorVersion] = useState(0)
   const [showSummary, setShowSummary] = useState(false)
@@ -147,8 +151,16 @@ function ProjectTabItem({
     if (summaryTimerRef.current !== null) {
       window.clearTimeout(summaryTimerRef.current)
     }
+
+    if (hasTriggeredSummary) {
+      summaryTimerOpenRef.current = true
+      setShowSummary(true)
+      return
+    }
+
     summaryTimerRef.current = window.setTimeout(() => {
       summaryTimerOpenRef.current = true
+      onSummaryTriggered()
       setShowSummary(true)
       summaryTimerRef.current = null
     }, 700)
@@ -327,6 +339,7 @@ export function ProjectTabs({
   onRevealInFinder,
   onReorder,
 }: Props) {
+  const [hasTriggeredSummary, setHasTriggeredSummary] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
@@ -338,7 +351,10 @@ export function ProjectTabs({
   }
 
   return (
-    <div className="flex h-full min-w-0 shrink items-stretch overflow-hidden [-webkit-app-region:no-drag]">
+    <div
+      className="flex h-full min-w-0 shrink items-stretch overflow-hidden [-webkit-app-region:no-drag]"
+      onPointerLeave={() => setHasTriggeredSummary(false)}
+    >
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <SortableContext
           items={projects.map((p) => p.id)}
@@ -361,6 +377,8 @@ export function ProjectTabs({
               onAdd={onAdd}
               onOpenInVSCode={onOpenInVSCode}
               onRevealInFinder={onRevealInFinder}
+              hasTriggeredSummary={hasTriggeredSummary}
+              onSummaryTriggered={() => setHasTriggeredSummary(true)}
             />
           ))}
         </SortableContext>

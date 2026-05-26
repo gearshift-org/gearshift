@@ -119,7 +119,9 @@ export function RightSidebar({
 }: Props) {
   const [internalTab, setInternalTab] = useState<"changes" | "files" | "history">("changes")
   const tab = activeTab ?? internalTab
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionErrorsByCwd, setActionErrorsByCwd] = useState<
+    Record<string, string>
+  >({})
   const [commitMessage, setCommitMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
@@ -218,12 +220,28 @@ export function RightSidebar({
   const ghAvailable = gitQuery.data?.ghAvailable ?? false
   const pullRequest = gitQuery.data?.pullRequest ?? null
   const canCreatePullRequest = gitQuery.data?.canCreatePullRequest ?? false
+  const currentActionError = cwd ? (actionErrorsByCwd[cwd] ?? null) : null
+  const setCurrentActionError = useCallback(
+    (message: string | null) => {
+      if (!cwd) return
+      setActionErrorsByCwd((errors) => {
+        if (message === null) {
+          if (!(cwd in errors)) return errors
+          const nextErrors = { ...errors }
+          delete nextErrors[cwd]
+          return nextErrors
+        }
+        return { ...errors, [cwd]: message }
+      })
+    },
+    [cwd]
+  )
   const queryError = gitQuery.error
     ? gitQuery.error instanceof Error
       ? gitQuery.error.message
       : String(gitQuery.error)
     : null
-  const error = actionError ?? queryError
+  const error = currentActionError ?? queryError
   const loading = gitQuery.isLoading
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
@@ -307,6 +325,7 @@ export function RightSidebar({
   // repos and we don't want a stampede when fs events fire in bursts.
   const inFlightRef = useRef(false)
   const pendingRef = useRef(false)
+  const runRefreshRef = useRef<() => Promise<void>>(async () => {})
   const runRefresh = useCallback(async () => {
     if (!cwd) return
     // If an action just landed, give git a moment to settle so the next
@@ -319,7 +338,7 @@ export function RightSidebar({
           () => {
             if (pendingRef.current && inflightActionsRef.current === 0) {
               pendingRef.current = false
-              void runRefresh()
+              void runRefreshRef.current()
             }
           },
           Math.max(settleDelay, 50)
@@ -342,6 +361,10 @@ export function RightSidebar({
       }
     }
   }, [cwd, currentGitQueryKey, queryClient])
+
+  useEffect(() => {
+    runRefreshRef.current = runRefresh
+  }, [runRefresh])
 
   // Watch the current project and keep the query cache in sync with external
   // git/file operations.
@@ -388,13 +411,13 @@ export function RightSidebar({
       if (!cwd) return
       inflightActionsRef.current += 1
       opts.setLoading?.(true)
-      setActionError(null)
+      setCurrentActionError(null)
       opts.optimistic()
       try {
         const res = await opts.mutation()
         if (!res.ok) {
           opts.rollback?.()
-          setActionError(res.error ?? `${opts.label} failed`)
+          setCurrentActionError(res.error ?? `${opts.label} failed`)
           return
         }
         await opts.onSuccess?.(res as { ok: true } & T)
@@ -409,7 +432,7 @@ export function RightSidebar({
         void runRefresh()
       }
     },
-    [cwd, runRefresh]
+    [cwd, runRefresh, setCurrentActionError]
   )
 
   const stagePath = useCallback(
@@ -508,17 +531,17 @@ export function RightSidebar({
       if (!cwd || busy) return
       const message = commitMessage.trim()
       if (!message) {
-        setActionError("Commit message required")
+        setCurrentActionError("Commit message required")
         return
       }
       if (stagedFiles.length === 0) {
-        setActionError("Nothing staged to commit")
+        setCurrentActionError("Nothing staged to commit")
         return
       }
       inflightActionsRef.current += 1
       setBusy(true)
       setCommitting("commit")
-      setActionError(null)
+      setCurrentActionError(null)
       const committedPaths = stagedFiles.map((f) => f.path)
       await queryClient.cancelQueries({ queryKey: currentGitQueryKey })
       const rollback = removeCachedFiles(committedPaths, true)
@@ -526,7 +549,7 @@ export function RightSidebar({
         const res = await window.git.commit(cwd, message)
         if (!res.ok) {
           rollback()
-          setActionError(res.error ?? "Commit failed")
+          setCurrentActionError(res.error ?? "Commit failed")
           return
         }
         setCommitMessage("")
@@ -537,7 +560,7 @@ export function RightSidebar({
           setCommitting("push")
           const pushRes = await window.git.push(cwd)
           if (!pushRes.ok) {
-            setActionError(pushRes.error ?? "Push failed")
+            setCurrentActionError(pushRes.error ?? "Push failed")
             clearOptimisticEntriesForPaths(committedPaths)
             queryClient.setQueryData(
               currentGitQueryKey,
@@ -573,6 +596,7 @@ export function RightSidebar({
       ahead,
       clearOptimisticEntriesForPaths,
       runRefresh,
+      setCurrentActionError,
     ]
   )
 
@@ -637,44 +661,51 @@ export function RightSidebar({
   const openPullRequest = useCallback(async () => {
     if (!cwd || !pullRequest || pullRequestBusy) return
     setPullRequestBusy("open")
-    setActionError(null)
+    setCurrentActionError(null)
     try {
       const res = await window.git.openPullRequest(cwd, pullRequest.number)
-      if (!res.ok) setActionError(res.error ?? "Open pull request failed")
+      if (!res.ok) setCurrentActionError(res.error ?? "Open pull request failed")
     } finally {
       setPullRequestBusy(null)
     }
-  }, [cwd, pullRequest, pullRequestBusy])
+  }, [cwd, pullRequest, pullRequestBusy, setCurrentActionError])
 
   const createPullRequest = useCallback(async () => {
     if (!cwd || !currentBranch || !canCreatePullRequest || pullRequestBusy) {
       return
     }
     setPullRequestBusy("create")
-    setActionError(null)
+    setCurrentActionError(null)
     try {
       const res = await window.git.createPullRequest(cwd, currentBranch)
       if (!res.ok) {
-        setActionError(res.error ?? "Create pull request failed")
+        setCurrentActionError(res.error ?? "Create pull request failed")
         return
       }
       void runRefresh()
     } finally {
       setPullRequestBusy(null)
     }
-  }, [cwd, currentBranch, canCreatePullRequest, pullRequestBusy, runRefresh])
+  }, [
+    cwd,
+    currentBranch,
+    canCreatePullRequest,
+    pullRequestBusy,
+    runRefresh,
+    setCurrentActionError,
+  ])
 
   const openBranchOnGitHub = useCallback(async () => {
     if (!cwd || !currentBranch || githubBranchBusy) return
     setGithubBranchBusy(true)
-    setActionError(null)
+    setCurrentActionError(null)
     try {
       const res = await window.git.openBranchOnGitHub(cwd, currentBranch)
-      if (!res.ok) setActionError(res.error ?? "Open GitHub failed")
+      if (!res.ok) setCurrentActionError(res.error ?? "Open GitHub failed")
     } finally {
       setGithubBranchBusy(false)
     }
-  }, [cwd, currentBranch, githubBranchBusy])
+  }, [cwd, currentBranch, githubBranchBusy, setCurrentActionError])
 
   const sync = useCallback(async () => {
     if (!cwd || busy) return
@@ -682,13 +713,13 @@ export function RightSidebar({
     setBusy(true)
     setSyncing(true)
     setCommitting("sync")
-    setActionError(null)
+    setCurrentActionError(null)
     try {
       if (behind > 0) {
         setCommitting("pull")
         const pullRes = await window.git.pull(cwd)
         if (!pullRes.ok) {
-          setActionError(pullRes.error ?? "Pull failed")
+          setCurrentActionError(pullRes.error ?? "Pull failed")
           return
         }
         updateCachedGitMeta({ behind: 0 })
@@ -697,7 +728,7 @@ export function RightSidebar({
         setCommitting("push")
         const pushRes = await window.git.push(cwd)
         if (!pushRes.ok) {
-          setActionError(pushRes.error ?? "Push failed")
+          setCurrentActionError(pushRes.error ?? "Push failed")
           return
         }
         updateCachedGitMeta({ ahead: 0 })
@@ -713,7 +744,15 @@ export function RightSidebar({
       )
       void runRefresh()
     }
-  }, [cwd, busy, ahead, behind, updateCachedGitMeta, runRefresh])
+  }, [
+    cwd,
+    busy,
+    ahead,
+    behind,
+    updateCachedGitMeta,
+    runRefresh,
+    setCurrentActionError,
+  ])
 
   const publishBranch = useCallback(async () => {
     if (!cwd || !currentBranch || busy) return
@@ -721,11 +760,11 @@ export function RightSidebar({
     setBusy(true)
     setSyncing(true)
     setCommitting("publish")
-    setActionError(null)
+    setCurrentActionError(null)
     try {
       const res = await window.git.publishBranch(cwd, currentBranch)
       if (!res.ok) {
-        setActionError(res.error ?? "Publish branch failed")
+        setCurrentActionError(res.error ?? "Publish branch failed")
         return
       }
       updateCachedGitMeta({ ahead: 0, hasUpstream: true })
@@ -740,7 +779,14 @@ export function RightSidebar({
       )
       void runRefresh()
     }
-  }, [cwd, currentBranch, busy, updateCachedGitMeta, runRefresh])
+  }, [
+    cwd,
+    currentBranch,
+    busy,
+    updateCachedGitMeta,
+    runRefresh,
+    setCurrentActionError,
+  ])
 
   // Show the Sync button only when nothing is staged and the branch is out of
   // sync with its upstream. Keep it visible while syncing so the loading

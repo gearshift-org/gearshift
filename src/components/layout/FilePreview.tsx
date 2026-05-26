@@ -34,7 +34,7 @@ function extOf(path: string): string {
 
 function isEnvPath(path: string): boolean {
   const fileName = path.split(/[\\/]/).pop()?.toLowerCase() ?? ""
-  return fileName === ".env" || fileName.startsWith(".env.") || extOf(fileName) === "env"
+  return fileName.startsWith(".env") || extOf(fileName) === "env"
 }
 
 type DotenvState = {

@@ -352,6 +352,7 @@ export function AppShell() {
   // pane is being closed. Wired via effect once both are defined.
   const closeTabRef = useRef<(id: string) => void>(() => undefined)
   const lastTerminalByProjectRef = useRef<Record<string, string>>({})
+  const agentDoneToastsByProjectRef = useRef<Map<string, Set<string>>>(new Map())
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
   const windowFocusedRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true
@@ -654,6 +655,14 @@ export function AppShell() {
       )
     )
   }, [activeProjectId, projects])
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
+    if (!set || set.size === 0) return
+    for (const id of set) toast.dismiss(id)
+    agentDoneToastsByProjectRef.current.delete(activeProjectId)
+  }, [activeProjectId])
 
   useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return
@@ -1533,6 +1542,10 @@ export function AppShell() {
           ? formatDuration(status.completedAt - status.workStartedAt)
           : null
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
+      const toastsForProject =
+        agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
+      toastsForProject.add(toastId)
+      agentDoneToastsByProjectRef.current.set(targetProject.id, toastsForProject)
       console.info("Agent complete: showing in-app toast")
       toast.custom(
           (id) => (
@@ -1580,6 +1593,20 @@ export function AppShell() {
           {
             id: toastId,
             duration: Infinity,
+            onDismiss: () => {
+              const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
+              set?.delete(toastId)
+              if (set && set.size === 0) {
+                agentDoneToastsByProjectRef.current.delete(targetProject.id)
+              }
+            },
+            onAutoClose: () => {
+              const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
+              set?.delete(toastId)
+              if (set && set.size === 0) {
+                agentDoneToastsByProjectRef.current.delete(targetProject.id)
+              }
+            },
           }
         )
 

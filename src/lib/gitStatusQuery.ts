@@ -17,6 +17,26 @@ export type GitQueryData = {
   ghAvailable: boolean
   pullRequest: PullRequestInfo | null
   canCreatePullRequest: boolean
+  notRepo: boolean
+}
+
+const NOT_A_REPO_RE = /not a git repository/i
+
+export function isNotRepoError(message: string | null | undefined): boolean {
+  return !!message && NOT_A_REPO_RE.test(message)
+}
+
+const EMPTY_NOT_REPO_DATA: GitQueryData = {
+  files: [],
+  ahead: 0,
+  behind: 0,
+  hasUpstream: false,
+  currentBranch: null,
+  branches: [],
+  ghAvailable: false,
+  pullRequest: null,
+  canCreatePullRequest: false,
+  notRepo: true,
 }
 
 export const EMPTY_GIT_FILES: GitFile[] = []
@@ -29,7 +49,10 @@ export async function fetchGitQueryData(cwd: string): Promise<GitQueryData> {
     window.git.aheadBehind(cwd),
     window.git.branches(cwd),
   ])
-  if (!status.ok) throw new Error(status.error ?? "Failed to load Git status")
+  if (!status.ok) {
+    if (isNotRepoError(status.error)) return EMPTY_NOT_REPO_DATA
+    throw new Error(status.error ?? "Failed to load Git status")
+  }
   const currentBranch = br.ok ? br.current : null
   const ahead = ab.ok ? ab.ahead : 0
   const hasUpstream = ab.ok ? ab.hasUpstream : false
@@ -52,6 +75,7 @@ export async function fetchGitQueryData(cwd: string): Promise<GitQueryData> {
     ghAvailable: pr.ghAvailable,
     pullRequest: pr.pullRequest,
     canCreatePullRequest: pr.canCreatePullRequest,
+    notRepo: false,
   }
 }
 

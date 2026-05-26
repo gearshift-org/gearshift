@@ -220,6 +220,7 @@ export function RightSidebar({
   const ghAvailable = gitQuery.data?.ghAvailable ?? false
   const pullRequest = gitQuery.data?.pullRequest ?? null
   const canCreatePullRequest = gitQuery.data?.canCreatePullRequest ?? false
+  const notRepo = gitQuery.data?.notRepo ?? false
   const currentActionError = cwd ? (actionErrorsByCwd[cwd] ?? null) : null
   const setCurrentActionError = useCallback(
     (message: string | null) => {
@@ -858,7 +859,12 @@ export function RightSidebar({
           keepMounted
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          {cwd && (
+          {cwd && notRepo && (
+            <div className="px-4 py-3 text-xs text-muted-foreground">
+              Not a git repository
+            </div>
+          )}
+          {cwd && !notRepo && (
             <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3">
               <div className="flex items-center gap-1.5">
                 <div className="min-w-0 flex-1">
@@ -1017,15 +1023,15 @@ export function RightSidebar({
                 No project open
               </div>
             )}
-            {cwd && loading && files.length === 0 && (
+            {cwd && !notRepo && loading && files.length === 0 && (
               <div className="px-4 py-3 text-xs text-muted-foreground">
                 Loading changes…
               </div>
             )}
-            {cwd && error && (
+            {cwd && !notRepo && error && (
               <div className="px-4 py-3 text-xs text-red-500">{error}</div>
             )}
-            {cwd && !loading && !error && files.length === 0 && (
+            {cwd && !notRepo && !loading && !error && files.length === 0 && (
               <div className="px-4 py-3 text-xs text-muted-foreground">
                 No changes
               </div>

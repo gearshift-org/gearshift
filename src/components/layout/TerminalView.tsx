@@ -106,6 +106,54 @@ function csiParamsInclude(
 }
 
 const WRAPPER_BG = "[--xterm-bg:#f8f8f8] dark:[--xterm-bg:#151515]"
+
+const URL_CONTINUATION_RE = /^[^\s"'<>`]+/
+
+function trimUrlEnd(value: string): string {
+  return value.replace(/[),.!?;:]+$/g, "")
+}
+
+function expandWrappedTerminalUrl(term: Terminal, uri: string): string {
+  const buffer = term.buffer.active
+  const maxLine = buffer.length - 1
+
+  for (let y = 0; y <= maxLine; y += 1) {
+    const line = buffer.getLine(y)
+    if (!line) continue
+
+    const text = line.translateToString(true)
+    const start = text.indexOf(uri)
+    if (start === -1) continue
+
+    let expanded = uri
+    let cursorY = y
+    let cursorEndX = start + uri.length
+
+    while (cursorY < maxLine && cursorEndX >= term.cols - 1) {
+      const nextLine = buffer.getLine(cursorY + 1)
+      if (!nextLine) break
+
+      const nextText = nextLine.translateToString(true)
+      const continuation = nextText.match(URL_CONTINUATION_RE)?.[0]
+      if (!continuation) break
+
+      expanded += continuation
+      cursorY += 1
+      cursorEndX = continuation.length
+
+      if (!nextLine.isWrapped && continuation.length < term.cols) break
+    }
+
+    return trimUrlEnd(expanded)
+  }
+
+  return uri
+}
+
+function openTerminalUrl(term: Terminal, event: MouseEvent, uri: string): void {
+  event.preventDefault()
+  void window.shellApi.openExternal(expandWrappedTerminalUrl(term, uri))
+}
 const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 10000
 // While a hook event has been seen within this window, the process-detection
@@ -323,10 +371,7 @@ export function TerminalView({
       theme: isDark ? DARK_THEME : LIGHT_THEME,
       allowProposedApi: true,
       linkHandler: {
-        activate: (event, uri) => {
-          event.preventDefault()
-          void window.shellApi.openExternal(uri)
-        },
+        activate: (event, uri) => openTerminalUrl(term, event, uri),
         hover: () => {},
         leave: () => {},
       },
@@ -334,8 +379,7 @@ export function TerminalView({
     const fit = new FitAddon()
     const search = new SearchAddon()
     const webLinks = new WebLinksAddon((event, uri) => {
-      event.preventDefault()
-      void window.shellApi.openExternal(uri)
+      openTerminalUrl(term, event, uri)
     })
     term.loadAddon(fit)
     term.loadAddon(search)

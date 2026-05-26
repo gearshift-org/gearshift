@@ -14,7 +14,7 @@ export type UpdaterState =
   | { status: "error"; message: string }
 
 const CHANNEL = "updater:state"
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+const CHECK_INTERVAL_MS = 60 * 60 * 1000
 
 let lastState: UpdaterState = { status: "idle" }
 let initialized = false

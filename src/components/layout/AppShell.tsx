@@ -664,6 +664,26 @@ export function AppShell() {
   }, [activeProjectId])
 
   useEffect(() => {
+    if (!activeProjectId) return
+    const dismissActiveProjectToasts = () => {
+      if (!isAppVisibleAndFocused()) return
+      const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
+      if (!set || set.size === 0) return
+      for (const id of set) toast.dismiss(id)
+      agentDoneToastsByProjectRef.current.delete(activeProjectId)
+    }
+    window.addEventListener("focus", dismissActiveProjectToasts)
+    document.addEventListener("visibilitychange", dismissActiveProjectToasts)
+    return () => {
+      window.removeEventListener("focus", dismissActiveProjectToasts)
+      document.removeEventListener(
+        "visibilitychange",
+        dismissActiveProjectToasts
+      )
+    }
+  }, [activeProjectId])
+
+  useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return
     pushRecentPaletteTab(activeProjectPath, activeTabId)
   }, [activeProjectId, activeProjectPath, activeTabId])

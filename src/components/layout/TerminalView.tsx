@@ -1007,10 +1007,17 @@ export function TerminalView({
         return
       }
       if (event.event === "notification") {
-        // Agent notifications mean "needs attention" (for example a Claude Code
-        // permission request or idle prompt), not "job complete". Stop the busy
-        // spinner and flag the pane as waiting on the user, but keep completed
-        // false so AppShell does not fire a false completion notification.
+        // Only a notification that interrupts an active turn means the agent is
+        // blocked on the user (a permission/approval prompt). Notifications that
+        // arrive once the turn has already stopped are idle prompts — e.g.
+        // Claude Code's "waiting for your input" reminder that fires ~60s after
+        // a turn finishes — and must NOT flip a completed/idle agent into
+        // "needs attention". Gate on the active-turn flag to tell them apart.
+        if (!activeHookWorkRef.current) {
+          return
+        }
+        // Stop the busy spinner and flag the pane as waiting on the user, but
+        // keep completed false so AppShell does not fire a false completion.
         emitAgentStatus({
           running: current.running || activeHookWorkRef.current,
           working: false,

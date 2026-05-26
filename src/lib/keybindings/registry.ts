@@ -21,7 +21,7 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: "sidebar.toggle",
     label: "Toggle Sidebar",
-    defaultAccelerator: "CmdOrCtrl+2",
+    defaultAccelerator: "CmdOrCtrl+S",
     scope: "renderer",
   },
   {
@@ -51,7 +51,7 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: "terminal.last",
     label: "Go to Last Terminal",
-    defaultAccelerator: "CmdOrCtrl+J",
+    defaultAccelerator: "CmdOrCtrl+2",
     scope: "renderer",
   },
   {

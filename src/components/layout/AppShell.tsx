@@ -1787,8 +1787,8 @@ export function AppShell() {
         return
       }
       // Let focused controls/editors handle their own shortcuts first. For
-      // example, CodeMirror's Mod+S save binding calls preventDefault(), so a
-      // user-customized Mod+S sidebar binding must not also run here.
+      // example, CodeMirror's Mod+S save binding calls preventDefault(), so the
+      // sidebar shortcut should not also run while the editor handles saving.
       if (e.defaultPrevented) return
       const action = findActionForEvent(e)
       if (!action) return

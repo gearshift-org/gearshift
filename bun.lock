@@ -5,6 +5,7 @@
     "": {
       "name": "vite-app",
       "dependencies": {
+        "@codemirror/commands": "^6.10.3",
         "@codemirror/language": "^6.12.3",
         "@codemirror/language-data": "^6.5.2",
         "@codemirror/state": "^6.6.0",
@@ -74,10 +75,10 @@
     },
   },
   "trustedDependencies": [
-    "@parcel/watcher",
     "electron",
     "esbuild",
     "node-pty",
+    "@parcel/watcher",
   ],
   "packages": {
     "7zip-bin": ["7zip-bin@5.2.0", "", {}, "sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A=="],

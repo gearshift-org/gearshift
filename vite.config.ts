@@ -23,6 +23,7 @@ export default defineConfig({
                 "node-pty",
                 "electron",
                 "electron-updater",
+                "electron-log",
                 "@parcel/watcher",
                 "@libsql/client",
               ],

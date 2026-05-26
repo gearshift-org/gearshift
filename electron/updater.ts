@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain } from "electron"
 import pkg from "electron-updater"
+import logPkg from "electron-log"
 
 const { autoUpdater } = pkg
+const log = (logPkg as unknown as { default?: typeof logPkg }).default ?? logPkg
 
 export type UpdaterState =
   | { status: "idle" }
@@ -27,14 +29,12 @@ export function onUpdaterStateChange(cb: (state: UpdaterState) => void) {
 }
 
 function broadcast(next: UpdaterState) {
-  // Stickiness: once an update is downloaded and ready to install, don't
-  // downgrade the visible state to "checking" / "available" / "idle" just
-  // because a background re-check ran. Only accept a strictly newer "ready"
-  // version (or an error, so the user sees failures).
+  log.info("[updater] broadcast", { from: lastState, to: next })
   if (lastState.status === "ready") {
     if (next.status === "ready") {
       if (next.version === lastState.version) return
     } else if (next.status !== "error") {
+      log.info("[updater] sticky ready - ignoring", next.status)
       return
     }
   }
@@ -46,9 +46,13 @@ function broadcast(next: UpdaterState) {
 }
 
 export async function checkForUpdatesNow() {
+  log.info("[updater] checkForUpdatesNow called, isPackaged=", app.isPackaged)
+  if (!app.isPackaged) return lastState
   try {
-    await autoUpdater.checkForUpdates()
+    const result = await autoUpdater.checkForUpdates()
+    log.info("[updater] checkForUpdates result", result?.updateInfo?.version)
   } catch (err) {
+    log.error("[updater] checkForUpdates failed", err)
     broadcast({
       status: "error",
       message: err instanceof Error ? err.message : String(err),
@@ -58,6 +62,7 @@ export async function checkForUpdatesNow() {
 }
 
 export function quitAndInstall() {
+  log.info("[updater] quitAndInstall invoked")
   autoUpdater.quitAndInstall()
 }
 
@@ -65,13 +70,30 @@ export function initUpdater() {
   if (initialized) return
   initialized = true
 
+  log.transports.file.level = "info"
+  log.info(
+    "[updater] init - version",
+    app.getVersion(),
+    "isPackaged=",
+    app.isPackaged,
+    "logPath=",
+    log.transports.file.getFile().path
+  )
+
+  ipcMain.handle("updater:getState", () => lastState)
+  ipcMain.handle("updater:check", () => checkForUpdatesNow())
+  ipcMain.handle("updater:quitAndInstall", () => {
+    if (!app.isPackaged) return { ok: false, dev: true }
+    quitAndInstall()
+    return { ok: true }
+  })
+
   if (!app.isPackaged) {
-    ipcMain.handle("updater:check", () => lastState)
-    ipcMain.handle("updater:quitAndInstall", () => ({ ok: false, dev: true }))
-    ipcMain.handle("updater:getState", () => lastState)
+    log.info("[updater] skipping autoUpdater wiring in dev")
     return
   }
 
+  autoUpdater.logger = log
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
@@ -93,13 +115,6 @@ export function initUpdater() {
   autoUpdater.on("error", (err) =>
     broadcast({ status: "error", message: err?.message ?? String(err) })
   )
-
-  ipcMain.handle("updater:check", () => checkForUpdatesNow())
-  ipcMain.handle("updater:quitAndInstall", () => {
-    quitAndInstall()
-    return { ok: true }
-  })
-  ipcMain.handle("updater:getState", () => lastState)
 
   void checkForUpdatesNow()
   setInterval(() => {

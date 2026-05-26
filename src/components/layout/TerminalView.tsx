@@ -328,7 +328,6 @@ export function TerminalView({
     const fit = new FitAddon()
     const search = new SearchAddon()
     const webLinks = new WebLinksAddon((event, uri) => {
-      if (!event.metaKey && !event.ctrlKey) return
       event.preventDefault()
       void window.shellApi.openExternal(uri)
     })

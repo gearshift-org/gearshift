@@ -76,6 +76,7 @@ function hydrateProjectSnapshot(): {
             id: sp.id,
             pendingStart: true,
             ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
+            ...(sp.autoTitle ? { autoTitle: sp.autoTitle } : {}),
             ...(sp.customName ? { customName: sp.customName } : {}),
           }))
           const activePaneId =
@@ -215,6 +216,7 @@ function serializeProjects(projects: Project[]) {
           return {
             id: pp.id,
             ...(sid ? { sessionId: sid } : {}),
+            ...(pp.autoTitle ? { autoTitle: pp.autoTitle } : {}),
             ...(pp.customName ? { customName: pp.customName } : {}),
           }
         }),

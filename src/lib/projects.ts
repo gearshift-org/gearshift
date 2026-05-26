@@ -5,6 +5,8 @@ export type StoredPane = {
   id: string
   /** Daemon session id. Present → renderer attempts adopt on next launch. */
   sessionId?: string
+  /** Last title emitted by the running process. */
+  autoTitle?: string
   /** User-set name for this pane. */
   customName?: string
 }
@@ -203,6 +205,9 @@ export function loadProjects(): StoredProject[] {
                         id: pp.id,
                         ...(typeof pp.sessionId === "string"
                           ? { sessionId: pp.sessionId }
+                          : {}),
+                        ...(typeof pp.autoTitle === "string"
+                          ? { autoTitle: pp.autoTitle }
                           : {}),
                         ...(typeof pp.customName === "string"
                           ? { customName: pp.customName }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { toggleLineComment } from "@codemirror/commands"
 import { LanguageDescription } from "@codemirror/language"
 import { languages } from "@codemirror/language-data"
 import { Compartment, EditorState, Prec } from "@codemirror/state"
@@ -254,6 +255,11 @@ function CodeEditor({
               onOpenSearchRef.current()
               return true
             },
+          },
+          {
+            key: "Mod-/",
+            preventDefault: true,
+            run: toggleLineComment,
           },
         ])
       ),

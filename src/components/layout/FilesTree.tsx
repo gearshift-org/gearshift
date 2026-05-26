@@ -1,6 +1,7 @@
 import {
   createContext,
   memo,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -9,10 +10,13 @@ import {
   type ReactElement,
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
+  FilePlus,
+  FolderPlus,
   Search,
   X,
 } from "lucide-react"
@@ -44,6 +48,27 @@ type NodeProps = {
 }
 
 const CollapseSignalContext = createContext(0)
+
+type PendingCreate = {
+  parentAbs: string
+  kind: "file" | "folder"
+}
+
+type TreeActions = {
+  pendingCreate: PendingCreate | null
+  startCreate: (parentAbs: string, kind: "file" | "folder") => void
+  submitCreate: (name: string) => Promise<void>
+  cancelCreate: () => void
+  trash: (absPath: string, isDir: boolean) => Promise<void>
+}
+
+const TreeActionsContext = createContext<TreeActions | null>(null)
+
+function useTreeActions(): TreeActions {
+  const ctx = useContext(TreeActionsContext)
+  if (!ctx) throw new Error("TreeActionsContext missing")
+  return ctx
+}
 
 function joinPath(a: string, b: string): string {
   return `${a.replace(/\/+$/, "")}/${b}`
@@ -77,6 +102,8 @@ function FolderNode({
   const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
   const [forceClosed, setForceClosed] = useState(false)
   const collapseSignal = useContext(CollapseSignalContext)
+  const { pendingCreate } = useTreeActions()
+  const isCreateTarget = pendingCreate?.parentAbs === absPath
   useEffect(() => {
     if (collapseSignal > 0 && depth > 0) {
       setManuallyOpen(false)
@@ -86,10 +113,18 @@ function FolderNode({
   useEffect(() => {
     setForceClosed(false)
   }, [activePath])
+  useEffect(() => {
+    if (isCreateTarget) {
+      setManuallyOpen(true)
+      setForceClosed(false)
+    }
+  }, [isCreateTarget])
   const isActiveAncestor =
     !!activePath && (depth === 0 || activePath.startsWith(`${relPath}/`))
   const open =
-    depth === 0 || (!forceClosed && (manuallyOpen || isActiveAncestor))
+    depth === 0 ||
+    isCreateTarget ||
+    (!forceClosed && (manuallyOpen || isActiveAncestor))
 
   const entriesQuery = useQuery({
     queryKey: fileTreeDirQueryKey(cwd, absPath),
@@ -134,12 +169,18 @@ function FolderNode({
   return (
     <div>
       {folderButton && (
-        <FileTreeContextMenu absPath={absPath}>
+        <FileTreeContextMenu absPath={absPath} isDir>
           {folderButton}
         </FileTreeContextMenu>
       )}
       {open && (
         <div>
+          {isCreateTarget && pendingCreate && (
+            <NewEntryRow
+              kind={pendingCreate.kind}
+              depth={depth + 1}
+            />
+          )}
           {entriesQuery.isLoading && entries === undefined && (
             <div
               className="px-2 py-1 text-xs text-muted-foreground"
@@ -182,17 +223,101 @@ function FolderNode({
   )
 }
 
+function NewEntryRow({
+  kind,
+  depth,
+}: {
+  kind: "file" | "folder"
+  depth: number
+}) {
+  const { submitCreate, cancelCreate } = useTreeActions()
+  const [value, setValue] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const submit = async () => {
+    const name = value.trim()
+    if (!name || submitting) return
+    setSubmitting(true)
+    try {
+      await submitCreate(name)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-[3px] text-xs"
+      style={{ paddingLeft: depth * 12 + 12 }}
+    >
+      {kind === "folder" ? (
+        <FolderIcon name={value || "new"} open className="size-4 shrink-0" />
+      ) : (
+        <FileIcon name={value || "new"} className="size-4 shrink-0" />
+      )}
+      <input
+        ref={inputRef}
+        value={value}
+        disabled={submitting}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            void submit()
+          } else if (e.key === "Escape") {
+            e.preventDefault()
+            cancelCreate()
+          }
+        }}
+        onBlur={() => {
+          if (value.trim()) {
+            void submit()
+          } else {
+            cancelCreate()
+          }
+        }}
+        placeholder={kind === "folder" ? "New folder" : "New file"}
+        className="min-w-0 flex-1 rounded-sm border border-ring/40 bg-background px-1 py-0 outline-none focus:border-ring"
+      />
+    </div>
+  )
+}
+
 function FileTreeContextMenu({
   absPath,
+  isDir,
   children,
 }: {
   absPath: string
+  isDir: boolean
   children: ReactElement
 }) {
+  const { startCreate, trash } = useTreeActions()
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
       <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+        {isDir && (
+          <>
+            <ContextMenuItem
+              onClick={() => startCreate(absPath, "file")}
+            >
+              <FilePlus className="size-3.5" />
+              New File
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => startCreate(absPath, "folder")}
+            >
+              <FolderPlus className="size-3.5" />
+              New Folder
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem
           onClick={() => {
             void window.shellApi.openInVSCode(absPath)
@@ -215,6 +340,15 @@ function FileTreeContextMenu({
           }}
         >
           Copy Path
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() => {
+            void trash(absPath, isDir)
+          }}
+          className="text-red-500 focus:text-red-500 data-highlighted:text-red-500"
+        >
+          Delete
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -244,7 +378,7 @@ function FileNode({
   }, [active])
 
   return (
-    <FileTreeContextMenu absPath={absPath}>
+    <FileTreeContextMenu absPath={absPath} isDir={false}>
       <button
         ref={ref}
         type="button"
@@ -279,6 +413,7 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   const [collapseSignal, setCollapseSignal] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const allFilesQuery = useQuery({
@@ -371,125 +506,203 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
     }
   }, [cwd, queryClient])
 
+  useEffect(() => {
+    setPendingCreate(null)
+  }, [cwd])
+
+  const invalidateTree = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: fileTreeProjectQueryKey(cwd),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: fileTreeAllFilesQueryKey(cwd),
+    })
+  }, [cwd, queryClient])
+
+  const treeActions = useMemo<TreeActions>(
+    () => ({
+      pendingCreate,
+      startCreate: (parentAbs, kind) =>
+        setPendingCreate({ parentAbs, kind }),
+      cancelCreate: () => setPendingCreate(null),
+      submitCreate: async (name) => {
+        if (!pendingCreate) return
+        const target = joinPath(pendingCreate.parentAbs, name)
+        const res =
+          pendingCreate.kind === "file"
+            ? await window.fsApi.createFile(target)
+            : await window.fsApi.createDir(target)
+        if (!res.ok) {
+          toast.error(res.error ?? "Failed to create")
+          return
+        }
+        setPendingCreate(null)
+        invalidateTree()
+        if (pendingCreate.kind === "file") {
+          const relPath = target.startsWith(cwd + "/")
+            ? target.slice(cwd.length + 1)
+            : null
+          if (relPath) onOpenFile(relPath)
+        }
+      },
+      trash: async (absPath, isDir) => {
+        const name = absPath.split("/").pop() ?? absPath
+        const confirmed = window.confirm(
+          `Move "${name}" to Trash?\n\n${isDir ? "This folder and all its contents will be moved." : "This file will be moved."}`
+        )
+        if (!confirmed) return
+        const res = await window.fsApi.trash(absPath)
+        if (!res.ok) {
+          toast.error(res.error ?? "Failed to delete")
+          return
+        }
+        invalidateTree()
+      },
+    }),
+    [pendingCreate, invalidateTree, cwd, onOpenFile]
+  )
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        <span>Files</span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setSearchOpen((v) => !v)}
-            aria-label="Search files"
-            aria-pressed={searchOpen}
-            title="Search files"
-            className={cn(
-              "grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
-              searchOpen && "bg-foreground/10 text-foreground"
-            )}
-          >
-            <Search className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setCollapseSignal((n) => n + 1)}
-            aria-label="Collapse all folders"
-            title="Collapse all folders"
-            className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-          >
-            <ChevronsDownUp className="size-3.5" />
-          </button>
-        </div>
-      </div>
-      {searchOpen && (
-        <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-popover px-2 text-xs">
-          <Search className="size-3 shrink-0 text-muted-foreground" />
-          <input
-            ref={searchInputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault()
-                closeSearch()
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault()
-                setSelectedIndex((i) =>
-                  matches.length === 0 ? 0 : (i + 1) % matches.length
-                )
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault()
-                setSelectedIndex((i) =>
-                  matches.length === 0
-                    ? 0
-                    : (i - 1 + matches.length) % matches.length
-                )
-              } else if (e.key === "Enter") {
-                e.preventDefault()
-                const target = matches[selectedIndex]
-                if (target) onOpenFile(target)
+    <TreeActionsContext.Provider value={treeActions}>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span>Files</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPendingCreate({ parentAbs: cwd, kind: "file" })}
+              aria-label="New file"
+              title="New file"
+              className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            >
+              <FilePlus className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setPendingCreate({ parentAbs: cwd, kind: "folder" })
               }
-            }}
-            placeholder="Find file"
-            className="min-w-0 flex-1 bg-transparent px-1 py-0.5 outline-none placeholder:text-muted-foreground"
-          />
-          {filtering && (
-            <span className="px-1 text-muted-foreground">{matches.length}</span>
-          )}
-          <button
-            type="button"
-            onClick={closeSearch}
-            aria-label="Close search"
-            className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
-          >
-            <X className="size-3" />
-          </button>
-        </div>
-      )}
-      {filtering ? (
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="min-h-full py-1">
-            {allFilesQuery.isLoading && (
-              <div className="px-3 py-1 text-xs text-muted-foreground">
-                Loading…
-              </div>
-            )}
-            {!allFilesQuery.isLoading && matches.length === 0 && (
-              <div className="px-3 py-1 text-xs text-muted-foreground">
-                No matches
-              </div>
-            )}
-            {matches.map((rel, i) => (
-              <SearchResultRow
-                key={rel}
-                cwd={cwd}
-                relPath={rel}
-                active={rel === activePath}
-                selected={i === selectedIndex}
-                onOpenFile={onOpenFile}
-              />
-            ))}
+              aria-label="New folder"
+              title="New folder"
+              className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            >
+              <FolderPlus className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              aria-label="Search files"
+              aria-pressed={searchOpen}
+              title="Search files"
+              className={cn(
+                "grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+                searchOpen && "bg-foreground/10 text-foreground"
+              )}
+            >
+              <Search className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCollapseSignal((n) => n + 1)}
+              aria-label="Collapse all folders"
+              title="Collapse all folders"
+              className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            >
+              <ChevronsDownUp className="size-3.5" />
+            </button>
           </div>
-        </ScrollArea>
-      ) : (
-        <CollapseSignalContext.Provider value={collapseSignal}>
+        </div>
+        {searchOpen && (
+          <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-popover px-2 text-xs">
+            <Search className="size-3 shrink-0 text-muted-foreground" />
+            <input
+              ref={searchInputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault()
+                  closeSearch()
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault()
+                  setSelectedIndex((i) =>
+                    matches.length === 0 ? 0 : (i + 1) % matches.length
+                  )
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault()
+                  setSelectedIndex((i) =>
+                    matches.length === 0
+                      ? 0
+                      : (i - 1 + matches.length) % matches.length
+                  )
+                } else if (e.key === "Enter") {
+                  e.preventDefault()
+                  const target = matches[selectedIndex]
+                  if (target) onOpenFile(target)
+                }
+              }}
+              placeholder="Find file"
+              className="min-w-0 flex-1 bg-transparent px-1 py-0.5 outline-none placeholder:text-muted-foreground"
+            />
+            {filtering && (
+              <span className="px-1 text-muted-foreground">{matches.length}</span>
+            )}
+            <button
+              type="button"
+              onClick={closeSearch}
+              aria-label="Close search"
+              className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
+        {filtering ? (
           <ScrollArea className="min-h-0 flex-1">
-            <FileTreeContextMenu absPath={cwd}>
-              <div className="min-h-full">
-                <FolderNode
-                  key={cwd}
+            <div className="min-h-full py-1">
+              {allFilesQuery.isLoading && (
+                <div className="px-3 py-1 text-xs text-muted-foreground">
+                  Loading…
+                </div>
+              )}
+              {!allFilesQuery.isLoading && matches.length === 0 && (
+                <div className="px-3 py-1 text-xs text-muted-foreground">
+                  No matches
+                </div>
+              )}
+              {matches.map((rel, i) => (
+                <SearchResultRow
+                  key={rel}
                   cwd={cwd}
-                  absPath={cwd}
-                  relPath=""
-                  depth={0}
+                  relPath={rel}
+                  active={rel === activePath}
+                  selected={i === selectedIndex}
                   onOpenFile={onOpenFile}
-                  activePath={activePath}
                 />
-              </div>
-            </FileTreeContextMenu>
+              ))}
+            </div>
           </ScrollArea>
-        </CollapseSignalContext.Provider>
-      )}
-    </div>
+        ) : (
+          <CollapseSignalContext.Provider value={collapseSignal}>
+            <ScrollArea className="min-h-0 flex-1">
+              <FileTreeContextMenu absPath={cwd} isDir>
+                <div className="min-h-full">
+                  <FolderNode
+                    key={cwd}
+                    cwd={cwd}
+                    absPath={cwd}
+                    relPath=""
+                    depth={0}
+                    onOpenFile={onOpenFile}
+                    activePath={activePath}
+                  />
+                </div>
+              </FileTreeContextMenu>
+            </ScrollArea>
+          </CollapseSignalContext.Provider>
+        )}
+      </div>
+    </TreeActionsContext.Provider>
   )
 }
 
@@ -516,7 +729,7 @@ const SearchResultRow = memo(function SearchResultRow({
     if (selected) ref.current?.scrollIntoView({ block: "nearest" })
   }, [selected])
   return (
-    <FileTreeContextMenu absPath={absPath}>
+    <FileTreeContextMenu absPath={absPath} isDir={false}>
       <button
         ref={ref}
         type="button"

@@ -225,6 +225,21 @@ const fsApi = {
       ok: boolean
       error?: string
     }>,
+  createFile: (absPath: string) =>
+    ipcRenderer.invoke("fs:createFile", absPath) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  createDir: (absPath: string) =>
+    ipcRenderer.invoke("fs:createDir", absPath) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  trash: (absPath: string) =>
+    ipcRenderer.invoke("fs:trash", absPath) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   listAllFiles: (cwd: string) =>
     ipcRenderer.invoke("fs:listAllFiles", cwd) as Promise<{
       ok: boolean

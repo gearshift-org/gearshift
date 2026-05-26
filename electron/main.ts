@@ -1311,6 +1311,46 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle("fs:createFile", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path" }
+    try {
+      await fs.mkdir(path.dirname(absPath), { recursive: true })
+      const handle = await fs.open(absPath, "wx")
+      await handle.close()
+      return { ok: true }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code === "EEXIST") {
+        return { ok: false, error: "A file with that name already exists" }
+      }
+      return { ok: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle("fs:createDir", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path" }
+    try {
+      await fs.mkdir(absPath, { recursive: false })
+      return { ok: true }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      if (e.code === "EEXIST") {
+        return { ok: false, error: "A folder with that name already exists" }
+      }
+      return { ok: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle("fs:trash", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path" }
+    try {
+      await shell.trashItem(absPath)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
   ipcMain.handle("fs:readImage", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }
     try {

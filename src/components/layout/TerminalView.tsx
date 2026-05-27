@@ -359,6 +359,9 @@ export function TerminalView({
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(false)
   const rendererRecoveryRafRef = useRef<number | undefined>(undefined)
+  const lastDprRef = useRef(
+    typeof window !== "undefined" ? window.devicePixelRatio : 1
+  )
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -853,7 +856,19 @@ export function TerminalView({
         suppressAgentActivityUntilRef.current =
           Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
         fitTerminal()
-        queueRendererRecovery()
+        // A plain resize keeps glyph metrics valid, so clearing the texture
+        // atlas would only cause a blank-frame blink. Rebuild it solely when
+        // the device pixel ratio changed (e.g. the window was dragged to a
+        // monitor with different scaling), which is what actually invalidates
+        // the WebGL glyph cache. Otherwise just repaint in place.
+        const dpr = window.devicePixelRatio
+        if (dpr !== lastDprRef.current) {
+          lastDprRef.current = dpr
+          queueRendererRecovery()
+        } else {
+          const term = termRef.current
+          if (term) refreshTerminalViewport(term)
+        }
       })
     }
     const ro = new ResizeObserver(() => {

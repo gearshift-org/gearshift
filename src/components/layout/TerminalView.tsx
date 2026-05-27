@@ -500,10 +500,17 @@ export function TerminalView({
   }, [queueRendererRecovery])
 
   useEffect(() => {
-    if (!isActive) return
     suppressAgentActivityUntilRef.current =
       Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
+
+    // Switching split panes changes xterm's focus/blur state without resizing
+    // the terminal. The WebGL renderer can leave the now-inactive pane with a
+    // stale/corrupted glyph atlas until the next input or resize forces a
+    // repaint, so recover on both sides of the focus transition and once more
+    // after the browser has settled focus classes.
     queueRendererRecovery()
+    const recoveryTimer = window.setTimeout(queueRendererRecovery, 50)
+    return () => window.clearTimeout(recoveryTimer)
   }, [isActive, queueRendererRecovery])
 
   useEffect(() => {

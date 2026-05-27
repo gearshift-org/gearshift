@@ -5,7 +5,6 @@ import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelRight, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
-import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
 import { useTheme } from "@/components/theme-provider"
@@ -134,30 +133,6 @@ const AGENT_TERMINAL_LABELS: Record<TerminalAgentName, string> = {
 
 function isModifierKey(key: string): boolean {
   return ["Alt", "Control", "Meta", "Shift"].includes(key)
-}
-
-function useExitAnimation(visible: boolean, ms: number) {
-  const [render, setRender] = useState(visible)
-  const [exiting, setExiting] = useState(false)
-
-  useEffect(() => {
-    if (visible) {
-      // This hook intentionally drives enter/exit render state.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRender(true)
-      setExiting(false)
-      return
-    }
-    if (!render) return
-    setExiting(true)
-    const id = window.setTimeout(() => {
-      setRender(false)
-      setExiting(false)
-    }, ms)
-    return () => window.clearTimeout(id)
-  }, [visible, ms, render])
-
-  return { render, exiting }
 }
 
 function basename(p: string) {
@@ -375,7 +350,6 @@ export function AppShell() {
   const lastMouseRef = useRef({ x: -1, y: -1 })
   const edgeEnteredAtRef = useRef({ right: 0 })
   const edgeRevealTimersRef = useRef<{ right: number | null }>({ right: null })
-  const cursorNearWindowRef = useRef(true)
   const modifierKeyHeldRef = useRef(false)
   const modifierRevealPauseUntilRef = useRef(0)
   const resetEdgeRevealTracking = useCallback(() => {
@@ -385,6 +359,10 @@ export function AppShell() {
     }
     edgeRevealTimersRef.current = { right: null }
   }, [])
+  const closeRightSidebarOverlay = useCallback(() => {
+    resetEdgeRevealTracking()
+    setRightSidebarOverlayOpen(false)
+  }, [resetEdgeRevealTracking])
 
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
@@ -433,7 +411,6 @@ export function AppShell() {
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
   const showRightOverlay = !sidebarOpen && rightSidebarOverlayOpen
-  const rightOverlay = useExitAnimation(showRightOverlay, 180)
 
   const confirmCloseWorkingTerminals = async (count: number) => {
     if (count === 0) return true
@@ -447,17 +424,20 @@ export function AppShell() {
     }
     const onBlur = () => {
       windowFocusedRef.current = false
-      setRightSidebarOverlayOpen(false)
-      resetEdgeRevealTracking()
+      closeRightSidebarOverlay()
       lastMouseRef.current = { x: -1, y: -1 }
     }
     window.addEventListener("focus", onFocus)
     window.addEventListener("blur", onBlur)
+    const offNativeFocus = window.appWindow?.onFocus?.(onFocus)
+    const offNativeBlur = window.appWindow?.onBlur?.(onBlur)
     return () => {
       window.removeEventListener("focus", onFocus)
       window.removeEventListener("blur", onBlur)
+      offNativeFocus?.()
+      offNativeBlur?.()
     }
-  }, [resetEdgeRevealTracking])
+  }, [closeRightSidebarOverlay, resetEdgeRevealTracking])
 
   useEffect(() => {
     const pauseReveal = (ms: number) => {
@@ -489,17 +469,15 @@ export function AppShell() {
   }, [resetEdgeRevealTracking])
 
   useEffect(() => {
-    if (!rightOverlay.render) return
+    if (!showRightOverlay) return
     let cancelled = false
     const closeIfCursorIsFarOutside = async () => {
       const pointer = await window.appWindow
         .pointerState(SIDEBAR_REVEAL_OUTSIDE_LIMIT)
         .catch(() => null)
       if (cancelled || !pointer?.ok) return
-      cursorNearWindowRef.current = pointer.nearWindow
       if (pointer.nearWindow) return
-      resetEdgeRevealTracking()
-      setRightSidebarOverlayOpen(false)
+      closeRightSidebarOverlay()
     }
     void closeIfCursorIsFarOutside()
     const id = window.setInterval(closeIfCursorIsFarOutside, 80)
@@ -507,7 +485,7 @@ export function AppShell() {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [resetEdgeRevealTracking, rightOverlay.render])
+  }, [closeRightSidebarOverlay, showRightOverlay])
 
   useEffect(() => {
     if (!rightSidebarEdgeReveal || sidebarOpen || !activeProject) {
@@ -519,12 +497,8 @@ export function AppShell() {
     const HOT_BUFFER = 30
     const REVEAL_DWELL_MS = 50
 
-    const revealRightEdge = async () => {
-      const pointer = await window.appWindow
-        .pointerState(SIDEBAR_REVEAL_OUTSIDE_LIMIT)
-        .catch(() => null)
+    const revealRightEdge = () => {
       if (!windowFocusedRef.current) return
-      if (!pointer?.ok || !pointer.nearWindow) return
       const modifierActive =
         modifierKeyHeldRef.current ||
         performance.now() < modifierRevealPauseUntilRef.current
@@ -534,7 +508,7 @@ export function AppShell() {
       setRightSidebarOverlayOpen(true)
     }
 
-    const onMouseMove = async (event: MouseEvent) => {
+    const onMouseMove = (event: MouseEvent) => {
       const clientX = event.clientX
       const clientY = event.clientY
       const now = performance.now()
@@ -547,19 +521,6 @@ export function AppShell() {
       if (clientX === last.x && clientY === last.y) return
       last.x = clientX
       last.y = clientY
-
-      const pointer = await window.appWindow
-        .pointerState(SIDEBAR_REVEAL_OUTSIDE_LIMIT)
-        .catch(() => null)
-      const nearWindow = pointer?.ok
-        ? pointer.nearWindow
-        : cursorNearWindowRef.current
-      cursorNearWindowRef.current = nearWindow
-      if (!nearWindow) {
-        resetEdgeRevealTracking()
-        setRightSidebarOverlayOpen(false)
-        return
-      }
 
       const modifierActive =
         modifierKeyHeldRef.current ||
@@ -584,7 +545,7 @@ export function AppShell() {
         edgeEnteredAtRef.current.right = now
         edgeRevealTimersRef.current.right = window.setTimeout(() => {
           edgeRevealTimersRef.current.right = null
-          void revealRightEdge()
+          revealRightEdge()
         }, REVEAL_DWELL_MS)
       }
 
@@ -593,7 +554,7 @@ export function AppShell() {
       if (rightIntent) {
         setRightSidebarOverlayOpen(true)
       } else if (clientX < window.innerWidth - 340 - HOT_BUFFER) {
-        setRightSidebarOverlayOpen(false)
+        closeRightSidebarOverlay()
       }
     }
 
@@ -604,6 +565,7 @@ export function AppShell() {
     }
   }, [
     activeProject,
+    closeRightSidebarOverlay,
     resetEdgeRevealTracking,
     rightSidebarEdgeReveal,
     sidebarOpen,
@@ -2052,12 +2014,6 @@ export function AppShell() {
         )
         const sidebarTopActions = (
           <div className="flex items-center pr-1">
-            {activeProject && !sidebarOpen && (
-              <ProjectGitStatusBadge
-                cwd={activeProject.path}
-                onOpenChanges={openChanges}
-              />
-            )}
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -2106,13 +2062,15 @@ export function AppShell() {
             projects={projects}
             activeProjectId={activeProjectId}
             sidebarOpen={sidebarOpen}
-            sidebarOverlayOpen={
+            sidebarOverlayMode={
+              rightSidebarEdgeReveal && !sidebarOpen && !!activeProject
+            }
+            sidebarOverlayVisible={
               rightSidebarEdgeReveal &&
               !sidebarOpen &&
               !!activeProject &&
-              rightOverlay.render
+              rightSidebarOverlayOpen
             }
-            sidebarOverlayExiting={rightOverlay.exiting}
             titleBar={titleBar}
             sidebarTopActions={sidebarTopActions}
             onTerminalTitleChange={setTerminalTitle}

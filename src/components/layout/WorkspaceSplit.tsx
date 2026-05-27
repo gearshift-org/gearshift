@@ -23,8 +23,10 @@ type Props = {
   sidebarTopActions?: ReactNode
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
-  sidebarOverlayOpen?: boolean
-  sidebarOverlayExiting?: boolean
+  // The sidebar should behave as a slide-over overlay (edge-reveal mode).
+  sidebarOverlayMode?: boolean
+  // The overlay is currently revealed. Ignored unless `sidebarOverlayMode`.
+  sidebarOverlayVisible?: boolean
   onTerminalTitleChange?: (tabId: string, paneId: string, title: string) => void
   onTerminalAgentStatusChange?: (
     tabId: string,
@@ -52,8 +54,8 @@ export function WorkspaceSplit({
   sidebarTopActions,
   workspaceTabs,
   sidebarOpen = true,
-  sidebarOverlayOpen = false,
-  sidebarOverlayExiting = false,
+  sidebarOverlayMode = false,
+  sidebarOverlayVisible = false,
   onTerminalTitleChange,
   onTerminalAgentStatusChange,
   onStartTerminal,
@@ -133,8 +135,12 @@ export function WorkspaceSplit({
   }
 
   const activeProjectHasTabs = !!activeProject?.tabs.length
-  const showSidebar = sidebarOpen || sidebarOverlayOpen
-  const sidebarIsOverlay = sidebarOverlayOpen && !sidebarOpen
+  // Overlay mode keeps the panel mounted at all times and slides it in/out
+  // with a transform transition. Animating from the element's current position
+  // (rather than swapping enter/exit keyframes on mount) keeps the motion
+  // interruptible and free of the remount flash the keyframe approach had.
+  const sidebarIsOverlay = sidebarOverlayMode && !sidebarOpen
+  const showSidebar = sidebarOpen || sidebarIsOverlay
 
   const workspaceSection = (
     <div className="relative flex h-full flex-col">
@@ -199,26 +205,25 @@ export function WorkspaceSplit({
       </div>
       <div
         style={{
-          width: sidebarIsOverlay
-            ? sidebarWidth
-            : showSidebar
-              ? sidebarWidth
-              : 0,
+          width: showSidebar ? sidebarWidth : 0,
+          transform: sidebarIsOverlay
+            ? sidebarOverlayVisible
+              ? "translateX(0)"
+              : "translateX(100%)"
+            : undefined,
         }}
         className={cn(
           "h-full overflow-hidden",
           sidebarIsOverlay
-            ? "absolute inset-y-0 right-0 z-[180] shrink-0 animate-[gs-slide-in-right_180ms_ease] border-l border-border bg-background shadow-2xl [-webkit-app-region:no-drag] [&_*]:[-webkit-app-region:no-drag]"
+            ? "absolute inset-y-0 right-0 z-[180] shrink-0 border-l border-border bg-background shadow-2xl transition-transform duration-[180ms] ease-out [-webkit-app-region:no-drag] [&_*]:[-webkit-app-region:no-drag]"
             : "relative shrink-0",
-          sidebarIsOverlay &&
-            sidebarOverlayExiting &&
-            "animate-[gs-slide-out-right_180ms_ease_forwards]",
           !sidebarIsOverlay &&
             !isDragging &&
             "transition-[width] duration-150 ease-out",
-          !showSidebar && "pointer-events-none"
+          sidebarIsOverlay && !sidebarOverlayVisible && "pointer-events-none",
+          !sidebarIsOverlay && !showSidebar && "pointer-events-none"
         )}
-        aria-hidden={!showSidebar}
+        aria-hidden={sidebarIsOverlay ? !sidebarOverlayVisible : !showSidebar}
       >
         <div className="absolute inset-0" style={{ width: sidebarWidth }}>
           <RightSidebar

@@ -801,7 +801,14 @@ export function TerminalView({
       if (current.running) {
         const now = Date.now()
         lastUserInputAtRef.current = now
-        if (d.includes("\x03")) {
+        // Ctrl+C (\x03) and a bare Esc (\x1b) both interrupt a working agent.
+        // Esc is Claude Code's interrupt key ("Interrupted · What should Claude
+        // do instead?") and does not emit a Stop hook, so without this the
+        // spinner stays stuck: the hook-backed quiet fallback is disabled while
+        // activeHookWork is true and no stop event ever arrives. A standalone
+        // Esc keypress is exactly "\x1b"; escape sequences (arrows, fn keys)
+        // are longer ("\x1b[...", "\x1bO..."), so this won't fire on those.
+        if (d.includes("\x03") || d === "\x1b") {
           clearAgentWorking()
         } else if (d.includes("\r")) {
           hasSubmittedToAgentRef.current = true

@@ -1112,6 +1112,15 @@ export function TerminalView({
         if (webglRef.current === webgl) webglRef.current = null
         queueRendererRecovery()
       })
+      // xterm's WebGL renderer corrupts glyphs once the texture atlas spills
+      // onto a second page (random colorful glyph soup interspersed with good
+      // rows). Sustained varied output — e.g. tailing logs with box-drawing,
+      // colors, and unicode — overflows the atlas without any resize/focus to
+      // trigger the existing recovery. Reset the atlas to a single clean page
+      // the moment a new page is added so the corruption never renders.
+      webgl.onAddTextureAtlasCanvas(() => {
+        queueRendererRecovery()
+      })
       term.loadAddon(webgl)
       webglRef.current = webgl
       queueRendererRecovery()

@@ -12,7 +12,7 @@ export type TerminalAgentName =
 
 export type AgentHookEvent = {
   agentName: TerminalAgentName
-  event: "stop" | "notification" | "start"
+  event: "start" | "stop" | "needs_attention"
   body?: string
 }
 
@@ -48,10 +48,13 @@ function parseAgentHookPayload(
     return null
   }
   const event =
-    eventRaw === "notification"
-      ? "notification"
-      : eventRaw === "start"
-        ? "start"
+    eventRaw === "Start" || eventRaw === "start"
+      ? "start"
+      : eventRaw === "NeedsAttention" ||
+          eventRaw === "needs_attention" ||
+          eventRaw === "needs attention" ||
+          eventRaw === "notification"
+        ? "needs_attention"
         : "stop"
   const sessionId = sessionIdRaw?.trim()
   if (!sessionId) return null
@@ -225,13 +228,15 @@ case "$agent" in
 esac
 
 # Only "stop" needs to parse the assistant message out of stdin — for "start"
-# and "notification" we skip stdin entirely so the bash spawn returns as
+# and "needs_attention" we skip stdin entirely so the bash spawn returns as
 # quickly as it can. This is the main savings over the previous version.
 case "$event" in
-  notification)
+  NeedsAttention|needs_attention|"needs attention"|notification)
+    event="needs_attention"
     body="Needs attention"
     ;;
-  start)
+  Start|start)
+    event="start"
     body=""
     ;;
   *)
@@ -283,7 +288,8 @@ async function installClaudeHooks(scriptPath: string): Promise<void> {
       ? (settings.hooks as Record<string, unknown>)
       : {}
   const q = shellSingleQuote(scriptPath)
-  const cmd = (event: string) => `${q} claude ${event} # ${AGENT_HOOK_MARKER}`
+  const cmd = (event: string) =>
+    `${q} claude ${shellSingleQuote(event)} # ${AGENT_HOOK_MARKER}`
   settings.hooks = {
     ...hooks,
     // Do not mark the pane busy on agent/TUI launch. The busy indicator should
@@ -311,11 +317,11 @@ async function installClaudeHooks(scriptPath: string): Promise<void> {
     ),
     Notification: mergeMarkedHookEntry(
       hooks.Notification,
-      buildCommandHookEntry(cmd("notification"), 10)
+      buildCommandHookEntry(cmd("needs_attention"), 10)
     ),
     PermissionRequest: mergeMarkedHookEntry(
       hooks.PermissionRequest,
-      buildCommandHookEntry(cmd("notification"), 5, "*")
+      buildCommandHookEntry(cmd("needs_attention"), 5, "*")
     ),
   }
   await writeJsonWithBackup(settingsPath, settings)
@@ -331,7 +337,8 @@ async function installCodexHooks(scriptPath: string): Promise<void> {
       ? (settings.hooks as Record<string, unknown>)
       : {}
   const q = shellSingleQuote(scriptPath)
-  const cmd = (event: string) => `${q} codex ${event} # ${AGENT_HOOK_MARKER}`
+  const cmd = (event: string) =>
+    `${q} codex ${shellSingleQuote(event)} # ${AGENT_HOOK_MARKER}`
   settings.hooks = {
     ...hooks,
     // Do not mark the pane busy on agent/TUI launch. The busy indicator should
@@ -348,7 +355,7 @@ async function installCodexHooks(scriptPath: string): Promise<void> {
     ),
     Notification: mergeMarkedHookEntry(
       hooks.Notification,
-      buildCommandHookEntry(cmd("notification"))
+      buildCommandHookEntry(cmd("needs_attention"))
     ),
   }
   await writeJsonWithBackup(hooksPath, settings)
@@ -357,7 +364,7 @@ async function installCodexHooks(scriptPath: string): Promise<void> {
 async function writeOpenCodePlugin(): Promise<void> {
   const plugin = `// Gearshift opencode plugin
 // State-machine notifier: locks onto the first "busy" session as root, sends
-// start on idle→busy edges and stop on busy→idle edges. Subagent (child)
+// start on idle-to-busy edges and stop on busy-to-idle edges. Subagent (child)
 // sessions are filtered so they don't toggle the pane indicator.
 
 export const GearShiftNotificationPlugin = async ({ client }) => {
@@ -523,7 +530,7 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
     },
     "permission.ask": async (_permission, output) => {
       if (output?.status === "ask") {
-        await send("notification", "Permission requested")
+        await send("needs_attention", "Permission requested")
       }
     },
   }
@@ -548,8 +555,8 @@ async function writePiExtension(): Promise<void> {
 // shim, matching the opencode plugin) so the pane indicator turns off as fast
 // for pi as it does for opencode.
 //
-//   before_agent_start / tool_execution_end    → start
-//   agent_end / session_end / session_shutdown → stop
+//   before_agent_start / tool_execution_end    -> start
+//   agent_end / session_end / session_shutdown -> stop
 
 import { createConnection } from "node:net"
 
@@ -563,7 +570,7 @@ export default function (pi: {
   const sessionId = process.env.GEARSHIFT_SESSION_ID
   if (!socketPath || !sessionId) return
 
-  const fire = (event: "start" | "stop" | "notification") => {
+  const fire = (event: "start" | "stop" | "needs_attention") => {
     try {
       const conn = createConnection({ path: socketPath })
       conn.on("error", () => {})

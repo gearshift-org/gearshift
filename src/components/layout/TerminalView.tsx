@@ -1058,7 +1058,7 @@ export function TerminalView({
         })
         return
       }
-      if (event.event === "notification") {
+      if (event.event === "needs_attention") {
         // Only a notification that interrupts an active turn means the agent is
         // blocked on the user (a permission/approval prompt). Notifications that
         // arrive once the turn has already stopped are idle prompts — e.g.

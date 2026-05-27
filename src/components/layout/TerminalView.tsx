@@ -260,6 +260,11 @@ function refreshTerminalViewport(term: Terminal) {
   }
 }
 
+// Once WebGL's GPU context is lost we stop using it for every subsequent
+// terminal (VS Code's pattern) — retrying tends to thrash and lose context
+// again. The DOM renderer is the safe fallback.
+let suggestedRendererType: "webgl" | "dom" | undefined
+
 function recoverTerminalRenderer(term: Terminal) {
   try {
     term.clearTextureAtlas()
@@ -358,10 +363,6 @@ export function TerminalView({
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(false)
-  const rendererRecoveryRafRef = useRef<number | undefined>(undefined)
-  const lastDprRef = useRef(
-    typeof window !== "undefined" ? window.devicePixelRatio : 1
-  )
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -383,18 +384,6 @@ export function TerminalView({
     setSearchOpen(false)
     searchRef.current?.clearDecorations()
     termRef.current?.focus()
-  }, [])
-
-  const queueRendererRecovery = useCallback(() => {
-    if (rendererRecoveryRafRef.current != null) {
-      cancelAnimationFrame(rendererRecoveryRafRef.current)
-    }
-    rendererRecoveryRafRef.current = requestAnimationFrame(() => {
-      rendererRecoveryRafRef.current = undefined
-      const term = termRef.current
-      if (!term) return
-      recoverTerminalRenderer(term)
-    })
   }, [])
 
   useEffect(() => {
@@ -480,38 +469,29 @@ export function TerminalView({
   }, [emitAgentStatus])
 
   useEffect(() => {
-    const suppressFocusRedrawActivity = () => {
+    const suppressFocusActivity = () => {
       suppressAgentActivityUntilRef.current =
         Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
-      queueRendererRecovery()
     }
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        suppressFocusRedrawActivity()
+        suppressFocusActivity()
       }
     }
 
-    window.addEventListener("focus", suppressFocusRedrawActivity)
+    window.addEventListener("focus", suppressFocusActivity)
     document.addEventListener("visibilitychange", onVisibilityChange)
     return () => {
-      window.removeEventListener("focus", suppressFocusRedrawActivity)
+      window.removeEventListener("focus", suppressFocusActivity)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [queueRendererRecovery])
+  }, [])
 
   useEffect(() => {
+    if (!isActive) return
     suppressAgentActivityUntilRef.current =
       Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
-
-    // Switching split panes changes xterm's focus/blur state without resizing
-    // the terminal. The WebGL renderer can leave the now-inactive pane with a
-    // stale/corrupted glyph atlas until the next input or resize forces a
-    // repaint, so recover on both sides of the focus transition and once more
-    // after the browser has settled focus classes.
-    queueRendererRecovery()
-    const recoveryTimer = window.setTimeout(queueRendererRecovery, 50)
-    return () => window.clearTimeout(recoveryTimer)
-  }, [isActive, queueRendererRecovery])
+  }, [isActive])
 
   useEffect(() => {
     const container = containerRef.current
@@ -522,7 +502,9 @@ export function TerminalView({
       fontSize: appearance.fontSize,
       fontFamily: appearance.fontFamily,
       scrollback: 5000,
-      overviewRuler: { width: 1 },
+      // `width` enables a 1px overview ruler so search-match decorations show
+      // up the scrollbar gutter (xterm 6.1 merged overviewRuler into scrollbar).
+      scrollbar: { width: 1 },
       theme: themeObj,
       allowProposedApi: true,
       linkHandler: {
@@ -863,19 +845,10 @@ export function TerminalView({
         suppressAgentActivityUntilRef.current =
           Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
         fitTerminal()
-        // A plain resize keeps glyph metrics valid, so clearing the texture
-        // atlas would only cause a blank-frame blink. Rebuild it solely when
-        // the device pixel ratio changed (e.g. the window was dragged to a
-        // monitor with different scaling), which is what actually invalidates
-        // the WebGL glyph cache. Otherwise just repaint in place.
-        const dpr = window.devicePixelRatio
-        if (dpr !== lastDprRef.current) {
-          lastDprRef.current = dpr
-          queueRendererRecovery()
-        } else {
-          const term = termRef.current
-          if (term) refreshTerminalViewport(term)
-        }
+        // A resize keeps glyph metrics valid, so just repaint in place; the
+        // WebGL renderer handles its own atlas across resizes and DPR changes.
+        const term = termRef.current
+        if (term) refreshTerminalViewport(term)
       })
     }
     const ro = new ResizeObserver(() => {
@@ -931,10 +904,6 @@ export function TerminalView({
         window.clearTimeout(agentWorkingTimerRef.current)
         agentWorkingTimerRef.current = undefined
       }
-      if (rendererRecoveryRafRef.current != null) {
-        cancelAnimationFrame(rendererRecoveryRafRef.current)
-        rendererRecoveryRafRef.current = undefined
-      }
       offData?.()
       offExit()
       inputSub.dispose()
@@ -965,7 +934,6 @@ export function TerminalView({
     markAgentWorking,
     clearAgentWorking,
     emitAgentStatus,
-    queueRendererRecovery,
   ])
 
   useEffect(() => {
@@ -975,9 +943,10 @@ export function TerminalView({
     term.options.fontSize = appearance.fontSize
     requestAnimationFrame(() => {
       fitTerminalRef.current?.()
-      queueRendererRecovery()
+      // Font changes invalidate every cached glyph, so rebuild the atlas once.
+      recoverTerminalRenderer(term)
     })
-  }, [appearance.fontFamily, appearance.fontSize, queueRendererRecovery])
+  }, [appearance.fontFamily, appearance.fontSize])
 
   useEffect(() => {
     let cancelled = false
@@ -1122,34 +1091,39 @@ export function TerminalView({
   }, [sessionId, emitAgentStatus])
 
   // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens
-  // so xterm has stable cell metrics.
+  // (deferred to a rAF) so xterm has stable cell metrics and we don't race its
+  // post-open viewport sync. If the GPU context is ever lost, fall back to the
+  // DOM renderer permanently rather than retrying WebGL.
   useEffect(() => {
     const term = termRef.current
-    if (!term || webglRef.current) return
+    if (!term || webglRef.current || suggestedRendererType === "dom") return
 
-    try {
-      const webgl = new WebglAddon()
-      webgl.onContextLoss(() => {
-        webgl.dispose()
-        if (webglRef.current === webgl) webglRef.current = null
-        queueRendererRecovery()
-      })
-      // xterm's WebGL renderer corrupts glyphs once the texture atlas spills
-      // onto a second page (random colorful glyph soup interspersed with good
-      // rows). Sustained varied output — e.g. tailing logs with box-drawing,
-      // colors, and unicode — overflows the atlas without any resize/focus to
-      // trigger the existing recovery. Reset the atlas to a single clean page
-      // the moment a new page is added so the corruption never renders.
-      webgl.onAddTextureAtlasCanvas(() => {
-        queueRendererRecovery()
-      })
-      term.loadAddon(webgl)
-      webglRef.current = webgl
-      queueRendererRecovery()
-    } catch {
-      // WebGL unavailable; xterm keeps using the default renderer.
+    let disposed = false
+    const rafId = requestAnimationFrame(() => {
+      if (disposed || suggestedRendererType === "dom") return
+      const t = termRef.current
+      if (!t) return
+      try {
+        const webgl = new WebglAddon()
+        webgl.onContextLoss(() => {
+          webgl.dispose()
+          if (webglRef.current === webgl) webglRef.current = null
+          suggestedRendererType = "dom"
+          refreshTerminalViewport(t)
+        })
+        t.loadAddon(webgl)
+        webglRef.current = webgl
+      } catch {
+        // WebGL unavailable; xterm keeps using the default DOM renderer.
+        suggestedRendererType = "dom"
+      }
+    })
+
+    return () => {
+      disposed = true
+      cancelAnimationFrame(rafId)
     }
-  }, [queueRendererRecovery])
+  }, [])
 
   useEffect(() => {
     const term = termRef.current

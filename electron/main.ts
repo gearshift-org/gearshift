@@ -227,6 +227,19 @@ const projectWatchers = new Map<
 
 const WATCHER_IGNORE_BASE = ["**/.git/**", "**/.DS_Store"]
 
+// VSCode's default `files.exclude` set: the only entries hidden from the
+// Explorer tree out of the box. Everything else (including node_modules and
+// gitignored files) is shown — matching VSCode, where ignored files are
+// reachable by expanding the tree, while search still excludes them.
+// Source: vscode src/vs/workbench/contrib/files/browser/files.contribution.ts
+const VSCODE_DEFAULT_EXCLUDED_NAMES = new Set([
+  ".git",
+  ".svn",
+  ".hg",
+  ".DS_Store",
+  "Thumbs.db",
+])
+
 function gitignoreToGlobs(line: string): string[] {
   let p = line.trim()
   if (!p || p.startsWith("#") || p.startsWith("!")) return []
@@ -1206,63 +1219,13 @@ app.whenReady().then(async () => {
     if (!absPath) return { ok: false, error: "no-path", entries: [] }
     try {
       const dirents = await fs.readdir(absPath, { withFileTypes: true })
-      // Always hide .git; everything else is filtered by git check-ignore.
-      const candidates = dirents
-        .filter((d) => d.name !== ".git")
+      // Match VSCode's default Explorer behavior: show everything except the
+      // default `files.exclude` glob set. Gitignored files (node_modules, build
+      // output, etc.) stay visible and are reached by expanding the tree;
+      // search (fs:listAllFiles) is where ignored files get filtered out.
+      const entries = dirents
+        .filter((d) => !VSCODE_DEFAULT_EXCLUDED_NAMES.has(d.name))
         .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
-      if (candidates.length === 0) return { ok: true, entries: [] }
-
-      // Find the enclosing repo root so check-ignore has a consistent cwd
-      // (works for subdirectories too). Fall back to no filtering if not a repo.
-      let repoRoot: string | null = null
-      try {
-        repoRoot = (
-          await runGit(absPath, ["rev-parse", "--show-toplevel"])
-        ).trim()
-      } catch {
-        repoRoot = null
-      }
-
-      if (!repoRoot) {
-        return { ok: true, entries: candidates }
-      }
-
-      const relPaths = candidates.map((c) => {
-        const full = path.join(absPath, c.name)
-        const rel = path.relative(repoRoot!, full)
-        return c.isDir ? `${rel}/` : rel
-      })
-
-      // git check-ignore exits 1 when nothing matches; 0 when matches; >1 on error.
-      const ignored = new Set<string>()
-      await new Promise<void>((resolve) => {
-        const child = spawn("git", ["check-ignore", "--stdin", "-z"], {
-          cwd: repoRoot!,
-        })
-        let buf = ""
-        child.stdout.on("data", (d) => (buf += d.toString()))
-        child.on("close", () => {
-          for (const line of buf.split("\0")) {
-            if (line) ignored.add(line.replace(/\/$/, ""))
-          }
-          resolve()
-        })
-        child.on("error", () => resolve())
-        // `--stdin -z` requires every input path NUL-terminated, including
-        // the last one — otherwise git silently fails to match it.
-        child.stdin.write(relPaths.map((p) => p + "\0").join(""))
-        child.stdin.end()
-      })
-
-      // Allow-list: .env, .env.local, .env.production etc. should appear in
-      // the tree even when gitignored, since the user often needs to view
-      // them in the app.
-      const entries = candidates.filter((c) => {
-        if (isAllowlistedDotenv(c.name)) return true
-        const full = path.join(absPath, c.name)
-        const rel = path.relative(repoRoot!, full)
-        return !ignored.has(rel)
-      })
       return { ok: true, entries }
     } catch (err) {
       return { ok: false, error: (err as Error).message, entries: [] }

@@ -40,6 +40,7 @@ import {
   pushRecentPaletteTab,
   pushRecentProject,
   saveActiveProjectId,
+  saveAutoHideTitleBar,
   saveProjects,
   saveRightSidebarTab,
   saveSidebarOpen,
@@ -1991,13 +1992,17 @@ export function AppShell() {
           e.preventDefault()
           void navigate({ to: "/settings" })
           break
+        case "titlebar.togglePin":
+          e.preventDefault()
+          saveAutoHideTitleBar(!autoHideTitleBar)
+          break
         default:
           break
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [bindings, findActionForEvent, navigate])
+  }, [bindings, findActionForEvent, navigate, autoHideTitleBar])
 
   return (
     <div className="relative flex h-svh flex-col bg-background text-foreground">
@@ -2021,10 +2026,7 @@ export function AppShell() {
           setSidebarOpen(true)
         }
         const titleBar = (
-          <AutoHideTitleBar
-            key={autoHideTitleBar ? "auto-hide-title-bar" : "static-title-bar"}
-            enabled={autoHideTitleBar}
-          >
+          <AutoHideTitleBar enabled={autoHideTitleBar}>
             <TitleBar
               projects={projects}
               activeProjectId={activeProjectId}

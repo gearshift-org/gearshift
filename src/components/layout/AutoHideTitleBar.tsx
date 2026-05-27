@@ -146,7 +146,6 @@ export function AutoHideTitleBar({
   }, [enabled])
 
   useEffect(() => {
-    if (!enabled) return
     const node = titleBarRef.current
     if (!node) return
 
@@ -159,10 +158,14 @@ export function AutoHideTitleBar({
     const observer = new ResizeObserver(updateHeight)
     observer.observe(node)
     return () => observer.disconnect()
-  }, [enabled])
+  }, [])
 
-  if (!enabled) return <>{children}</>
-
+  // Always render the same DOM structure and keep the slide transitions wired
+  // up regardless of `enabled`, so the bar (and its project tabs) stay mounted
+  // and animate symmetrically. When auto-hide is off, `visible` is held true by
+  // the effect above, so pinning slides the bar down with the same animation
+  // unpinning uses to slide it up — and remounting (which would replay the
+  // tabs' "grow" animation) never happens.
   return (
     <div
       className="relative shrink-0 transition-[height] duration-[180ms] ease-out"

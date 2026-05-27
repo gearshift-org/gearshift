@@ -6,6 +6,7 @@ export type ActionId =
   | "terminal.close"
   | "terminal.last"
   | "settings.open"
+  | "titlebar.togglePin"
 
 export type Scope = "renderer" | "electron-menu"
 
@@ -58,6 +59,13 @@ export const ACTIONS: readonly ActionDef[] = [
     id: "settings.open",
     label: "Open Settings",
     defaultAccelerator: "CmdOrCtrl+,",
+    scope: "renderer",
+  },
+  {
+    id: "titlebar.togglePin",
+    label: "Pin/Unpin Title Bar",
+    description: "Toggle the auto-hide title bar between pinned and hidden",
+    defaultAccelerator: "CmdOrCtrl+Shift+S",
     scope: "renderer",
   },
 ] as const

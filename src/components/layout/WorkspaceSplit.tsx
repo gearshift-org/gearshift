@@ -11,6 +11,7 @@ import type { Project, TerminalAgentStatus } from "./types"
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
+const SIDEBAR_OVERLAY_TRANSITION_MS = 180
 
 function clampWidth(n: number): number {
   return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, n))
@@ -77,6 +78,7 @@ export function WorkspaceSplit({
     const stored = loadSidebarWidth()
     return stored ? clampWidth(stored) : SIDEBAR_DEFAULT_PX
   })
+  const [overlayShadowVisible, setOverlayShadowVisible] = useState(false)
   useEffect(
     () =>
       store.onReady(() => {
@@ -141,6 +143,19 @@ export function WorkspaceSplit({
   // interruptible and free of the remount flash the keyframe approach had.
   const sidebarIsOverlay = sidebarOverlayMode && !sidebarOpen
   const showSidebar = sidebarOpen || sidebarIsOverlay
+
+  useEffect(() => {
+    if (!sidebarIsOverlay || !sidebarOverlayVisible) {
+      setOverlayShadowVisible(false)
+      return
+    }
+
+    const id = window.setTimeout(
+      () => setOverlayShadowVisible(true),
+      SIDEBAR_OVERLAY_TRANSITION_MS
+    )
+    return () => window.clearTimeout(id)
+  }, [sidebarIsOverlay, sidebarOverlayVisible])
 
   const workspaceSection = (
     <div className="relative flex h-full flex-col">
@@ -215,8 +230,9 @@ export function WorkspaceSplit({
         className={cn(
           "h-full overflow-hidden",
           sidebarIsOverlay
-            ? "absolute inset-y-0 right-0 z-[180] shrink-0 border-l border-border bg-background shadow-2xl transition-transform duration-[180ms] ease-out [-webkit-app-region:no-drag] [&_*]:[-webkit-app-region:no-drag]"
+            ? "absolute inset-y-0 right-0 z-[180] shrink-0 border-l border-border bg-background transition-transform duration-[180ms] ease-out [-webkit-app-region:no-drag] [&_*]:[-webkit-app-region:no-drag]"
             : "relative shrink-0",
+          sidebarIsOverlay && overlayShadowVisible && "shadow-2xl",
           !sidebarIsOverlay &&
             !isDragging &&
             "transition-[width] duration-150 ease-out",

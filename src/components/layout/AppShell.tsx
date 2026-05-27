@@ -116,6 +116,7 @@ function makeId() {
 }
 
 const SIDEBAR_REVEAL_OUTSIDE_LIMIT = 500
+const RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS = 180
 const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   claude: "claude",
   codex: "codex",
@@ -350,6 +351,7 @@ export function AppShell() {
   const lastMouseRef = useRef({ x: -1, y: -1 })
   const edgeEnteredAtRef = useRef({ right: 0 })
   const edgeRevealTimersRef = useRef<{ right: number | null }>({ right: null })
+  const pinRightSidebarTimerRef = useRef<number | null>(null)
   const modifierKeyHeldRef = useRef(false)
   const modifierRevealPauseUntilRef = useRef(0)
   const resetEdgeRevealTracking = useCallback(() => {
@@ -360,9 +362,21 @@ export function AppShell() {
     edgeRevealTimersRef.current = { right: null }
   }, [])
   const closeRightSidebarOverlay = useCallback(() => {
+    if (pinRightSidebarTimerRef.current != null) {
+      window.clearTimeout(pinRightSidebarTimerRef.current)
+      pinRightSidebarTimerRef.current = null
+    }
     resetEdgeRevealTracking()
     setRightSidebarOverlayOpen(false)
   }, [resetEdgeRevealTracking])
+
+  const clearPinRightSidebarTimer = useCallback(() => {
+    if (pinRightSidebarTimerRef.current == null) return
+    window.clearTimeout(pinRightSidebarTimerRef.current)
+    pinRightSidebarTimerRef.current = null
+  }, [])
+
+  useEffect(() => clearPinRightSidebarTimer, [clearPinRightSidebarTimer])
 
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
@@ -411,6 +425,36 @@ export function AppShell() {
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
   const showRightOverlay = !sidebarOpen && rightSidebarOverlayOpen
+
+  const openRightSidebar = useCallback(() => {
+    clearPinRightSidebarTimer()
+    if (!sidebarOpen && rightSidebarEdgeReveal && activeProject) {
+      setRightSidebarOverlayOpen(true)
+      pinRightSidebarTimerRef.current = window.setTimeout(() => {
+        pinRightSidebarTimerRef.current = null
+        setSidebarOpen(true)
+        setRightSidebarOverlayOpen(false)
+      }, RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS)
+      return
+    }
+    setRightSidebarOverlayOpen(false)
+    setSidebarOpen(true)
+  }, [
+    activeProject,
+    clearPinRightSidebarTimer,
+    rightSidebarEdgeReveal,
+    sidebarOpen,
+  ])
+
+  const toggleRightSidebar = useCallback(() => {
+    clearPinRightSidebarTimer()
+    if (sidebarOpen) {
+      setRightSidebarOverlayOpen(false)
+      setSidebarOpen(false)
+      return
+    }
+    openRightSidebar()
+  }, [clearPinRightSidebarTimer, openRightSidebar, sidebarOpen])
 
   const confirmCloseWorkingTerminals = async (count: number) => {
     if (count === 0) return true
@@ -1427,12 +1471,12 @@ export function AppShell() {
 
   const openFileFromCommandPalette = useCallback(
     (path: string) => {
-      setSidebarOpen(true)
+      openRightSidebar()
       setRightSidebarTab("files")
       setActiveTreeFilePath(path)
       openFileTab(path)
     },
-    [openFileTab]
+    [openFileTab, openRightSidebar]
   )
 
   const commandPaletteRecents = useMemo<PaletteRecents>(() => {
@@ -1909,8 +1953,7 @@ export function AppShell() {
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.shiftKey && !e.altKey && (e.key === "f" || e.key === "F")) {
         e.preventDefault()
-        setRightSidebarOverlayOpen(false)
-        setSidebarOpen(true)
+        openRightSidebar()
         setRightSidebarTab("files")
         window.requestAnimationFrame(() => {
           window.dispatchEvent(new Event("gearshift:file-search"))
@@ -1926,7 +1969,7 @@ export function AppShell() {
       switch (action) {
         case "sidebar.toggle":
           e.preventDefault()
-          setSidebarOpen((v) => !v)
+          toggleRightSidebar()
           break
         case "palette.open":
           e.preventDefault()
@@ -1964,7 +2007,14 @@ export function AppShell() {
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [bindings, findActionForEvent, navigate, autoHideTitleBar])
+  }, [
+    bindings,
+    findActionForEvent,
+    navigate,
+    autoHideTitleBar,
+    openRightSidebar,
+    toggleRightSidebar,
+  ])
 
   return (
     <div className="relative flex h-svh flex-col bg-background text-foreground">
@@ -1980,12 +2030,11 @@ export function AppShell() {
       />
       {(() => {
         const toggleSidebar = () => {
-          setRightSidebarOverlayOpen(false)
-          setSidebarOpen((v) => !v)
+          toggleRightSidebar()
         }
         const openChanges = () => {
           setRightSidebarTab("changes")
-          setSidebarOpen(true)
+          openRightSidebar()
         }
         const titleBar = (
           <AutoHideTitleBar enabled={autoHideTitleBar}>

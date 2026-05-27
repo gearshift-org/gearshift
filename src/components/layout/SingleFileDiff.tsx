@@ -16,6 +16,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import { buildMatchRanges } from "@/lib/dom-search"
 
 type Props = {
   cwd: string
@@ -39,89 +40,6 @@ const diffsWorkerPoolOptions = {
       type: "module",
     }),
   poolSize: 4,
-}
-
-/** Collect every Text node under root, descending into shadow roots. */
-function collectTextNodes(root: Node): Text[] {
-  const out: Text[] = []
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      out.push(node as Text)
-      return
-    }
-    if (node instanceof Element && node.shadowRoot) {
-      // Inject the highlight style into each shadow root once.
-      const sr = node.shadowRoot
-      if (!sr.querySelector(`style[data-gearshift-search]`)) {
-        const s = document.createElement("style")
-        s.dataset.gearshiftSearch = "1"
-        s.textContent = HIGHLIGHT_STYLE
-        sr.appendChild(s)
-      }
-      sr.childNodes.forEach(walk)
-    }
-    node.childNodes.forEach(walk)
-  }
-  walk(root)
-  return out
-}
-
-function buildMatchRanges(
-  root: HTMLElement | null,
-  query: string,
-): Range[] {
-  if (!root || !query) return []
-  const nodes = collectTextNodes(root)
-  if (nodes.length === 0) return []
-
-  // Build a concatenated string + an index of where each node starts in it,
-  // so a query that spans multiple highlighted tokens still matches.
-  let combined = ""
-  const offsets: number[] = new Array(nodes.length)
-  for (let i = 0; i < nodes.length; i++) {
-    offsets[i] = combined.length
-    combined += nodes[i].data
-  }
-
-  const needle = query.toLowerCase()
-  const hay = combined.toLowerCase()
-  const ranges: Range[] = []
-
-  // Binary-search helper: given an absolute offset, find the index of the node
-  // that contains it and the local offset inside that node.
-  const locate = (abs: number): { node: Text; offset: number } => {
-    let lo = 0
-    let hi = nodes.length - 1
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >>> 1
-      if (offsets[mid] <= abs) lo = mid
-      else hi = mid - 1
-    }
-    return { node: nodes[lo], offset: abs - offsets[lo] }
-  }
-
-  let i = 0
-  while (i <= hay.length - needle.length) {
-    const idx = hay.indexOf(needle, i)
-    if (idx === -1) break
-    const startAbs = idx
-    const endAbs = idx + needle.length
-    const start = locate(startAbs)
-    // For the end, locate the node containing endAbs - 1 then adjust offset.
-    const endHit = locate(Math.max(endAbs - 1, startAbs))
-    const endOffsetInNode =
-      endAbs - offsets[nodes.indexOf(endHit.node)] // = endAbs - offsetOf(endHit.node)
-    const r = document.createRange()
-    try {
-      r.setStart(start.node, start.offset)
-      r.setEnd(endHit.node, endOffsetInNode)
-      ranges.push(r)
-    } catch {
-      // Range can fail if offsets are inconsistent after DOM mutation — skip.
-    }
-    i = idx + Math.max(needle.length, 1)
-  }
-  return ranges
 }
 
 export function SingleFileDiff({
@@ -263,7 +181,7 @@ export function SingleFileDiff({
     }
     // Defer to next frame so DiffViewer has rendered after view-mode/patch swap.
     const id = requestAnimationFrame(() => {
-      const ranges = buildMatchRanges(containerRef.current, query)
+      const ranges = buildMatchRanges(containerRef.current, query, HIGHLIGHT_STYLE)
       setMatchCount(ranges.length)
       if (ranges.length === 0) {
         highlights.delete(HIGHLIGHT_NAME)

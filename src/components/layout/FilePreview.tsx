@@ -12,6 +12,14 @@ import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { store } from "@/lib/store"
+import { buildMatchRanges } from "@/lib/dom-search"
+
+const PREVIEW_HIGHLIGHT_NAME = "gearshift-md-search"
+const PREVIEW_HIGHLIGHT_ACTIVE_NAME = "gearshift-md-search-active"
+const PREVIEW_HIGHLIGHT_STYLE = `
+::highlight(${PREVIEW_HIGHLIGHT_NAME}) { background-color: rgba(250, 204, 21, 0.5); color: inherit; }
+::highlight(${PREVIEW_HIGHLIGHT_ACTIVE_NAME}) { background-color: rgb(250, 204, 21); color: black; }
+`
 
 const IMAGE_EXTS = new Set([
   "png",
@@ -507,6 +515,12 @@ export function FilePreview({
   const editorViewRef = useRef<EditorView | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedQueryRef = useRef("")
+  const rootRef = useRef<HTMLDivElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const [previewMatchIdx, setPreviewMatchIdx] = useState(0)
+  const [previewMatchCount, setPreviewMatchCount] = useState(0)
+
+  const isPreview = isMarkdown && mdMode === "preview"
 
   const dirty = state.kind === "ready" && draft !== savedContent
 
@@ -515,6 +529,7 @@ export function FilePreview({
     [state, draft, query]
   )
   const matchCount = matches.length
+  const overlayCount = isPreview ? previewMatchCount : matchCount
 
   useEffect(() => {
     const view = editorViewRef.current
@@ -540,6 +555,65 @@ export function FilePreview({
     })
   }, [query, searchOpen, matches])
 
+  const clearPreviewHighlights = useCallback(() => {
+    if (typeof CSS === "undefined" || !("highlights" in CSS)) return
+    const highlights = CSS.highlights as Map<string, Highlight>
+    highlights.delete(PREVIEW_HIGHLIGHT_NAME)
+    highlights.delete(PREVIEW_HIGHLIGHT_ACTIVE_NAME)
+  }, [])
+
+  // Ensure a top-level <style> for the preview highlight names exists once.
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    if (document.head.querySelector("style[data-gearshift-md-search]")) return
+    const s = document.createElement("style")
+    s.dataset.gearshiftMdSearch = "1"
+    s.textContent = PREVIEW_HIGHLIGHT_STYLE
+    document.head.appendChild(s)
+  }, [])
+
+  // Rebuild ranges + paint highlights when the query / active match / content
+  // changes while the markdown preview is showing.
+  useEffect(() => {
+    if (!isPreview) return
+    if (
+      typeof CSS === "undefined" ||
+      !("highlights" in CSS) ||
+      typeof Highlight === "undefined"
+    )
+      return
+    const highlights = CSS.highlights as Map<string, Highlight>
+    // Defer a frame so react-markdown has committed the latest DOM.
+    const id = requestAnimationFrame(() => {
+      const ranges = query
+        ? buildMatchRanges(previewRef.current, query, PREVIEW_HIGHLIGHT_STYLE)
+        : []
+      setPreviewMatchCount(ranges.length)
+      if (ranges.length === 0) {
+        highlights.delete(PREVIEW_HIGHLIGHT_NAME)
+        highlights.delete(PREVIEW_HIGHLIGHT_ACTIVE_NAME)
+        return
+      }
+      const current = previewMatchIdx >= ranges.length ? 0 : previewMatchIdx
+      if (current !== previewMatchIdx) setPreviewMatchIdx(current)
+      const active = ranges[current]
+      const rest = ranges.filter((_, i) => i !== current)
+      highlights.set(PREVIEW_HIGHLIGHT_NAME, new Highlight(...rest))
+      highlights.set(PREVIEW_HIGHLIGHT_ACTIVE_NAME, new Highlight(active))
+      const el =
+        active.startContainer.parentElement ??
+        (active.startContainer as Element)
+      el?.scrollIntoView?.({ block: "center", behavior: "smooth" })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [isPreview, query, previewMatchIdx, draft])
+
+  // Clear preview highlights when leaving preview mode or unmounting.
+  useEffect(() => {
+    if (!isPreview) clearPreviewHighlights()
+    return () => clearPreviewHighlights()
+  }, [isPreview, clearPreviewHighlights])
+
   const openSearch = useCallback(() => {
     setSearchOpen(true)
     requestAnimationFrame(() => {
@@ -551,6 +625,8 @@ export function FilePreview({
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
     lastSelectedQueryRef.current = ""
+    clearPreviewHighlights()
+    setPreviewMatchIdx(0)
     const view = editorViewRef.current
     if (view) {
       view.dispatch({
@@ -558,7 +634,7 @@ export function FilePreview({
       })
       view.focus()
     }
-  }, [])
+  }, [clearPreviewHighlights])
 
   const jumpTo = useCallback(
     (direction: 1 | -1) => {
@@ -584,8 +660,45 @@ export function FilePreview({
     [matches]
   )
 
-  const nextMatch = useCallback(() => jumpTo(1), [jumpTo])
-  const prevMatch = useCallback(() => jumpTo(-1), [jumpTo])
+  const nextMatch = useCallback(() => {
+    if (isPreview) {
+      setPreviewMatchIdx((i) =>
+        previewMatchCount ? (i + 1) % previewMatchCount : 0
+      )
+      return
+    }
+    jumpTo(1)
+  }, [isPreview, previewMatchCount, jumpTo])
+
+  const prevMatch = useCallback(() => {
+    if (isPreview) {
+      setPreviewMatchIdx((i) =>
+        previewMatchCount ? (i - 1 + previewMatchCount) % previewMatchCount : 0
+      )
+      return
+    }
+    jumpTo(-1)
+  }, [isPreview, previewMatchCount, jumpTo])
+
+  // Cmd/Ctrl+F opens search in preview mode (the raw editor binds it via the
+  // CodeMirror keymap instead). Respond only when this preview is hovered or
+  // focused so split panes don't all react to one keypress.
+  useEffect(() => {
+    if (!isPreview) return
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod || e.shiftKey || e.altKey) return
+      if (e.key !== "f" && e.key !== "F") return
+      const root = rootRef.current
+      if (!root) return
+      if (!root.matches(":hover") && !root.contains(document.activeElement))
+        return
+      e.preventDefault()
+      openSearch()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [isPreview, openSearch])
 
   useEffect(() => {
     const root = document.documentElement
@@ -703,6 +816,7 @@ export function FilePreview({
 
   return (
     <div
+      ref={rootRef}
       className="relative flex h-full flex-col bg-card"
       onKeyDown={(e) => {
         if (e.key === "Escape" && searchOpen) {
@@ -755,7 +869,10 @@ export function FilePreview({
           <input
             ref={searchInputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setPreviewMatchIdx(0)
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault()
@@ -767,12 +884,18 @@ export function FilePreview({
             className="w-44 bg-transparent px-2 py-0.5 outline-none placeholder:text-muted-foreground"
           />
           <span className="px-1 text-muted-foreground">
-            {matchCount === 0 ? (query ? "0/0" : "") : `${matchCount}`}
+            {overlayCount === 0
+              ? query
+                ? "0/0"
+                : ""
+              : isPreview
+                ? `${previewMatchIdx + 1}/${overlayCount}`
+                : `${overlayCount}`}
           </span>
           <button
             type="button"
             onClick={prevMatch}
-            disabled={!matchCount}
+            disabled={!overlayCount}
             aria-label="Previous match"
             className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground disabled:opacity-30"
           >
@@ -781,7 +904,7 @@ export function FilePreview({
           <button
             type="button"
             onClick={nextMatch}
-            disabled={!matchCount}
+            disabled={!overlayCount}
             aria-label="Next match"
             className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground disabled:opacity-30"
           >
@@ -803,8 +926,10 @@ export function FilePreview({
         </div>
       )}
       <div className="min-h-0 flex-1">
-        {isMarkdown && mdMode === "preview" ? (
-          <MarkdownView source={draft} />
+        {isPreview ? (
+          <div ref={previewRef} className="h-full">
+            <MarkdownView source={draft} />
+          </div>
         ) : (
           <CodeEditor
             value={draft}

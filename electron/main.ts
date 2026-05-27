@@ -535,7 +535,7 @@ function buildMenu() {
                   : "Check for Updates…",
                 enabled: !checkingForUpdate,
                 click: () => {
-                  void checkForUpdatesNow()
+                  void checkForUpdatesNow({ alertWhenNoUpdate: true })
                 },
               },
               {

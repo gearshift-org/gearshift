@@ -426,7 +426,8 @@ type UpdaterState =
 
 const updaterApi = {
   getState: () => ipcRenderer.invoke("updater:getState") as Promise<UpdaterState>,
-  check: () => ipcRenderer.invoke("updater:check") as Promise<UpdaterState>,
+  check: (options?: { alertWhenNoUpdate?: boolean }) =>
+    ipcRenderer.invoke("updater:check", options) as Promise<UpdaterState>,
   quitAndInstall: () =>
     ipcRenderer.invoke("updater:quitAndInstall") as Promise<{ ok: boolean }>,
   onState: (cb: (state: UpdaterState) => void) => {

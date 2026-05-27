@@ -469,6 +469,16 @@ function createWindow() {
   win.on("move", onChange)
   win.on("maximize", onChange)
   win.on("unmaximize", onChange)
+  // Forward native focus changes to the renderer. The DOM `window` blur event
+  // only fires when the document held DOM focus, so a title bar revealed by
+  // mouse hover (without clicking into the page) wouldn't hide on app switch.
+  // The native event fires regardless of where DOM focus sits.
+  win.on("blur", () => {
+    if (!win.isDestroyed()) win.webContents.send("window:blur")
+  })
+  win.on("focus", () => {
+    if (!win.isDestroyed()) win.webContents.send("window:focus")
+  })
   win.on("close", () => {
     if (windowStateWriteTimer) {
       clearTimeout(windowStateWriteTimer)

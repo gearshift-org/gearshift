@@ -180,6 +180,16 @@ const appWindowApi = {
     ipcRenderer.invoke("window:setWindowButtonVisibility", visible) as Promise<{
       ok: boolean
     }>,
+  onBlur: (cb: () => void) => {
+    const listener = () => cb()
+    ipcRenderer.on("window:blur", listener)
+    return () => ipcRenderer.removeListener("window:blur", listener)
+  },
+  onFocus: (cb: () => void) => {
+    const listener = () => cb()
+    ipcRenderer.on("window:focus", listener)
+    return () => ipcRenderer.removeListener("window:focus", listener)
+  },
 }
 
 const fsApi = {

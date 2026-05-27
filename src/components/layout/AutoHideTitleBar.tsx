@@ -96,9 +96,14 @@ export function AutoHideTitleBar({
 
     window.addEventListener("mousemove", onMouseMove)
     window.addEventListener("blur", onBlur)
+    // The DOM blur event only fires when the document held focus; subscribe to
+    // the native window blur so the bar also hides when it was revealed by mere
+    // hover (no click into the page) and the user switches apps.
+    const offNativeBlur = window.appWindow?.onBlur?.(onBlur)
     return () => {
       window.removeEventListener("mousemove", onMouseMove)
       window.removeEventListener("blur", onBlur)
+      offNativeBlur?.()
       clearDwell()
       edgeEnteredAtRef.current = 0
     }

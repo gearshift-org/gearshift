@@ -86,9 +86,19 @@ export function AutoHideTitleBar({
       }
     }
 
+    // Hide the bar whenever the window loses focus so it never stays revealed
+    // over an inactive app.
+    const onBlur = () => {
+      edgeEnteredAtRef.current = 0
+      clearDwell()
+      setVisible(false)
+    }
+
     window.addEventListener("mousemove", onMouseMove)
+    window.addEventListener("blur", onBlur)
     return () => {
       window.removeEventListener("mousemove", onMouseMove)
+      window.removeEventListener("blur", onBlur)
       clearDwell()
       edgeEnteredAtRef.current = 0
     }
@@ -102,6 +112,12 @@ export function AutoHideTitleBar({
     let cancelled = false
 
     const poll = async () => {
+      // Don't reveal over an inactive app; the menu-bar reveal only applies
+      // while this window is focused.
+      if (!document.hasFocus()) {
+        setVisible(false)
+        return
+      }
       const pointer = await window.appWindow
         ?.pointerState?.(OUTSIDE_TOP_LIMIT)
         .catch(() => null)

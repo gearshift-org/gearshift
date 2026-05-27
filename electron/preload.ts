@@ -176,6 +176,10 @@ const appWindowApi = {
       cursor?: { x: number; y: number }
       bounds?: { x: number; y: number; width: number; height: number }
     }>,
+  setWindowButtonVisibility: (visible: boolean) =>
+    ipcRenderer.invoke("window:setWindowButtonVisibility", visible) as Promise<{
+      ok: boolean
+    }>,
 }
 
 const fsApi = {

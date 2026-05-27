@@ -960,6 +960,15 @@ app.whenReady().then(async () => {
     return { ok: true, nearWindow, cursor, bounds }
   })
 
+  ipcMain.handle("window:setWindowButtonVisibility", (event, visible) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return { ok: false }
+    if (process.platform === "darwin") {
+      win.setWindowButtonVisibility(Boolean(visible))
+    }
+    return { ok: true }
+  })
+
   ipcMain.handle(
     "menu:showEditContext",
     (

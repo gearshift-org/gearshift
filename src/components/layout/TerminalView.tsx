@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
@@ -82,85 +89,84 @@ const LIGHT_THEME = {
 // Per-variant "chrome" overrides (background/foreground/cursor/selection) so the
 // terminal matches the selected theme tint. ANSI colors inherit from the base
 // dark/light palette. Keyed by ThemeId; the defaults reuse DARK_THEME/LIGHT_THEME.
-const TERMINAL_VARIANTS: Partial<
-  Record<ThemeId, Partial<typeof DARK_THEME>>
-> = {
-  "light-cool": {
-    background: "#f5f7fa",
-    foreground: "#3a4252",
-    cursor: "#3a4252",
-    selectionBackground: "#cfd9e8",
-    selectionForeground: "#3a4252",
-    selectionInactiveBackground: "#e0e6f0",
-  },
-  "light-warm": {
-    background: "#faf8f4",
-    foreground: "#4a4338",
-    cursor: "#4a4338",
-    selectionBackground: "#e8dec9",
-    selectionForeground: "#4a4338",
-    selectionInactiveBackground: "#efe7d8",
-  },
-  "dark-cool": {
-    background: "#15181d",
-    foreground: "#d3d8e0",
-    cursor: "#d3d8e0",
-    selectionBackground: "#2d4a6b",
-    selectionInactiveBackground: "#33414f",
-  },
-  "dark-warm": {
-    background: "#1a1815",
-    foreground: "#d9d2c7",
-    cursor: "#d9d2c7",
-    selectionBackground: "#5c4a2e",
-    selectionInactiveBackground: "#413a30",
-  },
-  "light-rose": {
-    background: "#faf6f7",
-    foreground: "#4a3a40",
-    cursor: "#4a3a40",
-    selectionBackground: "#ecd6dd",
-    selectionForeground: "#4a3a40",
-    selectionInactiveBackground: "#f0e0e5",
-  },
-  "light-forest": {
-    background: "#f5f8f4",
-    foreground: "#384439",
-    cursor: "#384439",
-    selectionBackground: "#d2e6d4",
-    selectionForeground: "#384439",
-    selectionInactiveBackground: "#e0ece1",
-  },
-  "light-violet": {
-    background: "#f8f6fb",
-    foreground: "#423a52",
-    cursor: "#423a52",
-    selectionBackground: "#ddd2ee",
-    selectionForeground: "#423a52",
-    selectionInactiveBackground: "#e7e0f2",
-  },
-  "dark-rose": {
-    background: "#1d181a",
-    foreground: "#e0d2d6",
-    cursor: "#e0d2d6",
-    selectionBackground: "#6b2d42",
-    selectionInactiveBackground: "#4a3338",
-  },
-  "dark-forest": {
-    background: "#161916",
-    foreground: "#d2dbd0",
-    cursor: "#d2dbd0",
-    selectionBackground: "#2d6b3a",
-    selectionInactiveBackground: "#334a37",
-  },
-  "dark-violet": {
-    background: "#19161f",
-    foreground: "#d8d2e0",
-    cursor: "#d8d2e0",
-    selectionBackground: "#4a2d6b",
-    selectionInactiveBackground: "#3a3349",
-  },
-}
+const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
+  {
+    "light-cool": {
+      background: "#f5f7fa",
+      foreground: "#3a4252",
+      cursor: "#3a4252",
+      selectionBackground: "#cfd9e8",
+      selectionForeground: "#3a4252",
+      selectionInactiveBackground: "#e0e6f0",
+    },
+    "light-warm": {
+      background: "#faf8f4",
+      foreground: "#4a4338",
+      cursor: "#4a4338",
+      selectionBackground: "#e8dec9",
+      selectionForeground: "#4a4338",
+      selectionInactiveBackground: "#efe7d8",
+    },
+    "dark-cool": {
+      background: "#15181d",
+      foreground: "#d3d8e0",
+      cursor: "#d3d8e0",
+      selectionBackground: "#2d4a6b",
+      selectionInactiveBackground: "#33414f",
+    },
+    "dark-warm": {
+      background: "#1a1815",
+      foreground: "#d9d2c7",
+      cursor: "#d9d2c7",
+      selectionBackground: "#5c4a2e",
+      selectionInactiveBackground: "#413a30",
+    },
+    "light-rose": {
+      background: "#faf6f7",
+      foreground: "#4a3a40",
+      cursor: "#4a3a40",
+      selectionBackground: "#ecd6dd",
+      selectionForeground: "#4a3a40",
+      selectionInactiveBackground: "#f0e0e5",
+    },
+    "light-forest": {
+      background: "#f5f8f4",
+      foreground: "#384439",
+      cursor: "#384439",
+      selectionBackground: "#d2e6d4",
+      selectionForeground: "#384439",
+      selectionInactiveBackground: "#e0ece1",
+    },
+    "light-violet": {
+      background: "#f8f6fb",
+      foreground: "#423a52",
+      cursor: "#423a52",
+      selectionBackground: "#ddd2ee",
+      selectionForeground: "#423a52",
+      selectionInactiveBackground: "#e7e0f2",
+    },
+    "dark-rose": {
+      background: "#1d181a",
+      foreground: "#e0d2d6",
+      cursor: "#e0d2d6",
+      selectionBackground: "#6b2d42",
+      selectionInactiveBackground: "#4a3338",
+    },
+    "dark-forest": {
+      background: "#161916",
+      foreground: "#d2dbd0",
+      cursor: "#d2dbd0",
+      selectionBackground: "#2d6b3a",
+      selectionInactiveBackground: "#334a37",
+    },
+    "dark-violet": {
+      background: "#19161f",
+      foreground: "#d8d2e0",
+      cursor: "#d8d2e0",
+      selectionBackground: "#4a2d6b",
+      selectionInactiveBackground: "#3a3349",
+    },
+  }
 
 function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {
   const base = THEMES[themeId].appearance === "dark" ? DARK_THEME : LIGHT_THEME
@@ -246,6 +252,23 @@ function expandWrappedTerminalUrl(term: Terminal, uri: string): string {
   return uri
 }
 
+function refreshTerminalViewport(term: Terminal) {
+  try {
+    if (term.rows > 0) term.refresh(0, term.rows - 1)
+  } catch {
+    // Renderer refresh can fail while xterm is disposing.
+  }
+}
+
+function recoverTerminalRenderer(term: Terminal) {
+  try {
+    term.clearTextureAtlas()
+  } catch {
+    // No active WebGL renderer, or xterm is already disposing.
+  }
+  refreshTerminalViewport(term)
+}
+
 function openTerminalUrl(term: Terminal, event: MouseEvent, uri: string): void {
   event.preventDefault()
   void window.shellApi.openExternal(expandWrappedTerminalUrl(term, uri))
@@ -272,7 +295,7 @@ function shellQuote(s: string) {
 async function pasteClipboard(
   term: Terminal,
   sessionId: string,
-  isAgentInput: boolean,
+  isAgentInput: boolean
 ) {
   try {
     if (await window.clipboardApi.hasImage()) {
@@ -316,7 +339,7 @@ export function TerminalView({
   // `system` follows the resolved appearance's default palette; otherwise the
   // explicit theme id selects its own terminal tint.
   const themeId: ThemeId = theme === "system" ? resolvedTheme : theme
-  const themeObj = getTerminalTheme(themeId)
+  const themeObj = useMemo(() => getTerminalTheme(themeId), [themeId])
   const themeRef = useRef({ isDark })
   themeRef.current.isDark = isDark
   const colorSchemeSubscribedRef = useRef(false)
@@ -335,6 +358,7 @@ export function TerminalView({
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(false)
+  const rendererRecoveryRafRef = useRef<number | undefined>(undefined)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -356,6 +380,18 @@ export function TerminalView({
     setSearchOpen(false)
     searchRef.current?.clearDecorations()
     termRef.current?.focus()
+  }, [])
+
+  const queueRendererRecovery = useCallback(() => {
+    if (rendererRecoveryRafRef.current != null) {
+      cancelAnimationFrame(rendererRecoveryRafRef.current)
+    }
+    rendererRecoveryRafRef.current = requestAnimationFrame(() => {
+      rendererRecoveryRafRef.current = undefined
+      const term = termRef.current
+      if (!term) return
+      recoverTerminalRenderer(term)
+    })
   }, [])
 
   useEffect(() => {
@@ -444,6 +480,7 @@ export function TerminalView({
     const suppressFocusRedrawActivity = () => {
       suppressAgentActivityUntilRef.current =
         Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
+      queueRendererRecovery()
     }
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -457,13 +494,14 @@ export function TerminalView({
       window.removeEventListener("focus", suppressFocusRedrawActivity)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [])
+  }, [queueRendererRecovery])
 
   useEffect(() => {
     if (!isActive) return
     suppressAgentActivityUntilRef.current =
       Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
-  }, [isActive])
+    queueRendererRecovery()
+  }, [isActive, queueRendererRecovery])
 
   useEffect(() => {
     const container = containerRef.current
@@ -712,6 +750,7 @@ export function TerminalView({
         if (term.cols !== dims.cols || term.rows !== dims.rows) {
           term.resize(dims.cols, dims.rows)
           window.term.resize(sessionId, dims.cols, dims.rows)
+          refreshTerminalViewport(term)
         }
         return true
       } catch {
@@ -814,6 +853,7 @@ export function TerminalView({
         suppressAgentActivityUntilRef.current =
           Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
         fitTerminal()
+        queueRendererRecovery()
       })
     }
     const ro = new ResizeObserver(() => {
@@ -869,6 +909,10 @@ export function TerminalView({
         window.clearTimeout(agentWorkingTimerRef.current)
         agentWorkingTimerRef.current = undefined
       }
+      if (rendererRecoveryRafRef.current != null) {
+        cancelAnimationFrame(rendererRecoveryRafRef.current)
+        rendererRecoveryRafRef.current = undefined
+      }
       offData?.()
       offExit()
       inputSub.dispose()
@@ -893,15 +937,25 @@ export function TerminalView({
       searchRef.current = null
       emitAgentStatus({ running: false, working: false, completed: false })
     }
-  }, [sessionId, openSearch, markAgentWorking, clearAgentWorking, emitAgentStatus])
+  }, [
+    sessionId,
+    openSearch,
+    markAgentWorking,
+    clearAgentWorking,
+    emitAgentStatus,
+    queueRendererRecovery,
+  ])
 
   useEffect(() => {
     const term = termRef.current
     if (!term) return
     term.options.fontFamily = appearance.fontFamily
     term.options.fontSize = appearance.fontSize
-    requestAnimationFrame(() => fitTerminalRef.current?.())
-  }, [appearance.fontFamily, appearance.fontSize])
+    requestAnimationFrame(() => {
+      fitTerminalRef.current?.()
+      queueRendererRecovery()
+    })
+  }, [appearance.fontFamily, appearance.fontSize, queueRendererRecovery])
 
   useEffect(() => {
     let cancelled = false
@@ -1056,18 +1110,21 @@ export function TerminalView({
       webgl.onContextLoss(() => {
         webgl.dispose()
         if (webglRef.current === webgl) webglRef.current = null
+        queueRendererRecovery()
       })
       term.loadAddon(webgl)
       webglRef.current = webgl
+      queueRendererRecovery()
     } catch {
       // WebGL unavailable; xterm keeps using the default renderer.
     }
-  }, [])
+  }, [queueRendererRecovery])
 
   useEffect(() => {
     const term = termRef.current
     if (!term) return
     term.options.theme = themeObj
+    recoverTerminalRenderer(term)
     // DEC mode 2031: push color-scheme report so subscribed TUIs (Claude Code,
     // Codex, Bubble Tea) repaint live on theme flip without a restart.
     if (colorSchemeSubscribedRef.current) {

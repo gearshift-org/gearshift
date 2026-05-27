@@ -293,9 +293,11 @@ export function saveSidebarOpen(open: boolean): void {
 
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const RIGHT_SIDEBAR_EDGE_REVEAL_KEY = "gearshift.rightSidebarEdgeReveal"
+const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 
 export const RIGHT_SIDEBAR_EDGE_REVEAL_EVENT =
   "gearshift:rightSidebarEdgeRevealChanged"
+export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
 
 export type RightSidebarTab = "changes" | "files" | "history"
 
@@ -332,6 +334,29 @@ export function saveRightSidebarEdgeReveal(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(RIGHT_SIDEBAR_EDGE_REVEAL_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function loadAutoHideTitleBar(): boolean {
+  try {
+    return store.get(AUTO_HIDE_TITLE_BAR_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+export function saveAutoHideTitleBar(enabled: boolean): void {
+  try {
+    store.set(AUTO_HIDE_TITLE_BAR_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(AUTO_HIDE_TITLE_BAR_EVENT, {
           detail: enabled,
         })
       )

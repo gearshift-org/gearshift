@@ -137,7 +137,7 @@ export function WorkspaceSplit({
   const sidebarIsOverlay = sidebarOverlayOpen && !sidebarOpen
 
   const workspaceSection = (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {titleBar}
       {activeProjectHasTabs && workspaceTabs}
       <div className="relative min-h-0 flex-1">

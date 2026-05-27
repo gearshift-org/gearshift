@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { PanelRight, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
+import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
 import { useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
@@ -27,6 +28,7 @@ import type {
 } from "./types"
 import {
   loadActiveProjectId,
+  loadAutoHideTitleBar,
   loadPaletteRecents,
   loadProjects,
   loadRecentProjects,
@@ -42,6 +44,7 @@ import {
   saveRightSidebarTab,
   saveSidebarOpen,
   stableProjectId,
+  AUTO_HIDE_TITLE_BAR_EVENT,
   type PaletteRecents,
   RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
   type RecentProject,
@@ -283,6 +286,9 @@ export function AppShell() {
   const [rightSidebarEdgeReveal, setRightSidebarEdgeReveal] = useState(() =>
     loadRightSidebarEdgeReveal()
   )
+  const [autoHideTitleBar, setAutoHideTitleBar] = useState(() =>
+    loadAutoHideTitleBar()
+  )
   const [rightSidebarOverlayOpen, setRightSidebarOverlayOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
     loadRightSidebarTab()
@@ -323,6 +329,7 @@ export function AppShell() {
         setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
         setRightSidebarEdgeReveal(loadRightSidebarEdgeReveal())
+        setAutoHideTitleBar(loadAutoHideTitleBar())
         setRightSidebarTab(loadRightSidebarTab())
         const storedActiveId = resolveMigratedProjectId(
           loadActiveProjectId(),
@@ -392,6 +399,18 @@ export function AppShell() {
       window.removeEventListener(
         RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
         onEdgeRevealChange
+      )
+    }
+  }, [])
+  useEffect(() => {
+    const onAutoHideTitleBarChange = (event: Event) => {
+      setAutoHideTitleBar((event as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener(AUTO_HIDE_TITLE_BAR_EVENT, onAutoHideTitleBarChange)
+    return () => {
+      window.removeEventListener(
+        AUTO_HIDE_TITLE_BAR_EVENT,
+        onAutoHideTitleBarChange
       )
     }
   }, [])
@@ -1981,7 +2000,7 @@ export function AppShell() {
   }, [bindings, findActionForEvent, navigate])
 
   return (
-    <div className="flex h-svh flex-col bg-background text-foreground">
+    <div className="relative flex h-svh flex-col bg-background text-foreground">
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -2002,27 +2021,32 @@ export function AppShell() {
           setSidebarOpen(true)
         }
         const titleBar = (
-          <TitleBar
-            projects={projects}
-            activeProjectId={activeProjectId}
-            recents={recents.filter(
-              (r) => !projects.some((p) => p.path === r.path)
-            )}
-            onSelectProject={selectProject}
-            onAddProject={addProject}
-            onPickRecent={pickRecent}
-            onCloseProject={closeProject}
-            onCloseAllProjectTerminals={closeAllProjectTerminals}
-            onCloseOtherProjects={closeOtherProjects}
-            onCloseProjectsToRight={closeProjectsToRight}
-            onOpenProjectInVSCode={openProjectInVSCode}
-            onRevealProjectInFinder={revealProjectInFinder}
-            onReorderProjects={reorderProjects}
-            sidebarOpen={sidebarOpen}
-            onToggleSidebar={toggleSidebar}
-            onOpenChanges={openChanges}
-            showRightControls={!sidebarOpen || !activeProject}
-          />
+          <AutoHideTitleBar
+            key={autoHideTitleBar ? "auto-hide-title-bar" : "static-title-bar"}
+            enabled={autoHideTitleBar}
+          >
+            <TitleBar
+              projects={projects}
+              activeProjectId={activeProjectId}
+              recents={recents.filter(
+                (r) => !projects.some((p) => p.path === r.path)
+              )}
+              onSelectProject={selectProject}
+              onAddProject={addProject}
+              onPickRecent={pickRecent}
+              onCloseProject={closeProject}
+              onCloseAllProjectTerminals={closeAllProjectTerminals}
+              onCloseOtherProjects={closeOtherProjects}
+              onCloseProjectsToRight={closeProjectsToRight}
+              onOpenProjectInVSCode={openProjectInVSCode}
+              onRevealProjectInFinder={revealProjectInFinder}
+              onReorderProjects={reorderProjects}
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={toggleSidebar}
+              onOpenChanges={openChanges}
+              showRightControls={!sidebarOpen || !activeProject}
+            />
+          </AutoHideTitleBar>
         )
         const sidebarTopActions = (
           <div className="flex items-center pr-1">

@@ -1,7 +1,9 @@
 import * as React from "react"
-import { PanelRight } from "lucide-react"
+import { PanelRight, PanelTop } from "lucide-react"
 import {
+  loadAutoHideTitleBar,
   loadRightSidebarEdgeReveal,
+  saveAutoHideTitleBar,
   saveRightSidebarEdgeReveal,
 } from "@/lib/projects"
 import { cn } from "@/lib/utils"
@@ -11,11 +13,15 @@ export function GeneralPanel() {
   const [edgeReveal, setEdgeReveal] = React.useState(() =>
     loadRightSidebarEdgeReveal()
   )
+  const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
+    loadAutoHideTitleBar()
+  )
 
   React.useEffect(
     () =>
       store.onReady(() => {
         setEdgeReveal(loadRightSidebarEdgeReveal())
+        setAutoHideTitleBar(loadAutoHideTitleBar())
       }),
     []
   )
@@ -25,6 +31,11 @@ export function GeneralPanel() {
     saveRightSidebarEdgeReveal(enabled)
   }
 
+  const updateAutoHideTitleBar = (enabled: boolean) => {
+    setAutoHideTitleBar(enabled)
+    saveAutoHideTitleBar(enabled)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -32,6 +43,51 @@ export function GeneralPanel() {
         <p className="text-sm text-muted-foreground">
           Tune workspace behavior for everyday use.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background">
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+          <PanelTop className="size-4 text-muted-foreground" />
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Window</h3>
+            <p className="text-xs text-muted-foreground">
+              Control the title bar and native window controls.
+            </p>
+          </div>
+        </div>
+        <div className="p-4">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoHideTitleBar}
+            onClick={() => updateAutoHideTitleBar(!autoHideTitleBar)}
+            className="flex w-full items-center justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+          >
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Auto Hide Title Bar
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Hide the title bar and traffic lights after a short delay. Hover
+                the top edge to slide it back down.
+              </span>
+            </span>
+            <span
+              className={cn(
+                "relative h-5 w-9 shrink-0 rounded-full border border-border transition-colors",
+                autoHideTitleBar ? "bg-primary" : "bg-muted"
+              )}
+              aria-hidden="true"
+            >
+              <span
+                className={cn(
+                  "absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-background shadow-sm transition-transform",
+                  autoHideTitleBar ? "translate-x-4" : "translate-x-0.5"
+                )}
+              />
+            </span>
+          </button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-border bg-background">

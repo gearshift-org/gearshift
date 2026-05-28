@@ -46,6 +46,9 @@ type Props = {
   rightSidebarTab?: "changes" | "files" | "history"
   onRightSidebarTabChange?: (tab: "changes" | "files" | "history") => void
   activeTreeFilePath?: string
+  // In the vertical project layout the separate title bar is dropped and the
+  // workspace tab bar doubles as the top bar (always shown, hosts controls).
+  hideTitleBar?: boolean
 }
 
 export function WorkspaceSplit({
@@ -71,6 +74,7 @@ export function WorkspaceSplit({
   rightSidebarTab,
   onRightSidebarTabChange,
   activeTreeFilePath,
+  hideTitleBar = false,
 }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const queryClient = useQueryClient()
@@ -159,8 +163,8 @@ export function WorkspaceSplit({
 
   const workspaceSection = (
     <div className="relative flex h-full flex-col">
-      {titleBar}
-      {activeProjectHasTabs && workspaceTabs}
+      {!hideTitleBar && titleBar}
+      {(hideTitleBar || activeProjectHasTabs) && workspaceTabs}
       <div className="relative min-h-0 flex-1">
         {projects.map((p) => (
           <div

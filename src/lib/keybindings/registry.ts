@@ -1,5 +1,6 @@
 export type ActionId =
   | "sidebar.toggle"
+  | "projectSidebar.toggle"
   | "palette.open"
   | "terminal.split"
   | "terminal.new"
@@ -22,7 +23,14 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: "sidebar.toggle",
     label: "Toggle Sidebar",
-    defaultAccelerator: "CmdOrCtrl+S",
+    defaultAccelerator: "CmdOrCtrl+2",
+    scope: "renderer",
+  },
+  {
+    id: "projectSidebar.toggle",
+    label: "Toggle Project Sidebar",
+    description: "Show or hide the left project sidebar (vertical layout)",
+    defaultAccelerator: "CmdOrCtrl+1",
     scope: "renderer",
   },
   {
@@ -51,8 +59,9 @@ export const ACTIONS: readonly ActionDef[] = [
   },
   {
     id: "terminal.last",
+    // Previously CmdOrCtrl+2 — now owned by sidebar.toggle, so unset by default.
     label: "Go to Last Terminal",
-    defaultAccelerator: "CmdOrCtrl+2",
+    defaultAccelerator: "",
     scope: "renderer",
   },
   {
@@ -74,7 +83,10 @@ export type BindingsMap = Record<ActionId, string[]>
 
 export function defaultBindings(): BindingsMap {
   const out = {} as BindingsMap
-  for (const a of ACTIONS) out[a.id] = [a.defaultAccelerator]
+  // An empty default accelerator means "no shortcut" — keep the list empty so
+  // it renders cleanly in settings and never matches a keystroke.
+  for (const a of ACTIONS)
+    out[a.id] = a.defaultAccelerator ? [a.defaultAccelerator] : []
   return out
 }
 

@@ -291,6 +291,25 @@ export function saveSidebarOpen(open: boolean): void {
   }
 }
 
+const PROJECT_SIDEBAR_OPEN_KEY = "gearshift.projectSidebarOpen"
+
+export function loadProjectSidebarOpen(): boolean {
+  try {
+    // Default open unless explicitly collapsed.
+    return store.get(PROJECT_SIDEBAR_OPEN_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveProjectSidebarOpen(open: boolean): void {
+  try {
+    store.set(PROJECT_SIDEBAR_OPEN_KEY, open ? "1" : "0")
+  } catch {
+    // ignore
+  }
+}
+
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const RIGHT_SIDEBAR_EDGE_REVEAL_KEY = "gearshift.rightSidebarEdgeReveal"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
@@ -298,6 +317,10 @@ const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 export const RIGHT_SIDEBAR_EDGE_REVEAL_EVENT =
   "gearshift:rightSidebarEdgeRevealChanged"
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
+export const PROJECT_SIDEBAR_LAYOUT_EVENT =
+  "gearshift:projectSidebarLayoutChanged"
+
+const PROJECT_SIDEBAR_LAYOUT_KEY = "gearshift.projectSidebarLayout"
 
 export type RightSidebarTab = "changes" | "files" | "history"
 
@@ -357,6 +380,29 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(AUTO_HIDE_TITLE_BAR_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function loadProjectSidebarLayout(): boolean {
+  try {
+    return store.get(PROJECT_SIDEBAR_LAYOUT_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+export function saveProjectSidebarLayout(enabled: boolean): void {
+  try {
+    store.set(PROJECT_SIDEBAR_LAYOUT_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(PROJECT_SIDEBAR_LAYOUT_EVENT, {
           detail: enabled,
         })
       )

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { FileDiff, Plus, TerminalSquare, X } from "lucide-react"
 import { FileIcon } from "@/components/icons/FileIcon"
 import {
@@ -62,6 +62,14 @@ type Props = {
   onReorder?: (fromId: string, toId: string) => void
   onPin?: (id: string) => void
   onOpenInVSCode?: () => void
+  // Rendered at the right edge of the tab bar (e.g. window controls in the
+  // vertical project layout, where the tab bar doubles as the top bar).
+  trailing?: ReactNode
+  // Rendered at the left edge of the tab bar (e.g. traffic-light spacer + the
+  // expand control when the vertical project sidebar is collapsed).
+  leading?: ReactNode
+  // Treat the bar as the window's top drag region.
+  draggable?: boolean
 }
 
 const AGENT_TERMINAL_OPTIONS: Array<{
@@ -303,6 +311,9 @@ export function WorkspaceTabBar({
   onReorder,
   onPin,
   onOpenInVSCode,
+  trailing,
+  leading,
+  draggable = false,
 }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
@@ -354,8 +365,23 @@ export function WorkspaceTabBar({
   }
 
   return (
-    <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background">
-      <div className="terminal-tabs-scroll flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden">
+    <div
+      className={cn(
+        "flex h-[34px] shrink-0 items-stretch border-b border-border bg-background",
+        draggable && "[-webkit-app-region:drag]"
+      )}
+    >
+      {leading && (
+        <div className="flex shrink-0 items-center">{leading}</div>
+      )}
+      <div
+        className={cn(
+          "terminal-tabs-scroll flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
+          // In draggable mode the scroll area shrinks to its tabs so the empty
+          // remainder (the spacer below) becomes a window-drag region.
+          draggable ? "[-webkit-app-region:no-drag]" : "flex-1"
+        )}
+      >
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
             items={tabs.map((t) => t.id)}
@@ -418,6 +444,10 @@ export function WorkspaceTabBar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {draggable && <div className="min-w-0 flex-1 self-stretch" />}
+      {trailing && (
+        <div className="flex shrink-0 items-center">{trailing}</div>
+      )}
     </div>
   )
 }

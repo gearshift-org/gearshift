@@ -3,10 +3,12 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { matchesAccelerator } from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
-import { PanelRight, X } from "lucide-react"
+import { PanelLeft, PanelRight, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
+import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
+import { ProjectSidebar } from "./ProjectSidebar"
 import { useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
@@ -30,6 +32,8 @@ import {
   loadAutoHideTitleBar,
   loadPaletteRecents,
   loadProjects,
+  loadProjectSidebarLayout,
+  loadProjectSidebarOpen,
   loadRecentProjects,
   loadRightSidebarEdgeReveal,
   loadRightSidebarTab,
@@ -40,11 +44,13 @@ import {
   pushRecentProject,
   saveActiveProjectId,
   saveAutoHideTitleBar,
+  saveProjectSidebarOpen,
   saveProjects,
   saveRightSidebarTab,
   saveSidebarOpen,
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
+  PROJECT_SIDEBAR_LAYOUT_EVENT,
   type PaletteRecents,
   RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
   type RecentProject,
@@ -52,6 +58,7 @@ import {
   type StoredProject,
 } from "@/lib/projects"
 import { store } from "@/lib/store"
+import { cn } from "@/lib/utils"
 
 type ProjectIdMigration = { from: string; to: string }
 
@@ -117,6 +124,9 @@ function makeId() {
 
 const SIDEBAR_REVEAL_OUTSIDE_LIMIT = 500
 const RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS = 180
+// Must match the fixed width of ProjectSidebar so the collapse/expand width
+// animation clips its contents without reflowing them.
+const PROJECT_SIDEBAR_WIDTH = 248
 const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   claude: "claude",
   codex: "codex",
@@ -266,6 +276,12 @@ export function AppShell() {
   const [autoHideTitleBar, setAutoHideTitleBar] = useState(() =>
     loadAutoHideTitleBar()
   )
+  const [projectSidebarLayout, setProjectSidebarLayout] = useState(() =>
+    loadProjectSidebarLayout()
+  )
+  const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
+    loadProjectSidebarOpen()
+  )
   const [rightSidebarOverlayOpen, setRightSidebarOverlayOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
     loadRightSidebarTab()
@@ -307,6 +323,8 @@ export function AppShell() {
         setSidebarOpen(loadSidebarOpen())
         setRightSidebarEdgeReveal(loadRightSidebarEdgeReveal())
         setAutoHideTitleBar(loadAutoHideTitleBar())
+        setProjectSidebarLayout(loadProjectSidebarLayout())
+        setProjectSidebarOpen(loadProjectSidebarOpen())
         setRightSidebarTab(loadRightSidebarTab())
         const storedActiveId = resolveMigratedProjectId(
           loadActiveProjectId(),
@@ -382,6 +400,9 @@ export function AppShell() {
     saveSidebarOpen(sidebarOpen)
   }, [sidebarOpen])
   useEffect(() => {
+    saveProjectSidebarOpen(projectSidebarOpen)
+  }, [projectSidebarOpen])
+  useEffect(() => {
     const onEdgeRevealChange = (event: Event) => {
       const enabled = (event as CustomEvent<boolean>).detail
       setRightSidebarEdgeReveal(enabled)
@@ -404,6 +425,21 @@ export function AppShell() {
       window.removeEventListener(
         AUTO_HIDE_TITLE_BAR_EVENT,
         onAutoHideTitleBarChange
+      )
+    }
+  }, [])
+  useEffect(() => {
+    const onProjectSidebarLayoutChange = (event: Event) => {
+      setProjectSidebarLayout((event as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener(
+      PROJECT_SIDEBAR_LAYOUT_EVENT,
+      onProjectSidebarLayoutChange
+    )
+    return () => {
+      window.removeEventListener(
+        PROJECT_SIDEBAR_LAYOUT_EVENT,
+        onProjectSidebarLayoutChange
       )
     }
   }, [])
@@ -455,6 +491,10 @@ export function AppShell() {
     }
     openRightSidebar()
   }, [clearPinRightSidebarTimer, openRightSidebar, sidebarOpen])
+
+  const toggleProjectSidebar = useCallback(() => {
+    setProjectSidebarOpen((v) => !v)
+  }, [])
 
   const confirmCloseWorkingTerminals = async (count: number) => {
     if (count === 0) return true
@@ -1971,6 +2011,10 @@ export function AppShell() {
           e.preventDefault()
           toggleRightSidebar()
           break
+        case "projectSidebar.toggle":
+          e.preventDefault()
+          toggleProjectSidebar()
+          break
         case "palette.open":
           e.preventDefault()
           setPaletteOpen((v) => !v)
@@ -2014,10 +2058,16 @@ export function AppShell() {
     autoHideTitleBar,
     openRightSidebar,
     toggleRightSidebar,
+    toggleProjectSidebar,
   ])
 
   return (
-    <div className="relative flex h-svh flex-col bg-background text-foreground">
+    <div
+      className={cn(
+        "relative flex h-svh bg-background text-foreground",
+        projectSidebarLayout ? "flex-row" : "flex-col"
+      )}
+    >
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -2028,7 +2078,40 @@ export function AppShell() {
         onSelectTab={selectTab}
         onOpenFile={openFileFromCommandPalette}
       />
-      {(() => {
+      {projectSidebarLayout && (
+        // Keep the sidebar mounted and animate its width so collapse/expand
+        // slides instead of popping. The inner sidebar stays at its full fixed
+        // width so its contents don't reflow while the wrapper clips them.
+        <div
+          aria-hidden={!projectSidebarOpen}
+          style={{ width: projectSidebarOpen ? PROJECT_SIDEBAR_WIDTH : 0 }}
+          className={cn(
+            "shrink-0 overflow-hidden transition-[width] duration-200 ease-out [-webkit-app-region:no-drag]",
+            !projectSidebarOpen && "pointer-events-none"
+          )}
+        >
+          <ProjectSidebar
+            projects={projects}
+            activeId={activeProjectId}
+            recents={recents.filter(
+              (r) => !projects.some((p) => p.path === r.path)
+            )}
+            onSelect={selectProject}
+            onAdd={addProject}
+            onPickRecent={pickRecent}
+            onClose={closeProject}
+            onCloseAllTerminals={closeAllProjectTerminals}
+            onCloseOthers={closeOtherProjects}
+            onCloseToRight={closeProjectsToRight}
+            onOpenInVSCode={openProjectInVSCode}
+            onRevealInFinder={revealProjectInFinder}
+            onReorder={reorderProjects}
+            onCollapse={() => setProjectSidebarOpen(false)}
+          />
+        </div>
+      )}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {(() => {
         const toggleSidebar = () => {
           toggleRightSidebar()
         }
@@ -2036,6 +2119,27 @@ export function AppShell() {
           setRightSidebarTab("changes")
           openRightSidebar()
         }
+        // Vertical layout with the project sidebar collapsed: show an expand
+        // control (and reclaim the traffic-light gap) in the top bar.
+        const projectSidebarCollapsed =
+          projectSidebarLayout && !projectSidebarOpen
+        const expandProjectSidebarButton = projectSidebarCollapsed ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => setProjectSidebarOpen(true)}
+                  aria-label="Expand sidebar"
+                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground [-webkit-app-region:no-drag]"
+                >
+                  <PanelLeft className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>Expand sidebar</TooltipContent>
+          </Tooltip>
+        ) : null
         const titleBar = (
           <AutoHideTitleBar enabled={autoHideTitleBar}>
             <TitleBar
@@ -2058,6 +2162,17 @@ export function AppShell() {
               onToggleSidebar={toggleSidebar}
               onOpenChanges={openChanges}
               showRightControls={!sidebarOpen || !activeProject}
+              showProjectTabs={!projectSidebarLayout}
+              showTrafficLightSpacer={
+                !projectSidebarLayout || projectSidebarCollapsed
+              }
+              leading={
+                expandProjectSidebarButton ? (
+                  <div className="flex items-center pr-2 [-webkit-app-region:no-drag]">
+                    {expandProjectSidebarButton}
+                  </div>
+                ) : undefined
+              }
             />
           </AutoHideTitleBar>
         )
@@ -2083,6 +2198,59 @@ export function AppShell() {
             </Tooltip>
           </div>
         )
+        // In the vertical project layout the workspace tab bar doubles as the
+        // top bar, so the window controls (changes badge + sidebar toggle) live
+        // inline at its right edge. Mirror the title bar's gate: hide them when
+        // the right sidebar is open (it carries its own controls then).
+        const showTopBarControls = !sidebarOpen || !activeProject
+        const topBarTrailing = showTopBarControls ? (
+          <div className="flex items-center pr-4 [-webkit-app-region:no-drag]">
+            <ProjectGitStatusBadge
+              cwd={activeProject?.path ?? null}
+              onOpenChanges={openChanges}
+            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    aria-pressed={sidebarOpen}
+                    aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                    className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                  >
+                    <PanelRight className="size-3.5" />
+                  </button>
+                }
+              />
+              <TooltipContent>
+                {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null
+        // When the project sidebar is collapsed the workspace meets the window's
+        // left edge, so the top bar reclaims the traffic-light gap and hosts the
+        // expand control.
+        const topBarLeading = expandProjectSidebarButton ? (
+          <>
+            <div className="w-[84px] shrink-0 self-stretch" />
+            {expandProjectSidebarButton}
+            {activeProject && (
+              // A non-interactive reminder of the current project (no close
+              // button) since the sidebar that normally shows it is hidden.
+              <div className="flex min-w-0 items-center gap-1.5 pr-3 pl-2.5">
+                <ProjectAvatar
+                  name={activeProject.name}
+                  path={activeProject.path}
+                />
+                <span className="max-w-[220px] truncate text-xs font-medium text-foreground">
+                  {activeProject.name}
+                </span>
+              </div>
+            )}
+          </>
+        ) : undefined
         if (!activeProject) {
           return (
             <>
@@ -2121,6 +2289,7 @@ export function AppShell() {
               rightSidebarOverlayOpen
             }
             titleBar={titleBar}
+            hideTitleBar={projectSidebarLayout}
             sidebarTopActions={sidebarTopActions}
             onTerminalTitleChange={setTerminalTitle}
             onTerminalAgentStatusChange={setTerminalAgentStatus}
@@ -2156,11 +2325,15 @@ export function AppShell() {
                 onOpenInVSCode={() =>
                   void window.shellApi.openInVSCode(activeProject.path)
                 }
+                trailing={projectSidebarLayout ? topBarTrailing : undefined}
+                leading={projectSidebarLayout ? topBarLeading : undefined}
+                draggable={projectSidebarLayout}
               />
             }
           />
         )
       })()}
+      </div>
     </div>
   )
 }

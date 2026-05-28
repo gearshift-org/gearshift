@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { PanelRight } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { ProjectTabs } from "./ProjectTabs"
@@ -28,6 +29,12 @@ type Props = {
   onToggleSidebar?: () => void
   onOpenChanges?: () => void
   showRightControls?: boolean
+  showProjectTabs?: boolean
+  // Reserve the leading 88px gap for the macOS traffic lights.
+  showTrafficLightSpacer?: boolean
+  // Rendered just after the traffic-light spacer (e.g. an expand control when
+  // the vertical project sidebar is collapsed).
+  leading?: ReactNode
 }
 
 export function TitleBar({
@@ -48,6 +55,9 @@ export function TitleBar({
   onToggleSidebar,
   onOpenChanges,
   showRightControls = true,
+  showProjectTabs = true,
+  showTrafficLightSpacer = true,
+  leading,
 }: Props) {
   const activeProject = projects.find(
     (project) => project.id === activeProjectId
@@ -55,23 +65,26 @@ export function TitleBar({
 
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
-      <div className="w-[88px] shrink-0" />
+      {showTrafficLightSpacer && <div className="w-[88px] shrink-0" />}
+      {leading}
       <UpdateButton />
-      <ProjectTabs
-        projects={projects}
-        activeId={activeProjectId}
-        recents={recents}
-        onSelect={onSelectProject}
-        onAdd={onAddProject}
-        onPickRecent={onPickRecent}
-        onClose={onCloseProject}
-        onCloseAllTerminals={onCloseAllProjectTerminals}
-        onCloseOthers={onCloseOtherProjects}
-        onCloseToRight={onCloseProjectsToRight}
-        onOpenInVSCode={onOpenProjectInVSCode}
-        onRevealInFinder={onRevealProjectInFinder}
-        onReorder={onReorderProjects}
-      />
+      {showProjectTabs && (
+        <ProjectTabs
+          projects={projects}
+          activeId={activeProjectId}
+          recents={recents}
+          onSelect={onSelectProject}
+          onAdd={onAddProject}
+          onPickRecent={onPickRecent}
+          onClose={onCloseProject}
+          onCloseAllTerminals={onCloseAllProjectTerminals}
+          onCloseOthers={onCloseOtherProjects}
+          onCloseToRight={onCloseProjectsToRight}
+          onOpenInVSCode={onOpenProjectInVSCode}
+          onRevealInFinder={onRevealProjectInFinder}
+          onReorder={onReorderProjects}
+        />
+      )}
       <div className="flex-1" />
       {showRightControls && (
         <>

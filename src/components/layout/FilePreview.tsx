@@ -168,7 +168,7 @@ type LoadState =
   | { kind: "error"; message: string }
 
 function currentThemeType(): "light" | "dark" {
-  return document.documentElement.dataset.theme === "light" ? "light" : "dark"
+  return document.documentElement.classList.contains("dark") ? "dark" : "light"
 }
 
 function joinPath(cwd: string, rel: string): string {
@@ -262,12 +262,17 @@ function CodeEditor({
           },
           ".cm-activeLine": {
             backgroundColor:
-              "color-mix(in srgb, var(--accent) 42%, transparent)",
+              themeType === "dark"
+                ? "color-mix(in srgb, var(--accent) 42%, transparent)"
+                : "rgba(72, 118, 214, 0.12)",
           },
-          ".cm-activeLineGutter": {
+          ".cm-activeLineGutter, .cm-lineNumbers .cm-activeLineGutter": {
             backgroundColor:
-              "color-mix(in srgb, var(--accent) 52%, transparent)",
+              themeType === "dark"
+                ? "color-mix(in srgb, var(--accent) 52%, transparent)"
+                : "rgba(72, 118, 214, 0.22)",
             color: "var(--foreground)",
+            fontWeight: "600",
           },
           "&.cm-editor .cm-selectionBackground, &.cm-editor.cm-focused > .cm-scroller .cm-selectionBackground, & ::selection":
             {

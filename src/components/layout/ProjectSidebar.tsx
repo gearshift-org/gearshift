@@ -13,7 +13,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { PanelLeft } from "lucide-react"
+import { PanelLeft, X } from "lucide-react"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -65,7 +65,6 @@ type RowProps = {
   canClose: boolean
   hasItemsBelow: boolean
   onSelect: (id: string) => void
-  onAdd: () => void
   onClose?: (id: string) => void
   onCloseAllTerminals?: (id: string) => void
   onCloseOthers?: (id: string) => void
@@ -81,7 +80,6 @@ function ProjectSidebarRow({
   canClose,
   hasItemsBelow,
   onSelect,
-  onAdd,
   onClose,
   onCloseAllTerminals,
   onCloseOthers,
@@ -163,6 +161,20 @@ function ProjectSidebarRow({
             {subtitle ?? " "}
           </span>
         </div>
+        {canClose && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose?.(p.id)
+            }}
+            aria-label={`Close ${p.name}`}
+            className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-sm bg-inherit text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
         <ContextMenuItem onClick={() => onClose?.(p.id)} disabled={!canClose}>
@@ -190,8 +202,6 @@ function ProjectSidebarRow({
         <ContextMenuItem onClick={randomizeAvatarColor}>
           Randomize Avatar Color
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={onAdd}>New Project</ContextMenuItem>
         {(onOpenInVSCode || onRevealInFinder) && (
           <>
             <ContextMenuSeparator />
@@ -277,7 +287,6 @@ export function ProjectSidebar({
                 canClose={!!onClose}
                 hasItemsBelow={i < projects.length - 1}
                 onSelect={onSelect}
-                onAdd={onAdd}
                 onClose={onClose}
                 onCloseAllTerminals={onCloseAllTerminals}
                 onCloseOthers={onCloseOthers}

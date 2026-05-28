@@ -166,6 +166,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
       selectionBackground: "#4a2d6b",
       selectionInactiveBackground: "#3a3349",
     },
+    "light-atom-one": {
+      background: "#fafafa",
+      foreground: "#383a42",
+      cursor: "#383a42",
+      selectionBackground: "#e5e5e6",
+      selectionForeground: "#383a42",
+      selectionInactiveBackground: "#ececed",
+    },
+    "dark-atom-one": {
+      background: "#282c34",
+      foreground: "#abb2bf",
+      cursor: "#abb2bf",
+      selectionBackground: "#3e4451",
+      selectionInactiveBackground: "#353b45",
+    },
   }
 
 function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {

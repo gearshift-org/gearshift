@@ -31,12 +31,14 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "light-rose": { bg: "#faf6f7", fg: "#4a3a40", accent: "#c77b91" },
   "light-forest": { bg: "#f5f8f4", fg: "#384439", accent: "#5b9c63" },
   "light-violet": { bg: "#f8f6fb", fg: "#423a52", accent: "#8b6bc7" },
+  "light-atom-one": { bg: "#fafafa", fg: "#383a42", accent: "#4078f2" },
   dark: { bg: "#191919", fg: "#d4d4d4", accent: "#007acc" },
   "dark-cool": { bg: "#171a1f", fg: "#d3d8e0", accent: "#4c8fd6" },
   "dark-warm": { bg: "#1c1a18", fg: "#d9d2c7", accent: "#c79a5b" },
   "dark-rose": { bg: "#1f1a1c", fg: "#e0d2d6", accent: "#d6849b" },
   "dark-forest": { bg: "#171a17", fg: "#d2dbd0", accent: "#6cc777" },
   "dark-violet": { bg: "#1b1820", fg: "#d8d2e0", accent: "#a98fd6" },
+  "dark-atom-one": { bg: "#282c34", fg: "#abb2bf", accent: "#61afef" },
 }
 
 const COMMON_TERMINAL_FONTS = [

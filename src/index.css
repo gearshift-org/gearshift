@@ -260,6 +260,33 @@
   --sidebar-ring: #8b6bc7;
 }
 
+/* Light · Atom One — Atom's classic One Light palette */
+[data-theme="light-atom-one"] {
+  --background: #fafafa;
+  --foreground: #383a42;
+  --card: #f5f5f5;
+  --card-foreground: #383a42;
+  --popover: #ffffff;
+  --popover-foreground: #383a42;
+  --secondary: #ececed;
+  --secondary-foreground: #383a42;
+  --muted: #ececed;
+  --muted-foreground: #a0a1a7;
+  --accent: #e5e5e6;
+  --accent-foreground: #383a42;
+  --border: #e1e1e2;
+  --input: #ececed;
+  --ring: #4078f2;
+  --sidebar: #f0f0f1;
+  --sidebar-foreground: #383a42;
+  --sidebar-primary: #4078f2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e5e5e6;
+  --sidebar-accent-foreground: #383a42;
+  --sidebar-border: #e1e1e2;
+  --sidebar-ring: #4078f2;
+}
+
 /* Dark · Cool — blue-gray tint */
 [data-theme="dark-cool"] {
   --background: #171a1f;
@@ -391,6 +418,33 @@
   --sidebar-accent-foreground: #f1eef6;
   --sidebar-border: #2f2b3a;
   --sidebar-ring: #a98fd6;
+}
+
+/* Dark · Atom One — Atom's classic One Dark palette */
+[data-theme="dark-atom-one"] {
+  --background: #282c34;
+  --foreground: #abb2bf;
+  --card: #282c34;
+  --card-foreground: #abb2bf;
+  --popover: #2c313a;
+  --popover-foreground: #abb2bf;
+  --secondary: #353b45;
+  --secondary-foreground: #abb2bf;
+  --muted: #2f343d;
+  --muted-foreground: #5c6370;
+  --accent: #3e4451;
+  --accent-foreground: #d7dae0;
+  --border: #3a3f4b;
+  --input: #353b45;
+  --ring: #61afef;
+  --sidebar: #21252b;
+  --sidebar-foreground: #abb2bf;
+  --sidebar-primary: #61afef;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #3e4451;
+  --sidebar-accent-foreground: #d7dae0;
+  --sidebar-border: #181a1f;
+  --sidebar-ring: #61afef;
 }
 
 @layer base {

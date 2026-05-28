@@ -240,7 +240,7 @@ export function ProjectSidebar({
   }
 
   return (
-    <div className="flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-background [-webkit-app-region:no-drag]">
+    <div className="flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]">
       {/* Reserve the top-left area for the macOS traffic lights, with the
           collapse control pinned to the right edge. */}
       <div className="flex h-[40px] shrink-0 items-center justify-end pr-3 [-webkit-app-region:drag]">

@@ -811,7 +811,7 @@ export function RightSidebar({
   }, [cwd, isActive, runRefresh, largeChangeSet])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
       <Tabs
         value={tab}
         onValueChange={(v) => {
@@ -828,7 +828,7 @@ export function RightSidebar({
           >
             <TabsTrigger
               value="changes"
-              className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
+              className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground dark:!text-foreground after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Changes
               {hasData && files.length > 0 && (
@@ -837,13 +837,13 @@ export function RightSidebar({
             </TabsTrigger>
             <TabsTrigger
               value="files"
-              className="!h-6 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
+              className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground dark:!text-foreground after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Files
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="!h-6 rounded-sm !border-0 px-2 text-xs after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
+              className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground dark:!text-foreground after:!opacity-0 hover:!bg-foreground/10 dark:hover:!bg-foreground/15 data-active:!bg-foreground/10 data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               History
             </TabsTrigger>

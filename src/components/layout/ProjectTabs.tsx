@@ -37,31 +37,13 @@ import {
   useTabOpenAnimation,
 } from "./tabSizing"
 import { randomizeProjectColor, type RecentProject } from "@/lib/projects"
+import {
+  projectHasAttentionAgent,
+  projectHasDoneAgent,
+  projectHasWorkingAgent,
+} from "@/lib/projectAgentStatus"
 import { ProjectAvatar } from "./ProjectAvatar"
 import type { Project } from "./types"
-
-function tabHasWorkingAgent(tab: Project["tabs"][number]): boolean {
-  return (
-    tab.kind === "terminal" &&
-    tab.panes.some((pane) => pane.agentStatus?.working)
-  )
-}
-
-function projectHasWorkingAgent(project: Project): boolean {
-  return project.tabs.some(tabHasWorkingAgent)
-}
-
-function projectHasDoneAgent(project: Project): boolean {
-  return !!project.agentDone && !projectHasWorkingAgent(project)
-}
-
-function projectHasAttentionAgent(project: Project): boolean {
-  return project.tabs.some(
-    (tab) =>
-      tab.kind === "terminal" &&
-      tab.panes.some((pane) => pane.agentStatus?.needsAttention),
-  )
-}
 
 type Props = {
   projects: Project[]

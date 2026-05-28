@@ -9,6 +9,7 @@ import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { ProjectSidebar } from "./ProjectSidebar"
+import { ProjectSwitcher } from "./ProjectSwitcher"
 import { useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
@@ -2237,16 +2238,15 @@ export function AppShell() {
             <div className="w-[84px] shrink-0 self-stretch" />
             {expandProjectSidebarButton}
             {activeProject && (
-              // A non-interactive reminder of the current project (no close
-              // button) since the sidebar that normally shows it is hidden.
-              <div className="flex min-w-0 items-center gap-1.5 pr-3 pl-2.5">
-                <ProjectAvatar
-                  name={activeProject.name}
-                  path={activeProject.path}
+              // Project switcher standing in for the hidden sidebar — lets the
+              // user switch projects (or add one) without expanding it.
+              <div className="flex min-w-0 items-center pr-2 pl-1.5">
+                <ProjectSwitcher
+                  projects={projects}
+                  activeProjectId={activeProjectId}
+                  onSelect={selectProject}
+                  onAdd={addProject}
                 />
-                <span className="max-w-[220px] truncate text-xs font-medium text-foreground">
-                  {activeProject.name}
-                </span>
               </div>
             )}
           </>

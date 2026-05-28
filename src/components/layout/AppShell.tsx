@@ -123,7 +123,7 @@ function makeId() {
 }
 
 const SIDEBAR_REVEAL_OUTSIDE_LIMIT = 500
-const RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS = 180
+const RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS = 200
 // Must match the fixed width of ProjectSidebar so the collapse/expand width
 // animation clips its contents without reflowing them.
 const PROJECT_SIDEBAR_WIDTH = 248

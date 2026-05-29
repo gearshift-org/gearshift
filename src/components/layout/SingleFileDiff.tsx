@@ -42,6 +42,13 @@ const diffsWorkerPoolOptions = {
   poolSize: 4,
 }
 
+// The worker pool tokenizes with the theme it's initialized with here — the
+// per-render `theme` option on the viewer only drives CSS variables, not the
+// syntax tokens. Use Atom One to match the code editor (oneDark).
+const diffsHighlighterOptions = {
+  theme: { dark: "one-dark-pro", light: "one-light" },
+} as const
+
 export function SingleFileDiff({
   cwd,
   path,
@@ -262,7 +269,7 @@ export function SingleFileDiff({
     return (
       <WorkerPoolContextProvider
         poolOptions={diffsWorkerPoolOptions}
-        highlighterOptions={{}}
+        highlighterOptions={diffsHighlighterOptions}
       >
         <DiffViewer
           cwd={cwd}

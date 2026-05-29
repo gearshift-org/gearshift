@@ -59,6 +59,14 @@ const DIFFS_UNSAFE_CSS = `
   color: var(--foreground);
   font-family: "SF Mono", "SFMono-Regular", Menlo, monospace;
   font-size: 12px;
+
+  /* Anchor the diff's base background/foreground to the app palette so every
+     theme variant (Default, Cool, Atom One, …) matches — the library otherwise
+     derives these from the Shiki theme's own bg/fg. All context/addition/
+     deletion/gutter backgrounds are mixed from --diffs-bg, so this one anchor
+     re-tints the whole diff. !important wins over the library's :host rule. */
+  --diffs-bg: var(--card) !important;
+  --diffs-fg: var(--card-foreground) !important;
 }
 * { box-sizing: border-box; }
 [data-diffs-header] {
@@ -175,7 +183,9 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
         diffStyle: viewMode,
         overflow: "scroll" as const,
         stickyHeaders: true,
-        theme: { dark: "github-dark", light: "github-light" },
+        // Match the code editor's syntax palette (Atom One) so the diff
+        // preview doesn't read as GitHub-themed against the rest of the app.
+        theme: { dark: "one-dark-pro", light: "one-light" },
         themeType,
         hunkSeparators: "line-info" as const,
         lineDiffType: "word-alt" as const,

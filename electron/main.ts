@@ -622,6 +622,31 @@ async function runGitWithProjectEnv(
   return stdout
 }
 
+/**
+ * Returns the subset of `names` (entries directly inside `dir`) that git
+ * considers ignored. Used to dim gitignored files/folders in the file tree.
+ * Resolves to an empty set when `dir` isn't in a git repo or git is missing.
+ */
+async function readIgnoredNames(
+  dir: string,
+  names: string[]
+): Promise<Set<string>> {
+  if (names.length === 0) return new Set()
+  try {
+    // check-ignore echoes back each pathspec that is ignored (null-separated).
+    // It exits 1 when nothing matches, which runGitAllowExit1 treats as success.
+    const out = await runGitAllowExit1(dir, [
+      "check-ignore",
+      "-z",
+      "--",
+      ...names,
+    ])
+    return new Set(out.split("\0").filter(Boolean))
+  } catch {
+    return new Set()
+  }
+}
+
 async function runGitAllowExit1(cwd: string, args: string[]): Promise<string> {
   try {
     return await runGit(cwd, args)
@@ -1233,9 +1258,18 @@ app.whenReady().then(async () => {
       // default `files.exclude` glob set. Gitignored files (node_modules, build
       // output, etc.) stay visible and are reached by expanding the tree;
       // search (fs:listAllFiles) is where ignored files get filtered out.
-      const entries = dirents
-        .filter((d) => !VSCODE_DEFAULT_EXCLUDED_NAMES.has(d.name))
-        .map((d) => ({ name: d.name, isDir: d.isDirectory() }))
+      const visible = dirents.filter(
+        (d) => !VSCODE_DEFAULT_EXCLUDED_NAMES.has(d.name)
+      )
+      const ignored = await readIgnoredNames(
+        absPath,
+        visible.map((d) => d.name)
+      )
+      const entries = visible.map((d) => ({
+        name: d.name,
+        isDir: d.isDirectory(),
+        ignored: ignored.has(d.name),
+      }))
       return { ok: true, entries }
     } catch (err) {
       return { ok: false, error: (err as Error).message, entries: [] }

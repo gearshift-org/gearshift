@@ -33,7 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { setPathDragData } from "@/lib/pathDrag"
 import { cn } from "@/lib/utils"
 
-type Entry = { name: string; isDir: boolean }
+type Entry = { name: string; isDir: boolean; ignored?: boolean }
 
 type NodeProps = {
   cwd: string
@@ -45,6 +45,8 @@ type NodeProps = {
   depth: number
   onOpenFile: (relPath: string) => void
   activePath?: string
+  /** True when this entry is gitignored — rendered dimmed, like VS Code. */
+  ignored?: boolean
 }
 
 const CollapseSignalContext = createContext(0)
@@ -98,6 +100,7 @@ function FolderNode({
   depth,
   onOpenFile,
   activePath,
+  ignored,
 }: NodeProps) {
   const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
   const [forceClosed, setForceClosed] = useState(false)
@@ -148,7 +151,8 @@ function FolderNode({
         }
       }}
       className={cn(
-        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40"
+        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+        ignored && "opacity-80"
       )}
       style={{ paddingLeft: depth * 12 }}
     >
@@ -202,6 +206,7 @@ function FolderNode({
                   depth={depth + 1}
                   onOpenFile={onOpenFile}
                   activePath={activePath}
+                  ignored={e.ignored}
                 />
               )
             }
@@ -214,6 +219,7 @@ function FolderNode({
                 active={childRel === activePath}
                 depth={depth}
                 onOpenFile={onOpenFile}
+                ignored={e.ignored}
               />
             )
           })}
@@ -362,6 +368,7 @@ function FileNode({
   active,
   depth,
   onOpenFile,
+  ignored,
 }: {
   name: string
   absPath: string
@@ -369,6 +376,7 @@ function FileNode({
   active: boolean
   depth: number
   onOpenFile: (relPath: string) => void
+  ignored?: boolean
 }) {
   const ref = useRef<HTMLButtonElement>(null)
 
@@ -387,7 +395,8 @@ function FileNode({
         onClick={() => onOpenFile(relPath)}
         className={cn(
           "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
-          active && "bg-foreground/10 dark:bg-foreground/15"
+          active && "bg-foreground/10 dark:bg-foreground/15",
+          ignored && "opacity-80"
         )}
         style={{ paddingLeft: (depth + 1) * 12 + 12 }}
       >

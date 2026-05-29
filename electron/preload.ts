@@ -215,7 +215,7 @@ const fsApi = {
     ipcRenderer.invoke("fs:readDir", absPath) as Promise<{
       ok: boolean
       error?: string
-      entries: { name: string; isDir: boolean }[]
+      entries: { name: string; isDir: boolean; ignored?: boolean }[]
     }>,
   readFile: (absPath: string) =>
     ipcRenderer.invoke("fs:readFile", absPath) as Promise<{

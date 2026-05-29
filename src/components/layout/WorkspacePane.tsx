@@ -157,9 +157,10 @@ function dropId(paneId: string, zone: DropZone) {
 
 function parseDropId(id: string): { paneId: string; zone: DropZone } {
   const sep = id.lastIndexOf("::")
+  const zone = id.slice(sep + 2)
   return {
     paneId: id.slice(0, sep),
-    zone: id.slice(sep + 2) as DropZone,
+    zone: zone === "header" ? "center" : (zone as DropZone),
   }
 }
 
@@ -192,10 +193,30 @@ function EdgeZone({
   )
 }
 
+function HeaderDropZone({
+  paneId,
+  enabled,
+  children,
+}: {
+  paneId: string
+  enabled: boolean
+  children: ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `${paneId}::header` })
+  return (
+    <div ref={setNodeRef} className="relative shrink-0">
+      {children}
+      {enabled && isOver ? (
+        <div className="pointer-events-none absolute inset-0 z-20 rounded-sm bg-foreground/15 ring-2 ring-foreground/50 ring-inset" />
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * Wraps a pane with the five directional drop regions so a dragged terminal can
- * be dropped on an edge (to split that side) or the center (to swap). Regions
- * only activate while another pane is being dragged.
+ * be dropped on the body edge to split, or the body center to swap. Pane headers
+ * have their own center-only drop region so header-to-header drops always swap.
  */
 function PaneDropZone({
   paneId,
@@ -207,7 +228,7 @@ function PaneDropZone({
   children: ReactNode
 }) {
   return (
-    <div className="relative h-full">
+    <div className="relative min-h-0 flex-1">
       {children}
       {DROP_ZONES.map((z) => (
         <EdgeZone
@@ -328,15 +349,20 @@ function TerminalTabContent({
     const pane = tab.panes.find((p) => p.id === paneId)
     if (!pane) return null
     return (
-      <PaneDropZone
-        paneId={paneId}
-        enabled={draggingPaneId !== null && draggingPaneId !== paneId}
-      >
-        <div className="flex h-full flex-col">
+      <div className="flex h-full flex-col">
+        <HeaderDropZone
+          paneId={paneId}
+          enabled={draggingPaneId !== null && draggingPaneId !== paneId}
+        >
           {renderHeader(pane, orderedIds.indexOf(paneId))}
-          <div className="min-h-0 flex-1">{renderTerminal(pane)}</div>
-        </div>
-      </PaneDropZone>
+        </HeaderDropZone>
+        <PaneDropZone
+          paneId={paneId}
+          enabled={draggingPaneId !== null && draggingPaneId !== paneId}
+        >
+          {renderTerminal(pane)}
+        </PaneDropZone>
+      </div>
     )
   }
 

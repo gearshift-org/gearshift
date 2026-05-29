@@ -1,4 +1,5 @@
 import { store } from "./store"
+import type { TerminalLayout } from "@/components/layout/types"
 
 export type StoredPane = {
   /** Stable DOM-key id assigned at create time. Persists across restarts. */
@@ -18,6 +19,8 @@ export type StoredTab = {
   /** Persisted multi-pane state. Falls back to [{ id: tab.id }] for older snapshots. */
   panes?: StoredPane[]
   activePaneId?: string
+  /** Persisted recursive split arrangement over pane ids. */
+  layout?: TerminalLayout
 }
 
 export type StoredProject = {
@@ -224,6 +227,9 @@ export function loadProjects(): StoredProject[] {
                     : { activePaneId: panes[0]?.id ?? t.id }),
                   ...(typeof t.customName === "string"
                     ? { customName: t.customName }
+                    : {}),
+                  ...(t.layout && typeof t.layout === "object"
+                    ? { layout: t.layout as TerminalLayout }
                     : {}),
                 }
               })

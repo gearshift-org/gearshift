@@ -1,17 +1,16 @@
-import { Fragment, useCallback, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react"
 import { Columns2, Eye, FileCode, Rows3 } from "lucide-react"
 import {
-  closestCenter,
   DndContext,
+  DragOverlay,
   PointerSensor,
+  pointerWithin,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core"
-import {
-  horizontalListSortingStrategy,
-  SortableContext,
-} from "@dnd-kit/sortable"
 import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import { cn } from "@/lib/utils"
 import { KeyChip } from "@/components/keybindings/KeyChip"
@@ -26,7 +25,7 @@ import {
   writeMdMode,
   type MdMode,
 } from "./FilePreview"
-import { PaneHeader } from "./PaneHeader"
+import { PaneHeader, PaneHeaderPreview } from "./PaneHeader"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -40,9 +39,16 @@ import {
 import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { tabDisplayName } from "./terminalName"
+import {
+  ensureLayout,
+  nodeKey,
+  orderedPaneIds,
+} from "./terminalLayout"
 import type {
+  DropZone,
   Project,
   TerminalAgentStatus,
+  TerminalLayout,
   TerminalPane as TerminalPaneType,
   TerminalTab,
   WorkspaceTab,
@@ -59,11 +65,16 @@ type Props = {
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
-  onSplitTerminal?: (tabId: string) => void
+  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  onDropPane?: (
+    tabId: string,
+    movingPaneId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
   onOpenFile?: (path: string) => void
 }
 
@@ -120,6 +131,98 @@ function TerminalPaneView({
   )
 }
 
+// Five drop regions per pane. `hit` is the (invisible) area that registers the
+// drop; `preview` is the landing region drawn while hovering. The hit areas
+// tile the pane with no gaps/overlap so exactly one matches the pointer.
+const DROP_ZONES: { zone: DropZone; hit: string; preview: string }[] = [
+  { zone: "top", hit: "inset-x-0 top-0 h-[30%]", preview: "inset-x-0 top-0 h-1/2" },
+  {
+    zone: "bottom",
+    hit: "inset-x-0 bottom-0 h-[30%]",
+    preview: "inset-x-0 bottom-0 h-1/2",
+  },
+  { zone: "left", hit: "inset-y-[30%] left-0 w-[30%]", preview: "inset-y-0 left-0 w-1/2" },
+  {
+    zone: "right",
+    hit: "inset-y-[30%] right-0 w-[30%]",
+    preview: "inset-y-0 right-0 w-1/2",
+  },
+  { zone: "center", hit: "inset-[30%]", preview: "inset-0" },
+]
+
+/** Encodes a pane + drop region into a droppable id, e.g. "pane123::left". */
+function dropId(paneId: string, zone: DropZone) {
+  return `${paneId}::${zone}`
+}
+
+function parseDropId(id: string): { paneId: string; zone: DropZone } {
+  const sep = id.lastIndexOf("::")
+  return {
+    paneId: id.slice(0, sep),
+    zone: id.slice(sep + 2) as DropZone,
+  }
+}
+
+function EdgeZone({
+  paneId,
+  zone,
+  hit,
+  preview,
+  enabled,
+}: {
+  paneId: string
+  zone: DropZone
+  hit: string
+  preview: string
+  enabled: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: dropId(paneId, zone) })
+  return (
+    <>
+      <div ref={setNodeRef} className={cn("pointer-events-none absolute", hit)} />
+      {enabled && isOver ? (
+        <div
+          className={cn(
+            "pointer-events-none absolute z-20 rounded-sm bg-foreground/15 ring-2 ring-foreground/50 ring-inset",
+            preview
+          )}
+        />
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * Wraps a pane with the five directional drop regions so a dragged terminal can
+ * be dropped on an edge (to split that side) or the center (to swap). Regions
+ * only activate while another pane is being dragged.
+ */
+function PaneDropZone({
+  paneId,
+  enabled,
+  children,
+}: {
+  paneId: string
+  enabled: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="relative h-full">
+      {children}
+      {DROP_ZONES.map((z) => (
+        <EdgeZone
+          key={z.zone}
+          paneId={paneId}
+          zone={z.zone}
+          hit={z.hit}
+          preview={z.preview}
+          enabled={enabled}
+        />
+      ))}
+    </div>
+  )
+}
+
 function TerminalTabContent({
   tab,
   isActive,
@@ -130,7 +233,7 @@ function TerminalTabContent({
   onClosePane,
   onFocusPane,
   onRenamePane,
-  onReorderPanes,
+  onDropPane,
 }: {
   tab: TerminalTab
   isActive: boolean
@@ -141,40 +244,46 @@ function TerminalTabContent({
     status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
-  onSplitTerminal?: (tabId: string) => void
+  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  onDropPane?: (
+    tabId: string,
+    movingPaneId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
 }) {
   const multi = tab.panes.length > 1
+  const layout = ensureLayout(
+    tab.layout,
+    tab.panes.map((p) => p.id)
+  )
+  const orderedIds = orderedPaneIds(layout)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    onReorderPanes?.(tab.id, String(active.id), String(over.id))
+  const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null)
+  const draggingPane = draggingPaneId
+    ? tab.panes.find((p) => p.id === draggingPaneId)
+    : undefined
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setDraggingPaneId(String(event.active.id))
   }
 
-  // Mirror panel sizes so the lifted-out header row stays aligned with the
-  // terminal column beneath it. Even split until the user drags the handle.
-  const [paneSizes, setPaneSizes] = useState<number[]>(() =>
-    tab.panes.map(() => 100 / Math.max(1, tab.panes.length))
-  )
-  useEffect(() => {
-    setPaneSizes((prev) => {
-      if (prev.length === tab.panes.length) return prev
-      return tab.panes.map(() => 100 / Math.max(1, tab.panes.length))
-    })
-  }, [tab.panes.length])
-
-  const visiblePaneSizes =
-    paneSizes.length === tab.panes.length
-      ? paneSizes
-      : tab.panes.map(() => 100 / Math.max(1, tab.panes.length))
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDraggingPaneId(null)
+    const { active, over } = event
+    if (!over) return
+    const movingId = String(active.id)
+    const { paneId: targetId, zone } = parseDropId(String(over.id))
+    if (!targetId || targetId === movingId) return
+    onDropPane?.(tab.id, movingId, targetId, zone)
+  }
 
   const renderTerminal = (pane: TerminalPaneType) => (
     <div
@@ -198,81 +307,81 @@ function TerminalTabContent({
     </div>
   )
 
-  const panelGroup = (
-    <ResizablePanelGroup
-      orientation="horizontal"
-      className="min-h-0 flex-1"
-      onLayoutChange={(layout) => {
-        const next = tab.panes.map(
-          (p) => layout[p.id] ?? 100 / tab.panes.length
-        )
-        setPaneSizes((prev) => {
-          if (
-            prev.length === next.length &&
-            prev.every((v, i) => Math.abs(v - next[i]) < 0.01)
-          ) {
-            return prev
-          }
-          return next
-        })
-      }}
-    >
-      {tab.panes.map((pane, idx) => (
-        <Fragment key={pane.id}>
-          {idx > 0 && <ResizableHandle />}
-          <ResizablePanel
-            id={pane.id}
-            minSize={10}
-            defaultSize={100 / tab.panes.length}
-          >
-            {renderTerminal(pane)}
-          </ResizablePanel>
-        </Fragment>
-      ))}
-    </ResizablePanelGroup>
+  const renderHeader = (pane: TerminalPaneType, idx: number) => (
+    <PaneHeader
+      pane={pane}
+      index={idx}
+      isActive={tab.activePaneId === pane.id}
+      showSplit={tab.activePaneId === pane.id && !!onSplitTerminal}
+      showClose={multi}
+      onFocus={() => onFocusPane?.(tab.id, pane.id)}
+      onClose={() => onClosePane?.(tab.id, pane.id)}
+      onRename={(name) => onRenamePane?.(tab.id, pane.id, name)}
+      onSplitHorizontal={() => onSplitTerminal?.(tab.id, "horizontal")}
+      onSplitVertical={() => onSplitTerminal?.(tab.id, "vertical")}
+    />
   )
+
+  // A leaf carries its own header directly above its terminal so it travels
+  // with the pane through arbitrary nesting.
+  const renderLeaf = (paneId: string) => {
+    const pane = tab.panes.find((p) => p.id === paneId)
+    if (!pane) return null
+    return (
+      <PaneDropZone
+        paneId={paneId}
+        enabled={draggingPaneId !== null && draggingPaneId !== paneId}
+      >
+        <div className="flex h-full flex-col">
+          {renderHeader(pane, orderedIds.indexOf(paneId))}
+          <div className="min-h-0 flex-1">{renderTerminal(pane)}</div>
+        </div>
+      </PaneDropZone>
+    )
+  }
+
+  // Walk the split tree into nested ResizablePanelGroups. Each split node maps
+  // to one group; leaves render the pane. react-resizable-panels keeps each
+  // panel's drag size while mounted, keyed by its stable nodeKey.
+  const renderNode = (node: TerminalLayout): ReactNode => {
+    if (node.type === "leaf") return renderLeaf(node.paneId)
+    return (
+      <ResizablePanelGroup orientation={node.direction} className="min-h-0 flex-1">
+        {node.children.map((child, idx) => (
+          <Fragment key={nodeKey(child)}>
+            {idx > 0 && <ResizableHandle />}
+            <ResizablePanel
+              id={nodeKey(child)}
+              minSize={10}
+              defaultSize={100 / node.children.length}
+            >
+              {renderNode(child)}
+            </ResizablePanel>
+          </Fragment>
+        ))}
+      </ResizablePanelGroup>
+    )
+  }
 
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={() => setDraggingPaneId(null)}
     >
-      <SortableContext
-        items={tab.panes.map((p) => p.id)}
-        strategy={horizontalListSortingStrategy}
-      >
-        <div className="flex h-full flex-col">
-          {/* Headers live in a flat row above the panels so the sibling-swap
-              animation isn't clipped by react-resizable-panels' overflow.
-              Same row, same component for single and split — pane count
-              just changes the flex basis. */}
-          <div className="flex shrink-0">
-            {tab.panes.map((pane, idx) => (
-              <div
-                key={pane.id}
-                style={{
-                  flexBasis: `${visiblePaneSizes[idx] ?? 100 / tab.panes.length}%`,
-                }}
-                className={cn("min-w-0", idx > 0 && "border-l border-border")}
-              >
-                <PaneHeader
-                  pane={pane}
-                  index={idx}
-                  isActive={tab.activePaneId === pane.id}
-                  showSplit={tab.activePaneId === pane.id && !!onSplitTerminal}
-                  showClose={multi}
-                  onFocus={() => onFocusPane?.(tab.id, pane.id)}
-                  onClose={() => onClosePane?.(tab.id, pane.id)}
-                  onRename={(name) => onRenamePane?.(tab.id, pane.id, name)}
-                  onSplit={() => onSplitTerminal?.(tab.id)}
-                />
-              </div>
-            ))}
-          </div>
-          {panelGroup}
-        </div>
-      </SortableContext>
+      {/* Drag a pane's header onto any other pane to swap their positions
+          (handled in AppShell.reorderPanes via swapLeaves). */}
+      <div className="flex h-full flex-col">{renderNode(layout)}</div>
+      <DragOverlay dropAnimation={null}>
+        {draggingPane ? (
+          <PaneHeaderPreview
+            pane={draggingPane}
+            index={orderedIds.indexOf(draggingPane.id)}
+          />
+        ) : null}
+      </DragOverlay>
     </DndContext>
   )
 }
@@ -290,7 +399,7 @@ function PaneContent({
   onClosePane,
   onFocusPane,
   onRenamePane,
-  onReorderPanes,
+  onDropPane,
   onOpenFile,
   onFileDirtyChange,
 }: {
@@ -306,11 +415,16 @@ function PaneContent({
     status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
-  onSplitTerminal?: (tabId: string) => void
+  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  onDropPane?: (
+    tabId: string,
+    movingPaneId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
   onOpenFile?: (path: string) => void
   onFileDirtyChange?: (
     tabId: string,
@@ -336,7 +450,7 @@ function PaneContent({
         onClosePane={onClosePane}
         onFocusPane={onFocusPane}
         onRenamePane={onRenamePane}
-        onReorderPanes={onReorderPanes}
+        onDropPane={onDropPane}
       />
     )
   }
@@ -373,7 +487,7 @@ export function WorkspacePane({
   onClosePane,
   onFocusPane,
   onRenamePane,
-  onReorderPanes,
+  onDropPane,
   onOpenFile,
 }: Props) {
   const { bindings } = useKeybindings()
@@ -552,7 +666,7 @@ export function WorkspacePane({
                 onClosePane={onClosePane}
                 onFocusPane={onFocusPane}
                 onRenamePane={onRenamePane}
-                onReorderPanes={onReorderPanes}
+                onDropPane={onDropPane}
                 onOpenFile={onOpenFile}
                 onFileDirtyChange={handleFileDirtyChange}
               />
@@ -585,6 +699,8 @@ export function WorkspacePane({
                 <KeyChip accelerator={bindings["terminal.new"][0]} />
                 <span>or</span>
                 <KeyChip accelerator={bindings["terminal.split"][0]} />
+                <span>/</span>
+                <KeyChip accelerator={bindings["terminal.splitVertical"][0]} />
               </div>
             </div>
           </div>

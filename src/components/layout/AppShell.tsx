@@ -21,9 +21,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { tabDisplayName } from "./terminalName"
+import {
+  ensureLayout,
+  moveLeafBeside,
+  orderedPaneIds,
+  removeLeaf,
+  splitLeaf,
+  swapLeaves,
+} from "./terminalLayout"
 import agentCompleteSoundUrl from "@/assets/sounds/agent-complete.wav?url"
 import type {
+  DropZone,
   Project,
+  SplitDirection,
   TerminalAgentName,
   TerminalAgentStatus,
   WorkspaceTab,
@@ -100,6 +110,7 @@ function hydrateProjectSnapshot(): {
             customName: t.customName,
             panes,
             activePaneId,
+            ...(t.layout ? { layout: t.layout } : {}),
           }
         }),
         activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
@@ -198,6 +209,7 @@ function serializeProjects(projects: Project[]) {
         id: t.id,
         name: t.name,
         ...(t.customName ? { customName: t.customName } : {}),
+        ...(t.layout ? { layout: t.layout } : {}),
         activePaneId: t.activePaneId,
         panes: t.panes.map((pp) => {
           // Persist the live sessionId for running panes, and keep the
@@ -1030,12 +1042,13 @@ export function AppShell() {
     )
   }
 
-  const reorderPanes = (
+  const dropPane = (
     tabId: string,
-    fromPaneId: string,
-    toPaneId: string
+    movingPaneId: string,
+    targetPaneId: string,
+    zone: DropZone
   ) => {
-    if (fromPaneId === toPaneId || !activeProjectId) return
+    if (movingPaneId === targetPaneId || !activeProjectId) return
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== activeProjectId) return p
@@ -1043,13 +1056,25 @@ export function AppShell() {
           ...p,
           tabs: p.tabs.map((t) => {
             if (t.id !== tabId || t.kind !== "terminal") return t
-            const from = t.panes.findIndex((pp) => pp.id === fromPaneId)
-            const to = t.panes.findIndex((pp) => pp.id === toPaneId)
-            if (from < 0 || to < 0) return t
-            const panes = t.panes.slice()
-            const [moved] = panes.splice(from, 1)
-            panes.splice(to, 0, moved)
-            return { ...t, panes }
+            const base = ensureLayout(
+              t.layout,
+              t.panes.map((pp) => pp.id)
+            )
+            // Center swaps the two panes; an edge moves the dragged pane into a
+            // new split on that side of the target.
+            const layout =
+              zone === "center"
+                ? swapLeaves(base, movingPaneId, targetPaneId)
+                : moveLeafBeside(
+                    base,
+                    movingPaneId,
+                    targetPaneId,
+                    zone === "left" || zone === "right"
+                      ? "horizontal"
+                      : "vertical",
+                    zone === "left" || zone === "top"
+                  )
+            return { ...t, layout }
           }),
         }
       })
@@ -1121,7 +1146,7 @@ export function AppShell() {
 
   /** Add a new terminal pane to an existing terminal tab (Cmd+D / split). */
   const splitTerminalPane = useCallback(
-    async (tabId: string) => {
+    async (tabId: string, direction: SplitDirection = "horizontal") => {
       if (!activeProject) return
       const tab = activeProject.tabs.find((t) => t.id === tabId)
       if (!tab || tab.kind !== "terminal") return
@@ -1135,15 +1160,21 @@ export function AppShell() {
           p.id === activeProject.id
             ? {
                 ...p,
-                tabs: p.tabs.map((t) =>
-                  t.id === tabId && t.kind === "terminal"
-                    ? {
-                        ...t,
-                        panes: [...t.panes, { id: paneId, sessionId: paneId }],
-                        activePaneId: paneId,
-                      }
-                    : t
-                ),
+                tabs: p.tabs.map((t) => {
+                  if (t.id !== tabId || t.kind !== "terminal") return t
+                  // Split the focused leaf in place (Ghostty-style nesting),
+                  // so the new pane appears next to where the user was.
+                  const base = ensureLayout(
+                    t.layout,
+                    t.panes.map((pp) => pp.id)
+                  )
+                  return {
+                    ...t,
+                    panes: [...t.panes, { id: paneId, sessionId: paneId }],
+                    activePaneId: paneId,
+                    layout: splitLeaf(base, t.activePaneId, paneId, direction),
+                  }
+                }),
               }
             : p
         )
@@ -1186,11 +1217,17 @@ export function AppShell() {
             tabs: p.tabs.map((t) => {
               if (t.id !== tabId || t.kind !== "terminal") return t
               const panes = t.panes.filter((pp) => pp.id !== paneId)
+              const base = ensureLayout(
+                t.layout,
+                t.panes.map((pp) => pp.id)
+              )
+              const layout = removeLeaf(base, paneId) ?? undefined
+              const remaining = layout ? orderedPaneIds(layout) : []
               const nextActive =
                 t.activePaneId === paneId
-                  ? (panes[panes.length - 1]?.id ?? "")
+                  ? (remaining[remaining.length - 1] ?? "")
                   : t.activePaneId
-              return { ...t, panes, activePaneId: nextActive }
+              return { ...t, panes, activePaneId: nextActive, layout }
             }),
           }
         })
@@ -1951,7 +1988,9 @@ export function AppShell() {
   }
   const addTerminalRef = useRef<() => void>(() => undefined)
   const closeActiveTabRef = useRef<() => void>(() => undefined)
-  const splitActiveTerminalRef = useRef<() => void>(() => undefined)
+  const splitActiveTerminalRef = useRef<
+    (direction?: "horizontal" | "vertical") => void
+  >(() => undefined)
   const goToLastTerminalRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
@@ -1970,7 +2009,7 @@ export function AppShell() {
       }
       closeTab(activeTabId)
     }
-    splitActiveTerminalRef.current = () => {
+    splitActiveTerminalRef.current = (direction = "horizontal") => {
       if (!activeProject) return
       const hasTerminal = activeProject.tabs.some((t) => t.kind === "terminal")
       if (!hasTerminal) {
@@ -1980,7 +2019,7 @@ export function AppShell() {
       if (!activeTabId) return
       const active = activeProject.tabs.find((t) => t.id === activeTabId)
       if (active?.kind === "terminal") {
-        void splitTerminalPane(activeTabId)
+        void splitTerminalPane(activeTabId, direction)
       }
     }
     closeTabRef.current = closeTab
@@ -2043,7 +2082,11 @@ export function AppShell() {
           break
         case "terminal.split":
           e.preventDefault()
-          splitActiveTerminalRef.current()
+          splitActiveTerminalRef.current("horizontal")
+          break
+        case "terminal.splitVertical":
+          e.preventDefault()
+          splitActiveTerminalRef.current("vertical")
           break
         case "terminal.last":
           e.preventDefault()
@@ -2308,11 +2351,13 @@ export function AppShell() {
               void startTerminalPane(activeProject.id, tabId, paneId)
             }}
             onAddTerminal={() => void addTerminal()}
-            onSplitTerminal={(tabId) => void splitTerminalPane(tabId)}
+            onSplitTerminal={(tabId, direction) =>
+              void splitTerminalPane(tabId, direction)
+            }
             onClosePane={closePane}
             onFocusPane={setActivePane}
             onRenamePane={renamePane}
-            onReorderPanes={reorderPanes}
+            onDropPane={dropPane}
             onOpenDiffTab={openDiffTab}
             onOpenFileTab={openFileTab}
             rightSidebarTab={rightSidebarTab}

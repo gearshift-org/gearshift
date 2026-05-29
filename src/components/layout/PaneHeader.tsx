@@ -1,7 +1,6 @@
 import * as React from "react"
-import { useSortable } from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import { SplitSquareHorizontal, X } from "lucide-react"
+import { useDraggable } from "@dnd-kit/core"
+import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   Tooltip,
@@ -23,7 +22,8 @@ type Props = {
   onFocus: () => void
   onClose: () => void
   onRename: (name: string) => void
-  onSplit: () => void
+  onSplitHorizontal: () => void
+  onSplitVertical: () => void
 }
 
 
@@ -36,25 +36,23 @@ export function PaneHeader({
   onFocus,
   onClose,
   onRename,
-  onSplit,
+  onSplitHorizontal,
+  onSplitVertical,
 }: Props) {
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement | null>(null)
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: pane.id, disabled: editing })
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: pane.id,
+    disabled: editing,
+  })
 
+  // The dragged copy follows the cursor in a DragOverlay (never clipped by the
+  // panel's overflow), so the original just fades out while it's dragged. The
+  // drop-target highlight lives on the whole pane (see WorkspacePane).
   const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    zIndex: isDragging ? 30 : undefined,
+    opacity: isDragging ? 0 : undefined,
   }
 
   const startEdit = () => {
@@ -126,26 +124,48 @@ export function PaneHeader({
         <TerminalHistoryButton sessionId={pane.sessionId} />
       ) : null}
       {showSplit && !editing ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onMouseDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSplit()
-                }}
-                aria-label="Split pane"
-                className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-              >
-                <SplitSquareHorizontal className="size-3.5" />
-              </button>
-            }
-          />
-          <TooltipContent>Split pane</TooltipContent>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSplitHorizontal()
+                  }}
+                  aria-label="Split right"
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                >
+                  <SplitSquareHorizontal className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>Split right</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSplitVertical()
+                  }}
+                  aria-label="Split down"
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                >
+                  <SplitSquareVertical className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>Split down</TooltipContent>
+          </Tooltip>
+        </>
       ) : null}
       {showClose ? (
         <Tooltip>
@@ -169,6 +189,24 @@ export function PaneHeader({
           <TooltipContent>Close pane</TooltipContent>
         </Tooltip>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Floating preview rendered inside dnd-kit's DragOverlay while a pane header is
+ * being dragged. Lives in a portal, so it's never clipped by panel overflow.
+ */
+export function PaneHeaderPreview({
+  pane,
+  index,
+}: {
+  pane: TerminalPane
+  index: number
+}) {
+  return (
+    <div className="flex h-[34px] cursor-grabbing items-center gap-0.5 rounded-sm border border-border bg-background px-3 text-xs text-foreground shadow-lg ring-1 ring-foreground/30 select-none">
+      <span className="truncate">{paneDisplayName(pane, index)}</span>
     </div>
   )
 }

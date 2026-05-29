@@ -3,6 +3,7 @@ export type ActionId =
   | "projectSidebar.toggle"
   | "palette.open"
   | "terminal.split"
+  | "terminal.splitVertical"
   | "terminal.new"
   | "terminal.close"
   | "terminal.last"
@@ -41,8 +42,14 @@ export const ACTIONS: readonly ActionDef[] = [
   },
   {
     id: "terminal.split",
-    label: "Split Terminal",
+    label: "Split Terminal Right",
     defaultAccelerator: "CmdOrCtrl+D",
+    scope: "renderer",
+  },
+  {
+    id: "terminal.splitVertical",
+    label: "Split Terminal Down",
+    defaultAccelerator: "CmdOrCtrl+Shift+D",
     scope: "renderer",
   },
   {

@@ -6,7 +6,7 @@ import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { Project, TerminalAgentStatus } from "./types"
+import type { DropZone, Project, TerminalAgentStatus } from "./types"
 
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
@@ -36,11 +36,16 @@ type Props = {
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
-  onSplitTerminal?: (tabId: string) => void
+  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
-  onReorderPanes?: (tabId: string, fromPaneId: string, toPaneId: string) => void
+  onDropPane?: (
+    tabId: string,
+    movingPaneId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
   rightSidebarTab?: "changes" | "files" | "history"
@@ -68,7 +73,7 @@ export function WorkspaceSplit({
   onClosePane,
   onFocusPane,
   onRenamePane,
-  onReorderPanes,
+  onDropPane,
   onOpenDiffTab,
   onOpenFileTab,
   rightSidebarTab,
@@ -186,7 +191,7 @@ export function WorkspaceSplit({
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}
               onRenamePane={onRenamePane}
-              onReorderPanes={onReorderPanes}
+              onDropPane={onDropPane}
               onOpenFile={onOpenFileTab}
             />
           </div>

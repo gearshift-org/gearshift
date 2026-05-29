@@ -47,7 +47,28 @@ export type TerminalTab = {
   panes: TerminalPane[]
   /** Which pane currently has focus. */
   activePaneId: string
+  /**
+   * Recursive split arrangement over the tab's pane ids (Ghostty-style nested
+   * splits). When absent, panes fall back to a single horizontal row.
+   */
+  layout?: TerminalLayout
 }
+
+export type SplitDirection = "horizontal" | "vertical"
+
+/**
+ * Where a dragged pane is dropped relative to a target pane. Edges reposition
+ * the pane into a split on that side; "center" swaps the two panes.
+ */
+export type DropZone = "left" | "right" | "top" | "bottom" | "center"
+
+/**
+ * Binary-ish split tree. A leaf points at a pane id; a split arranges its
+ * children left-to-right ("horizontal") or top-to-bottom ("vertical").
+ */
+export type TerminalLayout =
+  | { type: "leaf"; paneId: string }
+  | { type: "split"; direction: SplitDirection; children: TerminalLayout[] }
 
 export type DiffTab = {
   kind: "diff"

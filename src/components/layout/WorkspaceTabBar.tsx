@@ -366,6 +366,7 @@ export function WorkspaceTabBar({
 
   return (
     <div
+      data-terminal-tab-drop-target="true"
       className={cn(
         "flex h-[34px] shrink-0 items-stretch border-b border-border bg-background",
         draggable && "[-webkit-app-region:drag]"

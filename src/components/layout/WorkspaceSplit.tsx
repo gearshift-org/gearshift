@@ -46,6 +46,7 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
   rightSidebarTab?: "changes" | "files" | "history"
@@ -74,6 +75,7 @@ export function WorkspaceSplit({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onExtractPaneToTab,
   onOpenDiffTab,
   onOpenFileTab,
   rightSidebarTab,
@@ -192,6 +194,7 @@ export function WorkspaceSplit({
               onFocusPane={onFocusPane}
               onRenamePane={onRenamePane}
               onDropPane={onDropPane}
+              onExtractPaneToTab={onExtractPaneToTab}
               onOpenFile={onOpenFileTab}
             />
           </div>

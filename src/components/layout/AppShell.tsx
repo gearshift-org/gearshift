@@ -20,7 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { tabDisplayName } from "./terminalName"
+import { paneDisplayName, tabDisplayName } from "./terminalName"
 import {
   ensureLayout,
   moveLeafBeside,
@@ -1079,6 +1079,64 @@ export function AppShell() {
         }
       })
     )
+  }
+
+  const extractPaneToTab = (tabId: string, paneId: string) => {
+    if (!activeProjectId) return
+    const source = activeProject?.tabs.find((t) => t.id === tabId)
+    if (!source || source.kind !== "terminal" || source.panes.length <= 1) return
+    if (!source.panes.some((pane) => pane.id === paneId)) return
+    const newTabId = makeId()
+    setOpeningTerminalTabId(newTabId)
+    window.setTimeout(() => setOpeningTerminalTabId(null), 300)
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        const sourceTab = p.tabs.find((t) => t.id === tabId)
+        if (!sourceTab || sourceTab.kind !== "terminal") return p
+        if (sourceTab.panes.length <= 1) return p
+        const paneIndex = sourceTab.panes.findIndex((pane) => pane.id === paneId)
+        const pane = sourceTab.panes[paneIndex]
+        if (!pane) return p
+
+        const remainingPanes = sourceTab.panes.filter((pane) => pane.id !== paneId)
+        const sourceLayout = ensureLayout(
+          sourceTab.layout,
+          sourceTab.panes.map((pane) => pane.id)
+        )
+        const nextSourceLayout = removeLeaf(sourceLayout, paneId)
+        const nextActivePaneId =
+          sourceTab.activePaneId === paneId
+            ? (remainingPanes[paneIndex] ?? remainingPanes[paneIndex - 1])?.id ??
+              remainingPanes[0]?.id ??
+              ""
+            : sourceTab.activePaneId
+        const terminalCount = p.tabs.filter((t) => t.kind === "terminal").length
+        return {
+          ...p,
+          activeTabId: newTabId,
+          tabs: [
+            ...p.tabs.map((t) => {
+              if (t.id !== tabId || t.kind !== "terminal") return t
+              return {
+                ...t,
+                panes: remainingPanes,
+                activePaneId: nextActivePaneId,
+                ...(nextSourceLayout ? { layout: nextSourceLayout } : {}),
+              }
+            }),
+            {
+              kind: "terminal" as const,
+              id: newTabId,
+              name: paneDisplayName(pane, terminalCount),
+              panes: [pane],
+              activePaneId: pane.id,
+            },
+          ],
+        }
+      })
+    )
+    navigateToTab(newTabId)
   }
 
   const closeOtherProjects = async (keepId: string) => {
@@ -2358,6 +2416,7 @@ export function AppShell() {
             onFocusPane={setActivePane}
             onRenamePane={renamePane}
             onDropPane={dropPane}
+            onExtractPaneToTab={extractPaneToTab}
             onOpenDiffTab={openDiffTab}
             onOpenFileTab={openFileTab}
             rightSidebarTab={rightSidebarTab}

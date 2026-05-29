@@ -9,6 +9,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core"
 import logoGrayUrl from "@/assets/logo-gray.svg?url"
@@ -75,6 +76,7 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
 }
 
@@ -255,6 +257,7 @@ function TerminalTabContent({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onExtractPaneToTab,
 }: {
   tab: TerminalTab
   isActive: boolean
@@ -275,6 +278,7 @@ function TerminalTabContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onExtractPaneToTab?: (tabId: string, paneId: string) => void
 }) {
   const multi = tab.panes.length > 1
   const layout = ensureLayout(
@@ -288,19 +292,44 @@ function TerminalTabContent({
   )
 
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null)
+  const [tabBarDropRect, setTabBarDropRect] = useState<DOMRect | null>(null)
   const draggingPane = draggingPaneId
     ? tab.panes.find((p) => p.id === draggingPaneId)
     : undefined
 
   const handleDragStart = (event: DragStartEvent) => {
     setDraggingPaneId(String(event.active.id))
+    setTabBarDropRect(null)
+  }
+
+  const tabBarDropTarget = (event: DragMoveEvent | DragEndEvent) => {
+    const activator = event.activatorEvent
+    if (!(activator instanceof MouseEvent || activator instanceof PointerEvent)) {
+      return null
+    }
+    const x = activator.clientX + event.delta.x
+    const y = activator.clientY + event.delta.y
+    for (const el of document.elementsFromPoint(x, y)) {
+      const target = el.closest('[data-terminal-tab-drop-target="true"]')
+      if (target instanceof HTMLElement) return target
+    }
+    return null
+  }
+
+  const handleDragMove = (event: DragMoveEvent) => {
+    setTabBarDropRect(tabBarDropTarget(event)?.getBoundingClientRect() ?? null)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     setDraggingPaneId(null)
+    setTabBarDropRect(null)
     const { active, over } = event
-    if (!over) return
     const movingId = String(active.id)
+    if (tabBarDropTarget(event)) {
+      onExtractPaneToTab?.(tab.id, movingId)
+      return
+    }
+    if (!over) return
     const { paneId: targetId, zone } = parseDropId(String(over.id))
     if (!targetId || targetId === movingId) return
     onDropPane?.(tab.id, movingId, targetId, zone)
@@ -394,12 +423,27 @@ function TerminalTabContent({
       sensors={sensors}
       collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
-      onDragCancel={() => setDraggingPaneId(null)}
+      onDragCancel={() => {
+        setDraggingPaneId(null)
+        setTabBarDropRect(null)
+      }}
     >
       {/* Drag a pane's header onto any other pane to swap their positions
           (handled in AppShell.reorderPanes via swapLeaves). */}
       <div className="flex h-full flex-col">{renderNode(layout)}</div>
+      {tabBarDropRect ? (
+        <div
+          className="pointer-events-none fixed z-[250] bg-foreground/10 ring-2 ring-foreground/40 ring-inset"
+          style={{
+            top: tabBarDropRect.top,
+            left: tabBarDropRect.left,
+            width: tabBarDropRect.width,
+            height: tabBarDropRect.height,
+          }}
+        />
+      ) : null}
       <DragOverlay dropAnimation={null}>
         {draggingPane ? (
           <PaneHeaderPreview
@@ -426,6 +470,7 @@ function PaneContent({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onExtractPaneToTab,
   onOpenFile,
   onFileDirtyChange,
 }: {
@@ -451,6 +496,7 @@ function PaneContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
   onFileDirtyChange?: (
     tabId: string,
@@ -477,6 +523,7 @@ function PaneContent({
         onFocusPane={onFocusPane}
         onRenamePane={onRenamePane}
         onDropPane={onDropPane}
+        onExtractPaneToTab={onExtractPaneToTab}
       />
     )
   }
@@ -514,6 +561,7 @@ export function WorkspacePane({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onExtractPaneToTab,
   onOpenFile,
 }: Props) {
   const { bindings } = useKeybindings()
@@ -693,6 +741,7 @@ export function WorkspacePane({
                 onFocusPane={onFocusPane}
                 onRenamePane={onRenamePane}
                 onDropPane={onDropPane}
+                onExtractPaneToTab={onExtractPaneToTab}
                 onOpenFile={onOpenFile}
                 onFileDirtyChange={handleFileDirtyChange}
               />

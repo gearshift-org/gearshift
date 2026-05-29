@@ -135,6 +135,7 @@ const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   pi: "pi",
   gemini: "gemini",
 }
+const APP_TITLE = "GearShift"
 const AGENT_TERMINAL_LABELS: Record<TerminalAgentName, string> = {
   claude: "Claude",
   codex: "Codex",
@@ -248,6 +249,11 @@ function formatDuration(ms: number) {
   if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
   if (minutes > 0) return `${minutes}m ${seconds}s`
   return `${seconds}s`
+}
+
+function buildDocumentTitle(activeProject: Project | undefined): string {
+  if (!activeProject) return APP_TITLE
+  return `${APP_TITLE} - ${activeProject.name}`
 }
 
 export function AppShell() {
@@ -669,6 +675,11 @@ export function AppShell() {
     }
     return activeProject.tabs[0]?.id ?? ""
   })()
+  const documentTitle = buildDocumentTitle(activeProject)
+
+  useEffect(() => {
+    document.title = documentTitle
+  }, [documentTitle])
 
   const navigateToProject = useCallback(
     (id: string | null, tabId?: string) => {

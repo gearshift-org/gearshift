@@ -871,6 +871,21 @@ export function AppShell() {
     void openProjectByPath(recent.path, recent.name)
   }
 
+  const dropProjectFolders = async (paths: string[]) => {
+    let skipped = 0
+    for (const path of paths) {
+      const stat = await window.fsApi.stat(path)
+      if (!stat.ok || !stat.isDir) {
+        skipped += 1
+        continue
+      }
+      await openProjectByPath(path)
+    }
+    if (skipped > 0) {
+      toast.info("Only folders can be added as projects")
+    }
+  }
+
   const selectProject = (id: string) => {
     const p = projects.find((x) => x.id === id)
     setProjects((prev) =>
@@ -2211,6 +2226,7 @@ export function AppShell() {
             )}
             onSelect={selectProject}
             onAdd={addProject}
+            onDropFolders={(paths) => void dropProjectFolders(paths)}
             onPickRecent={pickRecent}
             onClose={closeProject}
             onCloseAllTerminals={closeAllProjectTerminals}

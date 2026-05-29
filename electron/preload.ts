@@ -217,6 +217,12 @@ const fsApi = {
       error?: string
       entries: { name: string; isDir: boolean; ignored?: boolean }[]
     }>,
+  stat: (absPath: string) =>
+    ipcRenderer.invoke("fs:stat", absPath) as Promise<{
+      ok: boolean
+      error?: string
+      isDir?: boolean
+    }>,
   readFile: (absPath: string) =>
     ipcRenderer.invoke("fs:readFile", absPath) as Promise<{
       ok: boolean

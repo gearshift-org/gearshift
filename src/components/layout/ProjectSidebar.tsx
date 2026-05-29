@@ -47,6 +47,7 @@ type Props = {
   recents: RecentProject[]
   onSelect: (id: string) => void
   onAdd: () => void
+  onDropFolders?: (paths: string[]) => void
   onPickRecent: (recent: RecentProject) => void
   onClose?: (id: string) => void
   onCloseAllTerminals?: (id: string) => void
@@ -229,6 +230,7 @@ export function ProjectSidebar({
   recents,
   onSelect,
   onAdd,
+  onDropFolders,
   onPickRecent,
   onClose,
   onCloseAllTerminals,
@@ -239,9 +241,43 @@ export function ProjectSidebar({
   onReorder,
   onCollapse,
 }: Props) {
+  const [isFileDragOver, setIsFileDragOver] = useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
+
+  const isFileDrag = (dataTransfer: DataTransfer | null) =>
+    Array.from(dataTransfer?.types ?? []).includes("Files")
+
+  const readDroppedPaths = (files: FileList | undefined) => {
+    if (!files || files.length === 0) return []
+    const paths: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      const path = window.electronUtils.getPathForFile(files[i])
+      if (path) paths.push(path)
+    }
+    return paths
+  }
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+    setIsFileDragOver(true)
+  }
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setIsFileDragOver(false)
+  }
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(event.dataTransfer)) return
+    event.preventDefault()
+    setIsFileDragOver(false)
+    const paths = readDroppedPaths(event.dataTransfer.files)
+    if (paths.length > 0) onDropFolders?.(paths)
+  }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -250,7 +286,15 @@ export function ProjectSidebar({
   }
 
   return (
-    <div className="flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={cn(
+        "flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]",
+        isFileDragOver && "bg-accent/30 ring-1 ring-inset ring-primary/35"
+      )}
+    >
       {/* Reserve the top-left area for the macOS traffic lights, with the
           collapse control pinned to the right edge. */}
       <div className="flex h-[40px] shrink-0 items-center justify-end pr-3 [-webkit-app-region:drag]">

@@ -1276,6 +1276,16 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle("fs:stat", async (_event, absPath: string) => {
+    if (!absPath) return { ok: false, error: "no-path" }
+    try {
+      const stat = await fs.stat(absPath)
+      return { ok: true, isDir: stat.isDirectory() }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
   ipcMain.handle("fs:listAllFiles", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, files: [] }
     try {

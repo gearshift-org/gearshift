@@ -180,7 +180,7 @@ function ProjectSidebarRow({
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
         <ContextMenuItem onClick={() => onClose?.(p.id)} disabled={!canClose}>
-          Close
+          Remove
         </ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseAllTerminals?.(p.id)}
@@ -192,13 +192,13 @@ function ProjectSidebarRow({
           onClick={() => onCloseToRight?.(p.id)}
           disabled={!hasItemsBelow}
         >
-          Close Below
+          Remove Projects Below
         </ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseOthers?.(p.id)}
           disabled={total <= 1}
         >
-          Close Others
+          Remove Other Projects
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={randomizeAvatarColor}>

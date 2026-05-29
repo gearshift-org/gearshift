@@ -270,7 +270,7 @@ function ProjectTabItem({
       </Popover>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
         <ContextMenuItem onClick={() => onClose?.(p.id)} disabled={!canClose}>
-          Close
+          Remove
         </ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseAllTerminals?.(p.id)}
@@ -282,13 +282,13 @@ function ProjectTabItem({
           onClick={() => onCloseToRight?.(p.id)}
           disabled={!hasTabsToRight}
         >
-          Close to the Right
+          Remove Projects to the Right
         </ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseOthers?.(p.id)}
           disabled={total <= 1}
         >
-          Close Others
+          Remove Other Projects
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={randomizeAvatarColor}>

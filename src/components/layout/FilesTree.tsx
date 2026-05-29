@@ -152,7 +152,7 @@ function FolderNode({
       }}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
-        ignored && "opacity-80"
+        ignored && "text-muted-foreground opacity-80"
       )}
       style={{ paddingLeft: depth * 12 }}
     >
@@ -206,7 +206,7 @@ function FolderNode({
                   depth={depth + 1}
                   onOpenFile={onOpenFile}
                   activePath={activePath}
-                  ignored={e.ignored}
+                  ignored={ignored || e.ignored}
                 />
               )
             }
@@ -219,7 +219,7 @@ function FolderNode({
                 active={childRel === activePath}
                 depth={depth}
                 onOpenFile={onOpenFile}
-                ignored={e.ignored}
+                ignored={ignored || e.ignored}
               />
             )
           })}
@@ -396,7 +396,7 @@ function FileNode({
         className={cn(
           "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
           active && "bg-foreground/10 dark:bg-foreground/15",
-          ignored && "opacity-80"
+          ignored && "text-muted-foreground opacity-80"
         )}
         style={{ paddingLeft: (depth + 1) * 12 + 12 }}
       >

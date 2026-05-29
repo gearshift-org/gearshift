@@ -633,14 +633,27 @@ async function readIgnoredNames(
 ): Promise<Set<string>> {
   if (names.length === 0) return new Set()
   try {
-    // check-ignore echoes back each pathspec that is ignored (null-separated).
-    // It exits 1 when nothing matches, which runGitAllowExit1 treats as success.
-    const out = await runGitAllowExit1(dir, [
-      "check-ignore",
-      "-z",
-      "--",
-      ...names,
-    ])
+    // With multiple pathspecs, `git check-ignore -z` only works with --stdin.
+    // It echoes each ignored path back as a null-separated string.
+    const out = await new Promise<string>((resolve, reject) => {
+      const child = spawn("git", ["check-ignore", "-z", "--stdin"], {
+        cwd: dir,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+      const stdout: Buffer[] = []
+      const stderr: Buffer[] = []
+      child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk))
+      child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk))
+      child.on("error", reject)
+      child.on("close", (code) => {
+        if (code === 0 || code === 1) {
+          resolve(Buffer.concat(stdout).toString("utf8"))
+          return
+        }
+        reject(new Error(Buffer.concat(stderr).toString("utf8")))
+      })
+      child.stdin.end(`${names.join("\0")}\0`)
+    })
     return new Set(out.split("\0").filter(Boolean))
   } catch {
     return new Set()

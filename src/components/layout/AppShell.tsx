@@ -2236,6 +2236,7 @@ export function AppShell() {
             onRevealInFinder={revealProjectInFinder}
             onReorder={reorderProjects}
             onCollapse={() => setProjectSidebarOpen(false)}
+            onOpenSettings={() => void navigate({ to: "/settings" })}
           />
         </div>
       )}

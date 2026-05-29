@@ -13,7 +13,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { PanelLeft, X } from "lucide-react"
+import { PanelLeft, Settings, X } from "lucide-react"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -57,6 +57,7 @@ type Props = {
   onRevealInFinder?: (id: string) => void
   onReorder?: (fromId: string, toId: string) => void
   onCollapse?: () => void
+  onOpenSettings?: () => void
 }
 
 type RowProps = {
@@ -240,6 +241,7 @@ export function ProjectSidebar({
   onRevealInFinder,
   onReorder,
   onCollapse,
+  onOpenSettings,
 }: Props) {
   const [isFileDragOver, setIsFileDragOver] = useState(false)
   const sensors = useSensors(
@@ -347,6 +349,24 @@ export function ProjectSidebar({
           onOpenDialog={onAdd}
           onPickRecent={onPickRecent}
         />
+      </div>
+      <div className="shrink-0 px-3 pb-3 pt-1.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                aria-label="Open settings"
+                className="flex h-7 w-fit items-center gap-2 rounded-md px-2 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              >
+                <Settings className="size-3.5 shrink-0" />
+                <span className="truncate">Settings</span>
+              </button>
+            }
+          />
+          <TooltipContent>Settings</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )

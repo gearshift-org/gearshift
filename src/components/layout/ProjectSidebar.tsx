@@ -172,7 +172,7 @@ function ProjectSidebarRow({
               onClose?.(p.id)
             }}
             aria-label={`Close ${p.name}`}
-            className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-sm bg-inherit text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
           >
             <X className="size-3.5" />
           </button>

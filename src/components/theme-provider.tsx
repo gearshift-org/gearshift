@@ -19,6 +19,7 @@ export const THEMES = {
   "light-forest": { label: "Forest", appearance: "light" },
   "light-violet": { label: "Violet", appearance: "light" },
   "light-atom-one": { label: "Atom One", appearance: "light" },
+  "light-claude": { label: "Claude", appearance: "light" },
   dark: { label: "Default", appearance: "dark" },
   "dark-cool": { label: "Cool", appearance: "dark" },
   "dark-warm": { label: "Warm", appearance: "dark" },
@@ -26,6 +27,7 @@ export const THEMES = {
   "dark-forest": { label: "Forest", appearance: "dark" },
   "dark-violet": { label: "Violet", appearance: "dark" },
   "dark-atom-one": { label: "Atom One", appearance: "dark" },
+  "dark-claude": { label: "Claude", appearance: "dark" },
 } as const satisfies Record<string, ThemeDefinition>
 
 export type ThemeId = keyof typeof THEMES

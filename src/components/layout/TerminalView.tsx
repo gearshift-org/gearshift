@@ -181,6 +181,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
       selectionBackground: "#3e4451",
       selectionInactiveBackground: "#353b45",
     },
+    "light-claude": {
+      background: "#f8f6ef",
+      foreground: "#3d3d3a",
+      cursor: "#d97757",
+      selectionBackground: "#ece2d8",
+      selectionForeground: "#3d3d3a",
+      selectionInactiveBackground: "#f0e8dd",
+    },
+    "dark-claude": {
+      background: "#262624",
+      foreground: "#c2c0b6",
+      cursor: "#d97757",
+      selectionBackground: "#5c4030",
+      selectionInactiveBackground: "#3f352e",
+    },
   }
 
 function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {

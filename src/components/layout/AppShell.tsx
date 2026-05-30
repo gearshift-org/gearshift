@@ -729,9 +729,17 @@ export function AppShell() {
   useEffect(() => {
     if (!activeProjectId) return
     const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
-    if (!set || set.size === 0) return
-    for (const id of set) toast.dismiss(id)
-    agentDoneToastsByProjectRef.current.delete(activeProjectId)
+    if (set && set.size > 0) {
+      for (const id of set) toast.dismiss(id)
+      agentDoneToastsByProjectRef.current.delete(activeProjectId)
+    }
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === activeProjectId && p.agentDone
+          ? { ...p, agentDone: false }
+          : p
+      )
+    )
   }, [activeProjectId])
 
   useEffect(() => {
@@ -739,9 +747,17 @@ export function AppShell() {
     const dismissActiveProjectToasts = () => {
       if (!isAppVisibleAndFocused()) return
       const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
-      if (!set || set.size === 0) return
-      for (const id of set) toast.dismiss(id)
-      agentDoneToastsByProjectRef.current.delete(activeProjectId)
+      if (set && set.size > 0) {
+        for (const id of set) toast.dismiss(id)
+        agentDoneToastsByProjectRef.current.delete(activeProjectId)
+      }
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProjectId && p.agentDone
+            ? { ...p, agentDone: false }
+            : p
+        )
+      )
     }
     window.addEventListener("focus", dismissActiveProjectToasts)
     document.addEventListener("visibilitychange", dismissActiveProjectToasts)
@@ -910,7 +926,7 @@ export function AppShell() {
         const activeTabId = tabs.some((t) => t.id === p.activeTabId)
           ? p.activeTabId
           : (tabs[0]?.id ?? "")
-        return { ...p, tabs, activeTabId }
+        return { ...p, tabs, activeTabId, agentDone: false }
       })
     )
     if (id === activeProjectId) {
@@ -1723,7 +1739,7 @@ export function AppShell() {
           tabs,
           agentDone: status.working
             ? false
-            : finishedWork
+            : finishedAwayFromAttention
               ? true
               : p.agentDone,
         }

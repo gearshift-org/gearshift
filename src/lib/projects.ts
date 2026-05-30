@@ -350,10 +350,10 @@ export function saveRightSidebarTab(tab: RightSidebarTab): void {
 
 export function loadRightSidebarEdgeReveal(): boolean {
   try {
-    // Default enabled unless explicitly disabled.
-    return store.get(RIGHT_SIDEBAR_EDGE_REVEAL_KEY) !== "0"
+    // Disabled by default; only an explicit "1" enables it.
+    return store.get(RIGHT_SIDEBAR_EDGE_REVEAL_KEY) === "1"
   } catch {
-    return true
+    return false
   }
 }
 
@@ -397,9 +397,10 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
 
 export function loadProjectSidebarLayout(): boolean {
   try {
-    return store.get(PROJECT_SIDEBAR_LAYOUT_KEY) === "1"
+    // Vertical sidebar is the default; only an explicit "0" disables it.
+    return store.get(PROJECT_SIDEBAR_LAYOUT_KEY) !== "0"
   } catch {
-    return false
+    return true
   }
 }
 

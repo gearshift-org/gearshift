@@ -1159,10 +1159,25 @@ export function TerminalView({
         scheduleRecap("needs_attention")
         return
       }
-      // Only the explicit lifecycle stop event completes hook-backed work.
+      // Only a stop that closes an active turn is a real completion. Some
+      // agents (notably pi) also emit session_end/session_shutdown when the TUI
+      // exits or resets while no prompt is running; those must not leave a stale
+      // completed dot on the project.
+      const hadActiveTurn = activeHookWorkRef.current || current.working
       activeHookWorkRef.current = false
       lastAgentActivityAtRef.current = 0
       hasSubmittedToAgentRef.current = false
+      if (!hadActiveTurn) {
+        emitAgentStatus({
+          ...current,
+          working: false,
+          agentName: event.agentName,
+          completedAt: undefined,
+          completed: false,
+          needsAttention: false,
+        })
+        return
+      }
       emitAgentStatus({
         running: current.running,
         working: false,

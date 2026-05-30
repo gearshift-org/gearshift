@@ -11,8 +11,20 @@ export function projectHasWorkingAgent(project: Project): boolean {
   return project.tabs.some(tabHasWorkingAgent)
 }
 
+function projectHasCompletedAgent(project: Project): boolean {
+  return project.tabs.some(
+    (tab) =>
+      tab.kind === "terminal" &&
+      tab.panes.some((pane) => pane.agentStatus?.completed)
+  )
+}
+
 export function projectHasDoneAgent(project: Project): boolean {
-  return !!project.agentDone && !projectHasWorkingAgent(project)
+  return (
+    !!project.agentDone &&
+    !projectHasWorkingAgent(project) &&
+    projectHasCompletedAgent(project)
+  )
 }
 
 export function projectHasAttentionAgent(project: Project): boolean {

@@ -18,6 +18,11 @@ const FILE_ICON_OVERRIDES: Record<string, MaterialIcon> = {
   "rollup.config.cjs": "rollup",
 };
 
+const COMPOUND_EXTENSION_ICON_OVERRIDES: Record<string, MaterialIcon> = {
+  blade: "laravel",
+  "blade.php": "laravel",
+};
+
 const EXTENSION_ICON_OVERRIDES: Record<string, MaterialIcon> = {
   aac: "audio",
   apng: "image",
@@ -69,10 +74,17 @@ export function getFileIconUrl(fileName: string): string {
     return getIconUrl(overrideIcon, DEFAULT_FILE_ICON);
   }
 
-  const extension = normalizedFileName.split(".").pop();
-  const extensionOverrideIcon = extension
-    ? EXTENSION_ICON_OVERRIDES[extension]
-    : undefined;
+  const parts = normalizedFileName.split(".");
+  const compoundExtensionOverrideIcon = parts
+    .slice(1)
+    .map((_, index) => parts.slice(index + 1).join("."))
+    .find((extension) => extension in COMPOUND_EXTENSION_ICON_OVERRIDES);
+  const extension = parts.at(-1);
+  const extensionOverrideIcon = compoundExtensionOverrideIcon
+    ? COMPOUND_EXTENSION_ICON_OVERRIDES[compoundExtensionOverrideIcon]
+    : extension
+      ? EXTENSION_ICON_OVERRIDES[extension]
+      : undefined;
 
   return getIconUrl(
     extensionOverrideIcon ?? getIconForFilePath(fileName),

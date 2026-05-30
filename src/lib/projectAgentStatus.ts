@@ -26,9 +26,13 @@ export function projectHasDoneAgent(project: Project): boolean {
 }
 
 export function projectHasAttentionAgent(project: Project): boolean {
-  return project.tabs.some(
-    (tab) =>
-      tab.kind === "terminal" &&
-      tab.panes.some((pane) => pane.agentStatus?.needsAttention),
+  return (
+    projectHasTerminalPane(project) &&
+    (project.agentNeedsAttention ||
+      project.tabs.some(
+        (tab) =>
+          tab.kind === "terminal" &&
+          tab.panes.some((pane) => pane.agentStatus?.needsAttention)
+      ))
   )
 }

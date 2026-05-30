@@ -735,8 +735,8 @@ export function AppShell() {
     }
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId && p.agentDone
-          ? { ...p, agentDone: false }
+        p.id === activeProjectId && (p.agentDone || p.agentNeedsAttention)
+          ? { ...p, agentDone: false, agentNeedsAttention: false }
           : p
       )
     )
@@ -753,8 +753,8 @@ export function AppShell() {
       }
       setProjects((prev) =>
         prev.map((p) =>
-          p.id === activeProjectId && p.agentDone
-            ? { ...p, agentDone: false }
+          p.id === activeProjectId && (p.agentDone || p.agentNeedsAttention)
+            ? { ...p, agentDone: false, agentNeedsAttention: false }
             : p
         )
       )
@@ -926,7 +926,7 @@ export function AppShell() {
         const activeTabId = tabs.some((t) => t.id === p.activeTabId)
           ? p.activeTabId
           : (tabs[0]?.id ?? "")
-        return { ...p, tabs, activeTabId, agentDone: false }
+        return { ...p, tabs, activeTabId, agentDone: false, agentNeedsAttention: false }
       })
     )
     if (id === activeProjectId) {
@@ -1325,6 +1325,7 @@ export function AppShell() {
             ? {
                 ...p,
                 agentDone: false,
+                agentNeedsAttention: false,
                 activeTabId: tabId,
                 tabs: p.tabs.map((t) =>
                   t.id === tabId && t.kind === "terminal"
@@ -1742,6 +1743,11 @@ export function AppShell() {
             : finishedAwayFromAttention
               ? true
               : p.agentDone,
+          agentNeedsAttention: status.working
+            ? false
+            : needsAttentionAway
+              ? true
+              : p.agentNeedsAttention,
         }
       })
     )

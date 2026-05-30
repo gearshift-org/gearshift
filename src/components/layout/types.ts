@@ -112,4 +112,6 @@ export type Project = {
   activeTabId: string
   /** Ephemeral marker shown after a background coding agent finishes work. */
   agentDone?: boolean
+  /** Ephemeral marker shown after a background coding agent needs input. */
+  agentNeedsAttention?: boolean
 }

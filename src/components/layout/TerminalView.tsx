@@ -471,7 +471,12 @@ export function TerminalView({
         if (lastUserInputAtRef.current > triggeredAt) return
         void window.term.history.list(sessionId).then((rows) => {
           if (lastUserInputAtRef.current > triggeredAt) return
-          setRecap({ message: rows.at(-1) ?? null, kind })
+          const latestMessage = rows.reduce<ChatHistoryMessage | null>(
+            (latest, row) =>
+              !latest || row.createdAt > latest.createdAt ? row : latest,
+            null
+          )
+          setRecap({ message: latestMessage, kind })
         })
       }, RECAP_IDLE_DELAY_MS)
     },

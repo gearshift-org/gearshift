@@ -1485,6 +1485,45 @@ app.whenReady().then(async () => {
     }
   })
 
+  function sniffMediaMime(buf: Buffer, mimeByExt: Record<string, string>) {
+    const has = (mime: string) => Object.values(mimeByExt).includes(mime)
+
+    if (
+      has("image/png") &&
+      buf.length >= 8 &&
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47 &&
+      buf[4] === 0x0d &&
+      buf[5] === 0x0a &&
+      buf[6] === 0x1a &&
+      buf[7] === 0x0a
+    ) {
+      return "image/png"
+    }
+    if (has("image/jpeg") && buf[0] === 0xff && buf[1] === 0xd8) {
+      return "image/jpeg"
+    }
+    if (has("image/gif") && buf.subarray(0, 3).toString("ascii") === "GIF") {
+      return "image/gif"
+    }
+    if (
+      has("image/webp") &&
+      buf.subarray(0, 4).toString("ascii") === "RIFF" &&
+      buf.subarray(8, 12).toString("ascii") === "WEBP"
+    ) {
+      return "image/webp"
+    }
+    if (has("audio/mpeg") && buf.subarray(0, 3).toString("ascii") === "ID3") {
+      return "audio/mpeg"
+    }
+    if (has("audio/wav") && buf.subarray(0, 4).toString("ascii") === "RIFF") {
+      return "audio/wav"
+    }
+    return null
+  }
+
   async function readMediaDataUrl(
     absPath: string,
     mimeByExt: Record<string, string>,
@@ -1496,10 +1535,10 @@ app.whenReady().then(async () => {
       if (stat.size > maxSize) {
         return { ok: false, error: "too-large", size: stat.size }
       }
-      const ext = path.extname(absPath).toLowerCase()
-      const mime = mimeByExt[ext]
-      if (!mime) return { ok: false, error: "unsupported-type" }
       const buf = await fs.readFile(absPath)
+      const ext = path.extname(absPath).toLowerCase()
+      const mime = mimeByExt[ext] ?? sniffMediaMime(buf, mimeByExt)
+      if (!mime) return { ok: false, error: "unsupported-type" }
       const dataUrl = `data:${mime};base64,${buf.toString("base64")}`
       return { ok: true, dataUrl, mime, size: stat.size }
     } catch (err) {

@@ -624,6 +624,26 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   return stdout
 }
 
+async function runGitBuffer(cwd: string, args: string[]): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd })
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk))
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk))
+    child.on("error", reject)
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout))
+        return
+      }
+      reject(
+        new Error(Buffer.concat(stderr).toString("utf8") || `git exited ${code}`)
+      )
+    })
+  })
+}
+
 async function runGitWithProjectEnv(
   cwd: string,
   args: string[]
@@ -1524,6 +1544,39 @@ app.whenReady().then(async () => {
     return null
   }
 
+  const imageMimeByExt = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".ico": "image/x-icon",
+    ".avif": "image/avif",
+  }
+
+  const audioMimeByExt = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+  }
+
+  function mediaDataUrlFromBuffer(
+    filePath: string,
+    buf: Buffer,
+    mimeByExt: Record<string, string>,
+    maxSize: number
+  ) {
+    if (buf.length > maxSize) {
+      return { ok: false, error: "too-large", size: buf.length }
+    }
+    const ext = path.extname(filePath).toLowerCase()
+    const mime = mimeByExt[ext] ?? sniffMediaMime(buf, mimeByExt)
+    if (!mime) return { ok: false, error: "unsupported-type" }
+    const dataUrl = `data:${mime};base64,${buf.toString("base64")}`
+    return { ok: true, dataUrl, mime, size: buf.length }
+  }
+
   async function readMediaDataUrl(
     absPath: string,
     mimeByExt: Record<string, string>,
@@ -1531,48 +1584,19 @@ app.whenReady().then(async () => {
   ) {
     if (!absPath) return { ok: false, error: "no-path" }
     try {
-      const stat = await fs.stat(absPath)
-      if (stat.size > maxSize) {
-        return { ok: false, error: "too-large", size: stat.size }
-      }
       const buf = await fs.readFile(absPath)
-      const ext = path.extname(absPath).toLowerCase()
-      const mime = mimeByExt[ext] ?? sniffMediaMime(buf, mimeByExt)
-      if (!mime) return { ok: false, error: "unsupported-type" }
-      const dataUrl = `data:${mime};base64,${buf.toString("base64")}`
-      return { ok: true, dataUrl, mime, size: stat.size }
+      return mediaDataUrlFromBuffer(absPath, buf, mimeByExt, maxSize)
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
   }
 
   ipcMain.handle("fs:readImage", async (_event, absPath: string) => {
-    return readMediaDataUrl(
-      absPath,
-      {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-        ".svg": "image/svg+xml",
-        ".bmp": "image/bmp",
-        ".ico": "image/x-icon",
-        ".avif": "image/avif",
-      },
-      25 * 1024 * 1024
-    )
+    return readMediaDataUrl(absPath, imageMimeByExt, 25 * 1024 * 1024)
   })
 
   ipcMain.handle("fs:readAudio", async (_event, absPath: string) => {
-    return readMediaDataUrl(
-      absPath,
-      {
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-      },
-      100 * 1024 * 1024
-    )
+    return readMediaDataUrl(absPath, audioMimeByExt, 100 * 1024 * 1024)
   })
 
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
@@ -2007,6 +2031,36 @@ app.whenReady().then(async () => {
         return { ok: true, patch }
       } catch (err) {
         return { ok: false, error: (err as Error).message, patch: "" }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    "git:readDiffMedia",
+    async (
+      _event,
+      cwd: string,
+      filePath: string,
+      staged: boolean,
+      kind: "image" | "audio"
+    ) => {
+      if (!cwd || !filePath) return { ok: false, error: "no-path" }
+      try {
+        const fullPath = path.resolve(cwd, filePath)
+        if (!staged && !isPathInside(cwd, fullPath)) {
+          return { ok: false, error: "outside-project" }
+        }
+        const buf = staged
+          ? await runGitBuffer(cwd, ["show", `:${filePath}`])
+          : await fs.readFile(fullPath)
+        return mediaDataUrlFromBuffer(
+          filePath,
+          buf,
+          kind === "image" ? imageMimeByExt : audioMimeByExt,
+          kind === "image" ? 25 * 1024 * 1024 : 100 * 1024 * 1024
+        )
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
       }
     }
   )

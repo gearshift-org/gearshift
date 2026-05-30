@@ -105,7 +105,7 @@ export function SingleFileDiff({
     let cancelled = false
     setImgUrl(null)
     setImgError(null)
-    window.fsApi.readImage(absPath).then((res) => {
+    window.git.readDiffMedia(cwd, path, staged, "image").then((res) => {
       if (cancelled) return
       if (!res.ok || !res.dataUrl) {
         setImgError(res.error ?? "Failed to load image")
@@ -116,7 +116,7 @@ export function SingleFileDiff({
     return () => {
       cancelled = true
     }
-  }, [absPath, showImagePreview])
+  }, [cwd, path, staged, showImagePreview])
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioError, setAudioError] = useState<string | null>(null)
@@ -125,7 +125,7 @@ export function SingleFileDiff({
     let cancelled = false
     setAudioUrl(null)
     setAudioError(null)
-    window.fsApi.readAudio(absPath).then((res) => {
+    window.git.readDiffMedia(cwd, path, staged, "audio").then((res) => {
       if (cancelled) return
       if (!res.ok || !res.dataUrl) {
         setAudioError(res.error ?? "Failed to load audio")
@@ -136,7 +136,7 @@ export function SingleFileDiff({
     return () => {
       cancelled = true
     }
-  }, [absPath, showAudioPreview])
+  }, [cwd, path, staged, showAudioPreview])
   const { resolvedTheme } = useTheme()
   const [patch, setPatch] = useState("")
   const [loading, setLoading] = useState(true)

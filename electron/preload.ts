@@ -316,6 +316,19 @@ const gitApi = {
       error?: string
       patch: string
     }>,
+  readDiffMedia: (
+    cwd: string,
+    path: string,
+    staged: boolean,
+    kind: "image" | "audio"
+  ) =>
+    ipcRenderer.invoke("git:readDiffMedia", cwd, path, staged, kind) as Promise<{
+      ok: boolean
+      error?: string
+      dataUrl?: string
+      mime?: string
+      size?: number
+    }>,
   stage: (cwd: string, paths: string[]) =>
     ipcRenderer.invoke("git:stage", cwd, paths) as Promise<{
       ok: boolean

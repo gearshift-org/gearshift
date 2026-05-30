@@ -27,6 +27,8 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import { TerminalRecapBox } from "@/components/terminal/TerminalRecapBox"
+import type { ChatHistoryMessage } from "../../../electron/preload"
 
 type Props = {
   sessionId: string
@@ -318,6 +320,9 @@ const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
 const TERMINAL_RESIZE_SETTLE_MS = 80
+// How long the user must stay idle on a terminal after its agent finishes (or
+// needs attention) before the floating recap box appears.
+const RECAP_IDLE_DELAY_MS = 10000
 const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
@@ -393,6 +398,7 @@ export function TerminalView({
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(false)
+  const recapTimerRef = useRef<number | undefined>(undefined)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -401,6 +407,10 @@ export function TerminalView({
     resultCount: 0,
   })
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [recap, setRecap] = useState<{
+    message: ChatHistoryMessage | null
+    kind: "completed" | "needs_attention"
+  } | null>(null)
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
@@ -440,6 +450,33 @@ export function TerminalView({
     agentStatusRef.current = next
     onAgentStatusChangeRef.current?.(next)
   }, [])
+
+  const dismissRecap = useCallback(() => {
+    if (recapTimerRef.current) {
+      window.clearTimeout(recapTimerRef.current)
+      recapTimerRef.current = undefined
+    }
+    setRecap(null)
+  }, [])
+
+  // Arm the floating recap box: when an agent finishes (or needs attention), wait
+  // for the idle window. If the user hasn't touched this terminal in the meantime,
+  // surface the last prompt they sent. Any keystroke (see term.onData) cancels.
+  const scheduleRecap = useCallback(
+    (kind: "completed" | "needs_attention") => {
+      if (recapTimerRef.current) window.clearTimeout(recapTimerRef.current)
+      const triggeredAt = Date.now()
+      recapTimerRef.current = window.setTimeout(() => {
+        recapTimerRef.current = undefined
+        if (lastUserInputAtRef.current > triggeredAt) return
+        void window.term.history.list(sessionId).then((rows) => {
+          if (lastUserInputAtRef.current > triggeredAt) return
+          setRecap({ message: rows.at(-1) ?? null, kind })
+        })
+      }, RECAP_IDLE_DELAY_MS)
+    },
+    [sessionId],
+  )
 
   const clearAgentWorking = useCallback(() => {
     if (agentWorkingTimerRef.current) {
@@ -843,6 +880,10 @@ export function TerminalView({
         } else if (d.includes("\r")) {
           hasSubmittedToAgentRef.current = true
           lastAgentSubmitAtRef.current = now
+          // Submitting another message clears the recap — it described the
+          // previous turn. (Plain typing leaves the recap up so it survives
+          // until the user actually sends something.)
+          dismissRecap()
         } else {
           suppressAgentActivityUntilRef.current =
             now + USER_INPUT_ECHO_SUPPRESS_MS
@@ -940,6 +981,10 @@ export function TerminalView({
       if (agentWorkingTimerRef.current) {
         window.clearTimeout(agentWorkingTimerRef.current)
         agentWorkingTimerRef.current = undefined
+      }
+      if (recapTimerRef.current) {
+        window.clearTimeout(recapTimerRef.current)
+        recapTimerRef.current = undefined
       }
       offData?.()
       offExit()
@@ -1077,6 +1122,8 @@ export function TerminalView({
         hasSubmittedToAgentRef.current = true
         const now = Date.now()
         lastAgentActivityAtRef.current = now
+        // A new turn began — clear any stale recap or pending recap timer.
+        dismissRecap()
         emitAgentStatus({
           running: true,
           working: true,
@@ -1109,6 +1156,7 @@ export function TerminalView({
           completed: false,
           needsAttention: true,
         })
+        scheduleRecap("needs_attention")
         return
       }
       // Only the explicit lifecycle stop event completes hook-backed work.
@@ -1124,8 +1172,9 @@ export function TerminalView({
         completed: true,
         needsAttention: false,
       })
+      scheduleRecap("completed")
     })
-  }, [sessionId, emitAgentStatus])
+  }, [sessionId, emitAgentStatus, scheduleRecap, dismissRecap])
 
   // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens
   // (deferred to a rAF) so xterm has stable cell metrics and we don't race its
@@ -1244,6 +1293,20 @@ export function TerminalView({
         style={{ "--xterm-bg": themeObj.background } as CSSProperties}
       >
         <div ref={containerRef} className="terminal-fit-host" />
+        {recap && (
+          <div
+            className="absolute top-3 left-1/2 z-10 w-[min(34rem,85%)] -translate-x-1/2"
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
+          >
+            <TerminalRecapBox
+              sessionId={sessionId}
+              message={recap.message}
+              kind={recap.kind}
+              onClose={dismissRecap}
+            />
+          </div>
+        )}
         {showScrollToBottom && (
           <button
             type="button"

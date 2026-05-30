@@ -2,6 +2,8 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { History, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { formatRelative } from "@/lib/relativeTime"
+import { onOpenTerminalHistoryPopover } from "@/components/layout/terminalSignals"
 import {
   Tooltip,
   TooltipContent,
@@ -14,17 +16,6 @@ type Props = {
   children: React.ReactNode
   align?: "start" | "center" | "end"
   side?: "top" | "bottom" | "left" | "right"
-}
-
-function formatRelative(ts: number): string {
-  const delta = Date.now() - ts
-  if (delta < 60_000) return "just now"
-  const m = Math.floor(delta / 60_000)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  return `${d}d ago`
 }
 
 /**
@@ -70,6 +61,13 @@ export function TerminalHistoryPopover({
   const [open, setOpen] = React.useState(false)
   const [messages, setMessages] = React.useState<ChatHistoryMessage[]>([])
   const listRef = React.useRef<HTMLDivElement | null>(null)
+
+  // Allow other parts of the pane (e.g. the floating recap box in TerminalView)
+  // to open this header popover for the same session.
+  React.useEffect(() => {
+    if (!sessionId) return
+    return onOpenTerminalHistoryPopover(sessionId, () => setOpen(true))
+  }, [sessionId])
 
   React.useEffect(() => {
     if (!open || !sessionId) return

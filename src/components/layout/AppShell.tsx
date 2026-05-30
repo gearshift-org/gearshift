@@ -743,7 +743,8 @@ export function AppShell() {
   useEffect(() => {
     if (!stateRestored) return
     saveActiveProjectId(activeProjectId)
-    if (activeProjectPath) pushRecentPaletteProject(activeProjectPath)
+    if (activeProjectPath)
+      setPaletteRecents(pushRecentPaletteProject(activeProjectPath))
   }, [activeProjectId, activeProjectPath, stateRestored])
 
   useEffect(() => {
@@ -1648,6 +1649,16 @@ export function AppShell() {
     [openFileTab, openRightSidebar]
   )
 
+  // Projects sorted most-recently-used first, for the compact project
+  // switcher dropdown only. The tabs/sidebar keep their manual drag order.
+  const switcherProjects = useMemo(() => {
+    const order = new Map(paletteRecents.projects.map((path, i) => [path, i]))
+    return [...projects].sort(
+      (a, b) =>
+        (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity)
+    )
+  }, [projects, paletteRecents.projects])
+
   const commandPaletteRecents = useMemo<PaletteRecents>(() => {
     const projectsRecent = activeProjectPath
       ? [
@@ -2378,7 +2389,7 @@ export function AppShell() {
               // user switch projects (or add one) without expanding it.
               <div className="flex min-w-0 items-center pr-2 pl-1.5">
                 <ProjectSwitcher
-                  projects={projects}
+                  projects={switcherProjects}
                   activeProjectId={activeProjectId}
                   onSelect={selectProject}
                   onAdd={addProject}

@@ -47,6 +47,7 @@ import {
 } from "./terminalLayout"
 import type {
   DropZone,
+  FileReveal,
   Project,
   TerminalAgentStatus,
   TerminalLayout,
@@ -78,6 +79,7 @@ type Props = {
   ) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
+  fileReveal?: FileReveal | null
 }
 
 function TerminalPaneView({
@@ -473,6 +475,7 @@ function PaneContent({
   onExtractPaneToTab,
   onOpenFile,
   onFileDirtyChange,
+  fileReveal,
 }: {
   tab: WorkspaceTab
   project: Project
@@ -502,6 +505,7 @@ function PaneContent({
     tabId: string,
     status: { dirty: boolean; saving: boolean }
   ) => void
+  fileReveal?: FileReveal | null
 }) {
   const handleDirtyChange = useCallback(
     (status: { dirty: boolean; saving: boolean }) => {
@@ -543,8 +547,15 @@ function PaneContent({
     <FilePreview
       cwd={project.path}
       path={tab.path}
+      isActive={isActive}
       mdMode={mdMode}
       onDirtyChange={handleDirtyChange}
+      revealLine={
+        fileReveal && fileReveal.path === tab.path ? fileReveal.line : undefined
+      }
+      revealSeq={
+        fileReveal && fileReveal.path === tab.path ? fileReveal.seq : undefined
+      }
     />
   )
 }
@@ -563,6 +574,7 @@ export function WorkspacePane({
   onDropPane,
   onExtractPaneToTab,
   onOpenFile,
+  fileReveal,
 }: Props) {
   const { bindings } = useKeybindings()
   const hasTabs = !!project?.tabs.length
@@ -744,6 +756,7 @@ export function WorkspacePane({
                 onExtractPaneToTab={onExtractPaneToTab}
                 onOpenFile={onOpenFile}
                 onFileDirtyChange={handleFileDirtyChange}
+                fileReveal={fileReveal}
               />
             </div>
           ))}

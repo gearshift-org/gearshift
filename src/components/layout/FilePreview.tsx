@@ -155,9 +155,15 @@ type Props = {
   cwd: string
   /** Path relative to project root. */
   path: string
+  /** True when this preview is in the visible workspace tab. */
+  isActive?: boolean
   /** Markdown render mode — used only when the file is markdown. */
   mdMode?: MdMode
   onDirtyChange?: (status: { dirty: boolean; saving: boolean }) => void
+  /** 1-based line to scroll to + select (e.g. from a content-search hit). */
+  revealLine?: number
+  /** Nonce bumped per reveal request so the same line re-triggers a scroll. */
+  revealSeq?: number
 }
 
 type LoadState =
@@ -445,8 +451,11 @@ function CodeEditor({
 export function FilePreview({
   cwd,
   path,
+  isActive = true,
   mdMode = "preview",
   onDirtyChange,
+  revealLine,
+  revealSeq,
 }: Props) {
   const abs = useMemo(() => joinPath(cwd, path), [cwd, path])
   const ext = useMemo(() => extOf(path), [path])
@@ -524,8 +533,17 @@ export function FilePreview({
   const previewRef = useRef<HTMLDivElement>(null)
   const [previewMatchIdx, setPreviewMatchIdx] = useState(0)
   const [previewMatchCount, setPreviewMatchCount] = useState(0)
+  // A line reveal only works in the raw code editor, so revealing a line in a
+  // markdown file temporarily forces the raw view over the rendered preview.
+  const [revealRawOverride, setRevealRawOverride] = useState(false)
+  const pendingRevealRef = useRef<{ line: number; tries: number } | null>(null)
+  // The abs path whose content is currently loaded into the editor. A reveal is
+  // only applied once this matches the target file, so switching files via a
+  // content hit waits for the new content before scrolling (instead of scrolling
+  // inside the previous file's still-loaded text).
+  const loadedAbsRef = useRef<string | null>(null)
 
-  const isPreview = isMarkdown && mdMode === "preview"
+  const isPreview = isMarkdown && mdMode === "preview" && !revealRawOverride
 
   const dirty = state.kind === "ready" && draft !== savedContent
 
@@ -720,6 +738,7 @@ export function FilePreview({
   useEffect(() => {
     if (isImage) return
     let cancelled = false
+    loadedAbsRef.current = null
     queueMicrotask(() => {
       if (cancelled) return
       setState({ kind: "loading" })
@@ -735,6 +754,7 @@ export function FilePreview({
         setState({ kind: "binary" })
       } else {
         const content = res.content ?? ""
+        loadedAbsRef.current = abs
         setState({ kind: "ready", content })
         setSavedContent(content)
         setDraft(content)
@@ -762,6 +782,90 @@ export function FilePreview({
     onDirtyChange?.({ dirty, saving })
     return () => onDirtyChange?.({ dirty: false, saving: false })
   }, [dirty, onDirtyChange, saving])
+
+  // Scroll the editor to + select a pending reveal line, once the content is
+  // loaded and the CodeMirror view exists. Safe to call repeatedly; it no-ops
+  // until everything is ready, then consumes the pending line.
+  const applyPendingReveal = useCallback(() => {
+    const pending = pendingRevealRef.current
+    if (!pending || state.kind !== "ready") return
+    // New tabs can mount one render before the router marks them active. During
+    // that hidden render CodeMirror has no useful height, so wait until the tab
+    // is visible before measuring and consuming the reveal request.
+    if (!isActive) return
+    // Wait until the file read has finished for this tab's current path.
+    if (loadedAbsRef.current !== abs) return
+    const view = editorViewRef.current
+    if (!view) return
+
+    // When an existing preview tab is reused for a file that was not open yet,
+    // React can render the new `draft` before CodeMirror has synchronized its
+    // internal document. If we scroll during that small gap, CodeMirror uses the
+    // old file's line count and lands on the wrong line. Wait one frame and try
+    // again until the editor document is the newly-loaded file content.
+    if (view.state.doc.toString() !== draft) {
+      requestAnimationFrame(applyPendingReveal)
+      return
+    }
+
+    const target = Math.max(1, Math.min(pending.line, view.state.doc.lines))
+    const { from, to } = view.state.doc.line(target)
+    const centerLine = (): boolean => {
+      if (view.scrollDOM.clientHeight <= 0) return false
+      view.requestMeasure({
+        read: (v) => {
+          const block = v.lineBlockAt(from)
+          return block.top - v.scrollDOM.clientHeight / 2 + block.height / 2
+        },
+        write: (scrollTop, v) => {
+          v.scrollDOM.scrollTop = Math.max(0, scrollTop)
+        },
+      })
+      return true
+    }
+
+    view.focus()
+    view.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: "center" }),
+    })
+    const measured = centerLine()
+
+    // A freshly-created CodeMirror view can need a few frames before its
+    // virtual line heights settle. Keep re-centering briefly; already-open files
+    // usually succeed on the first pass.
+    if (!measured || pending.tries < 8) {
+      pendingRevealRef.current = {
+        line: pending.line,
+        tries: pending.tries + 1,
+      }
+      requestAnimationFrame(applyPendingReveal)
+      return
+    }
+    pendingRevealRef.current = null
+  }, [abs, draft, isActive, state])
+
+  // Reset the markdown raw override when the file or md mode changes (e.g. the
+  // user toggles back to preview, or a different file opens).
+  useEffect(() => {
+    setRevealRawOverride(false)
+  }, [mdMode, path])
+
+  // A new reveal request: stash the line and, for markdown previews, flip to the
+  // raw editor so the line is visible.
+  useEffect(() => {
+    if (revealSeq == null || revealLine == null) return
+    pendingRevealRef.current = { line: revealLine, tries: 0 }
+    if (isMarkdown && mdMode === "preview") setRevealRawOverride(true)
+    applyPendingReveal()
+    // Only react to a new request (seq), not to incidental dependency changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealSeq])
+
+  // Apply any pending reveal once the content loads or the raw editor mounts.
+  useEffect(() => {
+    applyPendingReveal()
+  }, [applyPendingReveal, revealRawOverride])
 
   if (isImage) {
     if (imageError) {
@@ -945,6 +1049,8 @@ export function FilePreview({
             onOpenSearch={openSearch}
             onViewReady={(view) => {
               editorViewRef.current = view
+              // Apply a pending reveal as soon as the view exists for this file.
+              if (view) applyPendingReveal()
             }}
           />
         )}

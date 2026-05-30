@@ -6,7 +6,7 @@ import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { DropZone, Project, TerminalAgentStatus } from "./types"
+import type { DropZone, FileReveal, Project, TerminalAgentStatus } from "./types"
 
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
@@ -52,6 +52,7 @@ type Props = {
   rightSidebarTab?: "changes" | "files" | "history"
   onRightSidebarTabChange?: (tab: "changes" | "files" | "history") => void
   activeTreeFilePath?: string
+  fileReveal?: FileReveal | null
   // In the vertical project layout the separate title bar is dropped and the
   // workspace tab bar doubles as the top bar (always shown, hosts controls).
   hideTitleBar?: boolean
@@ -81,6 +82,7 @@ export function WorkspaceSplit({
   rightSidebarTab,
   onRightSidebarTabChange,
   activeTreeFilePath,
+  fileReveal,
   hideTitleBar = false,
 }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -196,6 +198,7 @@ export function WorkspaceSplit({
               onDropPane={onDropPane}
               onExtractPaneToTab={onExtractPaneToTab}
               onOpenFile={onOpenFileTab}
+              fileReveal={fileReveal}
             />
           </div>
         ))}

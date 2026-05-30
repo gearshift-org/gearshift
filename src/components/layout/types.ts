@@ -93,6 +93,17 @@ export type FileTab = {
 
 export type WorkspaceTab = TerminalTab | DiffTab | FileTab
 
+/**
+ * A request to reveal (scroll to + select) a specific line of a file, e.g. from
+ * a content-search hit. `seq` is a monotonic nonce so re-opening the same
+ * file/line still re-triggers the scroll even though the props are unchanged.
+ */
+export type FileReveal = {
+  path: string
+  line: number
+  seq: number
+}
+
 export type Project = {
   id: string
   name: string

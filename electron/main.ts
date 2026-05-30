@@ -43,6 +43,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const execFileP = promisify(execFile)
 
+function searchTokens(query: string): string[] {
+  return query.toLowerCase().match(/[a-z0-9_]+/g) ?? []
+}
+
+function hasTokensInOrder(text: string, tokens: string[]): boolean {
+  const haystack = text.toLowerCase()
+  let index = 0
+  for (const token of tokens) {
+    const found = haystack.indexOf(token, index)
+    if (found === -1) return false
+    index = found + token.length
+  }
+  return true
+}
+
 type PullRequestInfo = {
   number: number
   id: string
@@ -1336,6 +1351,78 @@ app.whenReady().then(async () => {
       return { ok: false, error: (err as Error).message, files: [] }
     }
   })
+
+  // Content search across the project, VS Code style. Uses `git grep` so it is
+  // fast, respects .gitignore, and needs no extra binary. Untracked files are
+  // included; binary files are skipped.
+  ipcMain.handle(
+    "fs:searchContents",
+    async (_event, cwd: string, query: string) => {
+      const MAX_CONTENT_RESULTS = 20
+      const MAX_TEXT_LEN = 200
+      const q = (query ?? "").trim()
+      if (!cwd || q.length < 2) return { ok: true, results: [] }
+      const tokens = searchTokens(q)
+      const grepNeedle = tokens[0] ?? q
+      // Lock files are huge, generated, and never useful in a content search.
+      const lockFileGlobs = [
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "npm-shrinkwrap.json",
+        "bun.lock",
+        "bun.lockb",
+        "composer.lock",
+        "Gemfile.lock",
+        "Cargo.lock",
+        "poetry.lock",
+        "Pipfile.lock",
+        "go.sum",
+      ]
+      try {
+        const out = await runGitAllowExit1(cwd, [
+          "grep",
+          "--no-color",
+          "-n", // line numbers
+          "-I", // skip binary files
+          "-F", // literal string, not a regex
+          "-i", // case-insensitive
+          "--untracked", // also search untracked (still honors .gitignore)
+          "--max-count=20", // cap matches per file
+          "-e",
+          grepNeedle,
+          "--",
+          ".", // search everything …
+          // … except generated lock files.
+          ...lockFileGlobs.map((name) => `:(exclude,glob)**/${name}`),
+        ])
+        const results: { path: string; line: number; text: string }[] = []
+        for (const raw of out.split("\n")) {
+          if (!raw) continue
+          // Format: <path>:<line>:<text>
+          const firstColon = raw.indexOf(":")
+          if (firstColon === -1) continue
+          const secondColon = raw.indexOf(":", firstColon + 1)
+          if (secondColon === -1) continue
+          const path = raw.slice(0, firstColon)
+          const line = Number.parseInt(raw.slice(firstColon + 1, secondColon), 10)
+          if (!Number.isFinite(line)) continue
+          let text = raw.slice(secondColon + 1).trim()
+          if (tokens.length > 1 && !hasTokensInOrder(text, tokens)) continue
+          if (text.length > MAX_TEXT_LEN) text = text.slice(0, MAX_TEXT_LEN) + "…"
+          results.push({ path, line, text })
+          if (results.length >= MAX_CONTENT_RESULTS) break
+        }
+        return {
+          ok: true,
+          results,
+          truncated: results.length >= MAX_CONTENT_RESULTS,
+        }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message, results: [] }
+      }
+    }
+  )
 
   ipcMain.handle(
     "fs:writeFile",

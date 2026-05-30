@@ -25,17 +25,28 @@ function CommandDialog({
   open,
   onOpenChange,
   children,
+  shouldFilter,
+  value,
+  onValueChange,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
+  shouldFilter?: boolean
+  value?: string
+  onValueChange?: (value: string) => void
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Popup className="fixed left-1/2 top-[20vh] z-50 w-[640px] max-w-[90vw] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95">
-          <Command className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-item]_svg]:size-4 [&_[cmdk-item]_svg]:shrink-0">
+          <Command
+            shouldFilter={shouldFilter}
+            value={value}
+            onValueChange={onValueChange}
+            className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-item]_svg]:size-4 [&_[cmdk-item]_svg]:shrink-0"
+          >
             {children}
           </Command>
         </DialogPrimitive.Popup>

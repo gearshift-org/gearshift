@@ -12,8 +12,10 @@ import {
   FolderGit2,
   TerminalSquare,
 } from "lucide-react"
+import Fuse from "fuse.js"
+import type { IFuseOptions } from "fuse.js"
 import { FileIcon } from "@/components/icons/FileIcon"
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { shortenHomePath } from "@/lib/pathDisplay"
 import type { PaletteRecents } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
@@ -27,10 +29,41 @@ type Props = {
   paletteRecents: PaletteRecents
   onSelectProject: (id: string) => void
   onSelectTab: (id: string) => void
-  onOpenFile: (path: string) => void
+  onOpenFile: (path: string, line?: number) => void
 }
 
-const MAX_FILE_RESULTS = 100
+const MAX_FILE_RESULTS = 20
+const MIN_CONTENT_QUERY = 2
+const CONTENT_SEARCH_DEBOUNCE_MS = 150
+
+type ContentMatch = { path: string; line: number; text: string }
+
+type FileEntry = {
+  path: string
+  name: string
+  compactPath: string
+  compactPluralPath: string
+}
+
+// Weight the basename higher than the full path so filename matches win, and
+// ignore match location so a match anywhere in the path counts (VS Code style).
+const FUSE_OPTIONS: IFuseOptions<FileEntry> = {
+  keys: [
+    { name: "name", weight: 0.45 },
+    { name: "path", weight: 0.25 },
+    { name: "compactPath", weight: 0.2 },
+    { name: "compactPluralPath", weight: 0.1 },
+  ],
+  ignoreLocation: true,
+  threshold: 0.4,
+  minMatchCharLength: 1,
+  includeScore: true,
+}
+
+// Fuse score is 0 (perfect) … 1 (worst). A filename match at or below this is a
+// "strong" hit that should outrank content matches; weaker (higher) scores mean
+// the file only fuzzily matched, so exact content hits take priority instead.
+const STRONG_FILE_SCORE = 0.1
 
 function tabIcon(t: WorkspaceTab) {
   if (t.kind === "diff") return <FileDiff />
@@ -53,36 +86,32 @@ function tabCommandKeywords(t: WorkspaceTab): string[] {
   return [title, ...terminalSessionIds(t)]
 }
 
-/**
- * Lightweight scorer: prefers basename matches, then path matches, then
- * subsequence matches. Returns null when nothing matches. Designed to be
- * cheap enough to run across thousands of paths on every keystroke.
- */
 function recencyIndex(recents: string[], value: string): number {
   const index = recents.indexOf(value)
   return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }
 
-function scorePath(path: string, qLower: string): number | null {
-  if (!qLower) return 0
-  const pLower = path.toLowerCase()
-  const slash = pLower.lastIndexOf("/")
-  const base = slash >= 0 ? pLower.slice(slash + 1) : pLower
+function searchSegments(value: string): string[] {
+  return value.toLowerCase().match(/[a-z0-9]+/g) ?? []
+}
 
-  if (base === qLower) return 1000
-  if (base.startsWith(qLower)) return 900 - base.length
-  const baseIdx = base.indexOf(qLower)
-  if (baseIdx >= 0) return 700 - baseIdx - base.length * 0.01
-  const pathIdx = pLower.indexOf(qLower)
-  if (pathIdx >= 0) return 500 - pathIdx - pLower.length * 0.01
+function pluralizeSearchSegment(value: string): string {
+  return value.endsWith("s") ? value : `${value}s`
+}
 
-  // Subsequence fallback — every char in query appears in order somewhere.
-  let i = 0
-  for (let j = 0; j < pLower.length && i < qLower.length; j++) {
-    if (pLower[j] === qLower[i]) i++
+function compactSearchValue(value: string): string {
+  return searchSegments(value).join("")
+}
+
+function fileEntry(path: string): FileEntry {
+  const name = path.split("/").pop() ?? path
+  const segments = searchSegments(path)
+  return {
+    path,
+    name,
+    compactPath: segments.join(""),
+    compactPluralPath: segments.map(pluralizeSearchSegment).join(""),
   }
-  if (i === qLower.length) return 100 - pLower.length * 0.01
-  return null
 }
 
 export function CommandPalette({
@@ -97,6 +126,7 @@ export function CommandPalette({
 }: Props) {
   const [files, setFiles] = useState<string[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
+  const [contentMatches, setContentMatches] = useState<ContentMatch[]>([])
   const [query, setQuery] = useState("")
   const listRef = useRef<HTMLDivElement>(null)
   // Defer the query so typing stays responsive while the large file list
@@ -138,6 +168,27 @@ export function CommandPalette({
     listRef.current?.scrollTo({ top: 0 })
   }, [qLower])
 
+  // Debounced content (in-file) search via `git grep`. Runs only for queries of
+  // at least MIN_CONTENT_QUERY chars and cancels stale/in-flight requests so the
+  // results always reflect the latest query.
+  useEffect(() => {
+    if (!open || !projectPath || qLower.length < MIN_CONTENT_QUERY) {
+      setContentMatches([])
+      return
+    }
+    let cancelled = false
+    const handle = setTimeout(() => {
+      window.fsApi.searchContents(projectPath, qLower).then((res) => {
+        if (cancelled) return
+        setContentMatches(res.ok ? res.results : [])
+      })
+    }, CONTENT_SEARCH_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(handle)
+    }
+  }, [open, projectPath, qLower])
+
   const filteredTabs = useMemo(() => {
     const tabs = activeProject?.tabs ?? []
     const recentTabs = paletteRecents.tabsByProject[activeProject?.path ?? ""] ?? []
@@ -168,39 +219,114 @@ export function CommandPalette({
       projects.filter(
         (p) =>
           p.name.toLowerCase().includes(qLower) ||
-          p.path.toLowerCase().includes(qLower),
+          shortenHomePath(p.path).toLowerCase().includes(qLower),
       ),
     )
   }, [paletteRecents.projects, projects, qLower])
 
-  const filteredFiles = useMemo(() => {
-    if (!files.length) return []
+  // Build the Fuse index once per file list (not per keystroke).
+  const fileEntries = useMemo(() => files.map(fileEntry), [files])
+
+  const fileFuse = useMemo(() => {
+    return new Fuse(fileEntries, FUSE_OPTIONS)
+  }, [fileEntries])
+
+  const { filteredFiles, bestFileScore } = useMemo(() => {
+    if (!files.length) return { filteredFiles: [] as string[], bestFileScore: 1 }
     const recentFiles = paletteRecents.filesByProject[activeProject?.path ?? ""] ?? []
     if (!qLower) {
-      return files
-        .slice()
-        .sort(
-          (a, b) => recencyIndex(recentFiles, a) - recencyIndex(recentFiles, b),
+      return {
+        filteredFiles: files
+          .slice()
+          .sort(
+            (a, b) => recencyIndex(recentFiles, a) - recencyIndex(recentFiles, b),
+          )
+          .slice(0, MAX_FILE_RESULTS),
+        bestFileScore: 0,
+      }
+    }
+    const compactQuery = compactSearchValue(qLower)
+    const compactMatches = compactQuery
+      ? fileEntries.filter(
+          (entry) =>
+            entry.compactPath.includes(compactQuery) ||
+            entry.compactPluralPath.includes(compactQuery),
         )
-        .slice(0, MAX_FILE_RESULTS)
-    }
-    const scored: Array<{ path: string; score: number }> = []
-    for (let i = 0; i < files.length; i++) {
-      const s = scorePath(files[i], qLower)
-      if (s !== null) scored.push({ path: files[i], score: s })
-    }
-    scored.sort(
-      (a, b) =>
-        b.score - a.score ||
-        recencyIndex(recentFiles, a.path) - recencyIndex(recentFiles, b.path),
+      : []
+    // Fuse ranks best-first; basename matches are weighted above path matches.
+    const seen = new Set(compactMatches.map((entry) => entry.path))
+    const results = fileFuse
+      .search(qLower, { limit: MAX_FILE_RESULTS })
+      .map((r) => r.item)
+      .filter((entry) => {
+        if (seen.has(entry.path)) return false
+        seen.add(entry.path)
+        return true
+      })
+    const rankedFiles = [...compactMatches, ...results].slice(
+      0,
+      MAX_FILE_RESULTS,
     )
-    return scored.slice(0, MAX_FILE_RESULTS).map((s) => s.path)
-  }, [activeProject?.path, files, paletteRecents.filesByProject, qLower])
+    return {
+      filteredFiles: rankedFiles.map((entry) => entry.path),
+      bestFileScore: compactMatches.length
+        ? 0
+        : results.length
+          ? (fileFuse.search(qLower, { limit: 1 })[0]?.score ?? 1)
+          : 1,
+    }
+  }, [
+    activeProject?.path,
+    fileEntries,
+    files,
+    fileFuse,
+    paletteRecents.filesByProject,
+    qLower,
+  ])
+
+  // Show content hits above files when the files only matched weakly (e.g. a
+  // word that happens to appear in a path) but the contents match the full query.
+  const contentsFirst =
+    contentMatches.length > 0 &&
+    (filteredFiles.length === 0 || bestFileScore > STRONG_FILE_SCORE)
 
   const filteredTerminalTabs = filteredTabs.filter((t) => t.kind === "terminal")
   const filteredDiffTabs = filteredTabs.filter((t) => t.kind === "diff")
   const filteredFileTabs = filteredTabs.filter((t) => t.kind === "file")
   const hasOpenTabResults = filteredTabs.length > 0
+
+  // cmdk only auto-highlights the first item when its own filter runs; since we
+  // disabled that (shouldFilter={false}), control the selection ourselves and
+  // reset it to the topmost item whenever the result set changes.
+  const firstItemValue = useMemo(() => {
+    if (filteredProjects.length > 0) {
+      const p = filteredProjects[0]
+      return `project ${p.name} ${p.path}`
+    }
+    const firstTab =
+      filteredTerminalTabs[0] ?? filteredDiffTabs[0] ?? filteredFileTabs[0]
+    if (firstTab) return tabCommandValue(firstTab)
+    const fileValue = filteredFiles.length > 0 ? `file ${filteredFiles[0]}` : ""
+    const contentValue =
+      contentMatches.length > 0
+        ? `content ${contentMatches[0].path}:${contentMatches[0].line}:0`
+        : ""
+    if (contentsFirst) return contentValue || fileValue
+    return fileValue || contentValue
+  }, [
+    contentMatches,
+    contentsFirst,
+    filteredDiffTabs,
+    filteredFileTabs,
+    filteredFiles,
+    filteredProjects,
+    filteredTerminalTabs,
+  ])
+
+  const [selectedValue, setSelectedValue] = useState("")
+  useEffect(() => {
+    setSelectedValue(firstItemValue)
+  }, [firstItemValue])
 
   const run = (fn: () => void) => {
     fn()
@@ -228,8 +354,61 @@ export function CommandPalette({
       )
     })
 
+  const filesGroup =
+    activeProject && filteredFiles.length > 0 ? (
+      <CommandGroup heading="Files">
+        {filteredFiles.map((f) => (
+          <CommandItem
+            key={f}
+            value={`file ${f}`}
+            onSelect={() => run(() => onOpenFile(f))}
+          >
+            <FileIcon name={f.split("/").pop() ?? f} />
+            <span className="truncate">{f.split("/").pop()}</span>
+            <span className="ml-auto truncate text-xs text-muted-foreground">
+              {shortenHomePath(f)}
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ) : null
+
+  const contentsGroup =
+    activeProject && contentMatches.length > 0 ? (
+      <CommandGroup heading="Contents">
+        {contentMatches.map((m, i) => (
+          <CommandItem
+            key={`content ${m.path}:${m.line}:${i}`}
+            value={`content ${m.path}:${m.line}:${i}`}
+            onSelect={() => run(() => onOpenFile(m.path, m.line))}
+          >
+            <FileIcon name={m.path.split("/").pop() ?? m.path} />
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {m.text}
+            </span>
+            <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">
+              {(m.path.split("/").pop() ?? m.path)}:{m.line}
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    ) : null
+
+  // Order the file vs content groups by relevance, then drop the empty ones.
+  const fileContentGroups = (
+    contentsFirst ? [contentsGroup, filesGroup] : [filesGroup, contentsGroup]
+  ).filter(Boolean)
+
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    // We do our own filtering/ranking (fuse.js for files, git grep for contents),
+    // so cmdk's built-in filter is disabled to avoid double-filtering.
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      shouldFilter={false}
+      value={selectedValue}
+      onValueChange={setSelectedValue}
+    >
       <CommandInput
         placeholder="Type a command, file, tab, or project…"
         value={query}
@@ -282,28 +461,16 @@ export function CommandPalette({
           </>
         )}
 
-        {activeProject && filteredFiles.length > 0 && (
-          <>
-            {(filteredProjects.length > 0 || hasOpenTabResults) && (
-              <CommandSeparator />
-            )}
-            <CommandGroup heading="Files">
-              {filteredFiles.map((f) => (
-                <CommandItem
-                  key={f}
-                  value={`file ${f}`}
-                  onSelect={() => run(() => onOpenFile(f))}
-                >
-                  <FileIcon name={f.split("/").pop() ?? f} />
-                  <span className="truncate">{f.split("/").pop()}</span>
-                  <span className="ml-auto truncate text-xs text-muted-foreground">
-                    {shortenHomePath(f)}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
+        {fileContentGroups.map((group, i) => {
+          const needsSeparator =
+            i > 0 || filteredProjects.length > 0 || hasOpenTabResults
+          return (
+            <Fragment key={i}>
+              {needsSeparator && <CommandSeparator />}
+              {group}
+            </Fragment>
+          )
+        })}
       </CommandList>
     </CommandDialog>
   )

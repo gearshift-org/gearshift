@@ -266,6 +266,13 @@ const fsApi = {
       error?: string
       files: string[]
     }>,
+  searchContents: (cwd: string, query: string) =>
+    ipcRenderer.invoke("fs:searchContents", cwd, query) as Promise<{
+      ok: boolean
+      error?: string
+      results: { path: string; line: number; text: string }[]
+      truncated?: boolean
+    }>,
 }
 
 type GitFileRaw = {

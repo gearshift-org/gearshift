@@ -32,6 +32,7 @@ import {
 import agentCompleteSoundUrl from "@/assets/sounds/agent-complete.wav?url"
 import type {
   DropZone,
+  FileReveal,
   Project,
   SplitDirection,
   TerminalAgentName,
@@ -467,6 +468,9 @@ export function AppShell() {
   }, [rightSidebarTab])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [activeTreeFilePath, setActiveTreeFilePath] = useState("")
+  // Pending "reveal this line" request from a content search hit. `seq` is a
+  // nonce so re-selecting the same file/line still re-triggers the scroll.
+  const [fileReveal, setFileReveal] = useState<FileReveal | null>(null)
 
   const restoredProjectId =
     restoredActiveProjectId &&
@@ -1420,10 +1424,13 @@ export function AppShell() {
   )
 
   const openFileTab = useCallback(
-    (path: string) => {
+    (path: string, line?: number) => {
       if (!activeProject) return
       setActiveTreeFilePath(path)
       setPaletteRecents(pushRecentPaletteFile(activeProject.path, path))
+      if (line != null) {
+        setFileReveal((prev) => ({ path, line, seq: (prev?.seq ?? 0) + 1 }))
+      }
       const exact = activeProject.tabs.find(
         (t) => t.kind === "file" && t.path === path
       )
@@ -1632,11 +1639,11 @@ export function AppShell() {
   const selectTab = (id: string) => navigateToTab(id)
 
   const openFileFromCommandPalette = useCallback(
-    (path: string) => {
+    (path: string, line?: number) => {
       openRightSidebar()
       setRightSidebarTab("files")
       setActiveTreeFilePath(path)
-      openFileTab(path)
+      openFileTab(path, line)
     },
     [openFileTab, openRightSidebar]
   )
@@ -2439,6 +2446,7 @@ export function AppShell() {
             rightSidebarTab={rightSidebarTab}
             onRightSidebarTabChange={setRightSidebarTab}
             activeTreeFilePath={activeTreeFilePath}
+            fileReveal={fileReveal}
             workspaceTabs={
               <WorkspaceTabBar
                 tabs={activeProject.tabs}

@@ -66,14 +66,10 @@ export function feed(
         continue
       }
       if (ch === "\r" || ch === "\n") {
-        // Newlines inside a paste act as literal line submissions too.
-        if (agent && s.buf.trim().length > 0) {
-          void appendMessage(sessionId, projectId, s.buf, agent)
-            .then(onFlush)
-            .catch((err) => console.error("[chatDb] appendMessage", err))
-        }
-        reset(s)
-        i += 1
+        // Newlines inside a bracketed paste are part of one prompt. The final
+        // Enter after the paste submits and records the whole pasted block.
+        insertAt(s, "\n")
+        i += ch === "\r" && data[i + 1] === "\n" ? 2 : 1
         continue
       }
       insertAt(s, ch)

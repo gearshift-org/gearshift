@@ -243,6 +243,41 @@ function isAppVisibleAndFocused() {
   return document.visibilityState === "visible" && document.hasFocus()
 }
 
+function latestPromptBody(
+  rows: Array<{ body: string; agent: string | null; createdAt: number }>
+): string | null {
+  const newest = rows.reduce<(typeof rows)[number] | null>(
+    (latest, row) =>
+      !latest || row.createdAt > latest.createdAt ? row : latest,
+    null
+  )
+  if (!newest) return null
+
+  // Older app versions stored pasted multi-line prompts as one row per line.
+  // Recombine the newest burst so notifications still describe the prompt,
+  // not only the last pasted command line.
+  const burstWindowMs = 1500
+  const prompt = rows
+    .filter(
+      (row) =>
+        row.agent === newest.agent &&
+        newest.createdAt - row.createdAt >= 0 &&
+        newest.createdAt - row.createdAt <= burstWindowMs
+    )
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((row) => row.body)
+    .join("\n")
+    .trim()
+  return prompt || newest.body.trim() || null
+}
+
+function promptPreview(body: string | null): string | null {
+  if (!body) return null
+  const collapsed = body.replace(/\s+/g, " ").trim()
+  if (!collapsed) return null
+  return collapsed.length > 120 ? `${collapsed.slice(0, 119)}…` : collapsed
+}
+
 function playAgentCompleteSound() {
   const audio = new Audio(agentCompleteSoundUrl)
   audio.volume = 0.5
@@ -1771,8 +1806,9 @@ export function AppShell() {
         agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
       toastsForProject.add(toastId)
       agentDoneToastsByProjectRef.current.set(targetProject.id, toastsForProject)
-      console.info("Agent complete: showing in-app toast")
-      toast.custom(
+      const showCompletionNotification = (latestPrompt: string | null) => {
+        console.info("Agent complete: showing in-app toast")
+        toast.custom(
           (id) => (
             <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
               <button
@@ -1801,6 +1837,11 @@ export function AppShell() {
                   {elapsedTime && (
                     <span className="text-[11px] text-muted-foreground">
                       Completed in {elapsedTime}
+                    </span>
+                  )}
+                  {latestPrompt && (
+                    <span className="line-clamp-2 text-[11px] text-muted-foreground">
+                      {latestPrompt}
                     </span>
                   )}
                 </span>
@@ -1835,25 +1876,34 @@ export function AppShell() {
           }
         )
 
-      if (!appVisibleAndFocused) {
-        console.info("Agent complete: also showing desktop notification")
-        if (typeof Notification !== "undefined") {
-          try {
-            const notification = new Notification(
-              targetProject.name || "GearShift",
-              {
-                body: `Agent finished in ${terminalName}`,
-                silent: true,
+        if (!appVisibleAndFocused) {
+          console.info("Agent complete: also showing desktop notification")
+          if (typeof Notification !== "undefined") {
+            try {
+              const notification = new Notification(
+                targetProject.name || "GearShift",
+                {
+                  body: latestPrompt
+                    ? `Agent finished in ${terminalName}: ${latestPrompt}`
+                    : `Agent finished in ${terminalName}`,
+                  silent: true,
+                }
+              )
+              notification.onclick = () => {
+                openAgentDoneTarget(targetProject.id, tabId, paneId)
               }
-            )
-            notification.onclick = () => {
-              openAgentDoneTarget(targetProject.id, tabId, paneId)
+            } catch (err) {
+              console.warn("Desktop notification failed", err)
             }
-          } catch (err) {
-            console.warn("Desktop notification failed", err)
           }
         }
       }
+
+      void window.term.history
+        .list(paneId)
+        .then((rows) => promptPreview(latestPromptBody(rows)))
+        .catch(() => null)
+        .then(showCompletionNotification)
     }
 
     if (

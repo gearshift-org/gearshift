@@ -114,6 +114,52 @@ function fileEntry(path: string): FileEntry {
   }
 }
 
+function fileNameRank(entry: FileEntry, query: string, compactQuery: string): number {
+  const name = entry.name.toLowerCase()
+  const path = entry.path.toLowerCase()
+  const compactName = compactSearchValue(entry.name)
+  const queryInNameAt = name.indexOf(query)
+  const compactQueryInNameAt = compactQuery
+    ? compactName.indexOf(compactQuery)
+    : -1
+
+  let rank = 100_000
+
+  if (name === query) rank = 0
+  else if (name.startsWith(query)) rank = 1_000
+  else if (queryInNameAt >= 0) rank = 2_000 + queryInNameAt
+  else if (compactName === compactQuery) rank = 3_000
+  else if (compactQueryInNameAt === 0) rank = 4_000
+  else if (compactQueryInNameAt > 0) rank = 5_000 + compactQueryInNameAt
+  else if (path.includes(query)) rank = 6_000 + path.indexOf(query)
+  else if (entry.compactPath.includes(compactQuery)) {
+    rank = 7_000 + entry.compactPath.indexOf(compactQuery)
+  } else if (entry.compactPluralPath.includes(compactQuery)) {
+    rank = 8_000 + entry.compactPluralPath.indexOf(compactQuery)
+  }
+
+  // Prefer the closest, shortest filename when match quality is otherwise tied.
+  // Example: `console.php` should beat many `app/Console/...` files for
+  // queries like `console` or `console.php`.
+  return rank + entry.name.length / 1_000 + entry.path.length / 1_000_000
+}
+
+function rankFileEntries(
+  entries: FileEntry[],
+  query: string,
+  compactQuery: string,
+): FileEntry[] {
+  return entries
+    .slice()
+    .sort((a, b) => {
+      const rankDiff =
+        fileNameRank(a, query, compactQuery) -
+        fileNameRank(b, query, compactQuery)
+      if (rankDiff !== 0) return rankDiff
+      return a.path.localeCompare(b.path)
+    })
+}
+
 export function CommandPalette({
   open,
   onOpenChange,
@@ -253,19 +299,23 @@ export function CommandPalette({
             entry.compactPluralPath.includes(compactQuery),
         )
       : []
-    // Fuse ranks best-first; basename matches are weighted above path matches.
-    const seen = new Set(compactMatches.map((entry) => entry.path))
-    const results = fileFuse
-      .search(qLower, { limit: MAX_FILE_RESULTS })
-      .map((r) => r.item)
-      .filter((entry) => {
-        if (seen.has(entry.path)) return false
-        seen.add(entry.path)
-        return true
-      })
-    const rankedFiles = [...compactMatches, ...results].slice(
+    // Fuse finds fuzzy candidates; then our light ranker makes close basename
+    // matches and shorter filenames win over broad path matches.
+    const seen = new Set<string>()
+    const candidates = [
+      ...compactMatches,
+      ...fileFuse.search(qLower, { limit: MAX_FILE_RESULTS * 3 }).map((r) => r.item),
+    ].filter((entry) => {
+      if (seen.has(entry.path)) return false
+      seen.add(entry.path)
+      return true
+    })
+    const rankedFiles = rankFileEntries(candidates, qLower, compactQuery).slice(
       0,
       MAX_FILE_RESULTS,
+    )
+    const results = rankedFiles.filter(
+      (entry) => !compactMatches.some((match) => match.path === entry.path),
     )
     return {
       filteredFiles: rankedFiles.map((entry) => entry.path),

@@ -1230,6 +1230,32 @@ app.whenReady().then(async () => {
     return result.filePaths[0]
   })
 
+  ipcMain.handle("dialog:openProjectAvatarImage", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win!, {
+      title: "Choose Project Avatar",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "Images",
+          extensions: [
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "webp",
+            "svg",
+            "bmp",
+            "ico",
+            "avif",
+          ],
+        },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   ipcMain.handle(
     "dialog:confirmTerminalClose",
     async (event, opts: { count?: number }) => {

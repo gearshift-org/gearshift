@@ -11,6 +11,7 @@ import { router } from "./router"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { preloadProjectAvatarImages } from "@/lib/projectAvatarCache"
 
 // SWR-style caching: keep stale data visible across project switches and
 // background-refresh; we use file-watcher events + manual invalidation, so
@@ -47,6 +48,8 @@ window.addEventListener("auxclick", (e) => {
 window.addEventListener("mouseup", (e) => {
   if (e.button === 3 || e.button === 4) e.preventDefault()
 })
+
+await preloadProjectAvatarImages()
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

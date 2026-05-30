@@ -29,7 +29,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import { randomizeProjectColor, type RecentProject } from "@/lib/projects"
+import {
+  clearProjectAvatarImagePath,
+  randomizeProjectColor,
+  setProjectAvatarImagePath,
+  type RecentProject,
+} from "@/lib/projects"
 import {
   projectHasAttentionAgent,
   projectHasDoneAgent,
@@ -113,6 +118,18 @@ function ProjectSidebarRow({
 
   const randomizeAvatarColor = () => {
     randomizeProjectColor(p.path)
+    setColorVersion((v) => v + 1)
+  }
+
+  const chooseAvatarImage = async () => {
+    const imagePath = await window.dialogApi.openProjectAvatarImage()
+    if (!imagePath) return
+    setProjectAvatarImagePath(p.path, imagePath)
+    setColorVersion((v) => v + 1)
+  }
+
+  const clearAvatarImage = () => {
+    clearProjectAvatarImagePath(p.path)
     setColorVersion((v) => v + 1)
   }
 
@@ -201,6 +218,12 @@ function ProjectSidebarRow({
           Remove Other Projects
         </ContextMenuItem>
         <ContextMenuSeparator />
+        <ContextMenuItem onClick={chooseAvatarImage}>
+          Choose Avatar Image…
+        </ContextMenuItem>
+        <ContextMenuItem onClick={clearAvatarImage}>
+          Remove Avatar Image
+        </ContextMenuItem>
         <ContextMenuItem onClick={randomizeAvatarColor}>
           Randomize Avatar Color
         </ContextMenuItem>

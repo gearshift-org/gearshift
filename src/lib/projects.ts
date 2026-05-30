@@ -411,6 +411,15 @@ export function saveDiffViewMode(mode: "unified" | "split"): void {
 }
 
 const PROJECT_COLORS_KEY = "gearshift.projectColors"
+const PROJECT_AVATARS_KEY = "gearshift.projectAvatars"
+export const PROJECT_AVATAR_CHANGED_EVENT = "gearshift:project-avatar-changed"
+
+function dispatchProjectAvatarChanged(path: string): void {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(
+    new CustomEvent(PROJECT_AVATAR_CHANGED_EVENT, { detail: { path } })
+  )
+}
 
 function loadProjectColors(): Record<string, string> {
   try {
@@ -474,5 +483,58 @@ export function randomizeProjectColor(path: string): string {
   const color = randomHexColor()
   map[path] = color
   saveProjectColors(map)
+  dispatchProjectAvatarChanged(path)
   return color
+}
+
+function loadProjectAvatars(): Record<string, string> {
+  try {
+    const raw = store.get(PROJECT_AVATARS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object") return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "string" && v) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function saveProjectAvatars(map: Record<string, string>): void {
+  try {
+    store.set(PROJECT_AVATARS_KEY, JSON.stringify(map))
+  } catch {
+    // ignore
+  }
+}
+
+export function getProjectAvatarImagePath(path: string): string | null {
+  if (!path) return null
+  return loadProjectAvatars()[path] ?? null
+}
+
+export function getProjectAvatarImagePathMap(): Record<string, string> {
+  return loadProjectAvatars()
+}
+
+export function setProjectAvatarImagePath(
+  path: string,
+  imagePath: string
+): void {
+  if (!path || !imagePath) return
+  const map = loadProjectAvatars()
+  map[path] = imagePath
+  saveProjectAvatars(map)
+  dispatchProjectAvatarChanged(path)
+}
+
+export function clearProjectAvatarImagePath(path: string): void {
+  if (!path) return
+  const map = loadProjectAvatars()
+  delete map[path]
+  saveProjectAvatars(map)
+  dispatchProjectAvatarChanged(path)
 }

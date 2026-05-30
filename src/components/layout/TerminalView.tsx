@@ -322,7 +322,7 @@ const USER_INPUT_ECHO_SUPPRESS_MS = 750
 const TERMINAL_RESIZE_SETTLE_MS = 80
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
-const RECAP_IDLE_DELAY_MS = 10000
+const RECAP_IDLE_DELAY_MS = 30000
 const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2

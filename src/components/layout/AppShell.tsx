@@ -1810,37 +1810,36 @@ export function AppShell() {
         console.info("Agent complete: showing in-app toast")
         toast.custom(
           (id) => (
-            <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
+            <div className="relative flex w-[320px] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg">
               <button
                 type="button"
                 onClick={() =>
                   openAgentDoneTarget(targetProject.id, tabId, paneId, id)
                 }
-                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                className="flex min-w-0 flex-1 items-start gap-2 text-left"
               >
                 <ProjectAvatar
                   name={targetProject.name}
                   path={targetProject.path}
-                  className="size-10 shrink-0 rounded-md text-sm"
+                  className="mt-0.5 size-8 shrink-0 rounded-md text-xs"
                 />
-                <span className="flex min-w-0 flex-col justify-center gap-0.5 pr-6">
-                  <span className="text-xs font-medium">Agent finished</span>
-                  <span className="flex min-w-0 items-baseline gap-1 text-xs">
-                    <span className="max-w-28 truncate font-semibold text-foreground">
-                      {targetProject.name}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground">·</span>
-                    <span className="min-w-0 truncate text-muted-foreground">
-                      {terminalName}
-                    </span>
+                <span className="flex min-w-0 flex-col gap-0.5 pr-5">
+                  <span className="truncate text-sm font-semibold">
+                    {targetProject.name}
                   </span>
-                  {elapsedTime && (
-                    <span className="text-[11px] text-muted-foreground">
-                      Completed in {elapsedTime}
-                    </span>
-                  )}
+                  <span className="flex min-w-0 items-baseline gap-1 text-[11px] text-muted-foreground">
+                    <span className="shrink-0">Agent finished</span>
+                    {elapsedTime && (
+                      <>
+                        <span className="shrink-0">·</span>
+                        <span className="shrink-0">
+                          Completed in {elapsedTime}
+                        </span>
+                      </>
+                    )}
+                  </span>
                   {latestPrompt && (
-                    <span className="line-clamp-2 text-[11px] text-muted-foreground">
+                    <span className="line-clamp-2 pt-0.5 text-[11px] leading-snug text-foreground/80">
                       {latestPrompt}
                     </span>
                   )}
@@ -1850,7 +1849,7 @@ export function AppShell() {
                 type="button"
                 aria-label="Close notification"
                 onClick={() => toast.dismiss(id)}
-                className="absolute top-1.5 right-1.5 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="absolute top-1 right-1 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <X className="size-3.5" />
               </button>

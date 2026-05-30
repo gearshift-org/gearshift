@@ -81,7 +81,7 @@ export function TerminalRecapBox({ sessionId, message, kind, onClose }: Props) {
         </span>
       </div>
       {message ? (
-        <p className="line-clamp-2 font-mono text-xs break-words text-foreground/80">
+        <p className="max-h-[min(50vh,24rem)] overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-foreground/80">
           {message.body}
         </p>
       ) : (

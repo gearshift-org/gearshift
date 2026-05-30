@@ -1,12 +1,10 @@
 import * as React from "react"
-import { PanelLeft, PanelRight, PanelTop } from "lucide-react"
+import { PanelRight, PanelTop } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   loadAutoHideTitleBar,
-  loadProjectSidebarLayout,
   loadRightSidebarEdgeReveal,
   saveAutoHideTitleBar,
-  saveProjectSidebarLayout,
   saveRightSidebarEdgeReveal,
 } from "@/lib/projects"
 import { cn } from "@/lib/utils"
@@ -69,16 +67,11 @@ export function GeneralPanel() {
   const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
     loadAutoHideTitleBar()
   )
-  const [projectSidebarLayout, setProjectSidebarLayout] = React.useState(() =>
-    loadProjectSidebarLayout()
-  )
-
   React.useEffect(
     () =>
       store.onReady(() => {
         setEdgeReveal(loadRightSidebarEdgeReveal())
         setAutoHideTitleBar(loadAutoHideTitleBar())
-        setProjectSidebarLayout(loadProjectSidebarLayout())
       }),
     []
   )
@@ -91,11 +84,6 @@ export function GeneralPanel() {
   const updateAutoHideTitleBar = (enabled: boolean) => {
     setAutoHideTitleBar(enabled)
     saveAutoHideTitleBar(enabled)
-  }
-
-  const updateProjectSidebarLayout = (enabled: boolean) => {
-    setProjectSidebarLayout(enabled)
-    saveProjectSidebarLayout(enabled)
   }
 
   return (
@@ -114,13 +102,6 @@ export function GeneralPanel() {
           description="Hide the title bar and traffic lights after a short delay. Hover the top edge to slide it back down."
           checked={autoHideTitleBar}
           onChange={updateAutoHideTitleBar}
-        />
-        <SettingToggle
-          icon={PanelLeft}
-          label="Vertical project sidebar"
-          description="Show projects in a left sidebar instead of tabs across the top."
-          checked={projectSidebarLayout}
-          onChange={updateProjectSidebarLayout}
         />
         <SettingToggle
           icon={PanelRight}

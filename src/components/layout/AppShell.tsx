@@ -44,7 +44,6 @@ import {
   loadAutoHideTitleBar,
   loadPaletteRecents,
   loadProjects,
-  loadProjectSidebarLayout,
   loadProjectSidebarOpen,
   loadRecentProjects,
   loadRightSidebarEdgeReveal,
@@ -62,7 +61,6 @@ import {
   saveSidebarOpen,
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
-  PROJECT_SIDEBAR_LAYOUT_EVENT,
   type PaletteRecents,
   RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
   type RecentProject,
@@ -296,9 +294,6 @@ export function AppShell() {
   const [autoHideTitleBar, setAutoHideTitleBar] = useState(() =>
     loadAutoHideTitleBar()
   )
-  const [projectSidebarLayout, setProjectSidebarLayout] = useState(() =>
-    loadProjectSidebarLayout()
-  )
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
@@ -343,7 +338,6 @@ export function AppShell() {
         setSidebarOpen(loadSidebarOpen())
         setRightSidebarEdgeReveal(loadRightSidebarEdgeReveal())
         setAutoHideTitleBar(loadAutoHideTitleBar())
-        setProjectSidebarLayout(loadProjectSidebarLayout())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         setRightSidebarTab(loadRightSidebarTab())
         const storedActiveId = resolveMigratedProjectId(
@@ -445,21 +439,6 @@ export function AppShell() {
       window.removeEventListener(
         AUTO_HIDE_TITLE_BAR_EVENT,
         onAutoHideTitleBarChange
-      )
-    }
-  }, [])
-  useEffect(() => {
-    const onProjectSidebarLayoutChange = (event: Event) => {
-      setProjectSidebarLayout((event as CustomEvent<boolean>).detail)
-    }
-    window.addEventListener(
-      PROJECT_SIDEBAR_LAYOUT_EVENT,
-      onProjectSidebarLayoutChange
-    )
-    return () => {
-      window.removeEventListener(
-        PROJECT_SIDEBAR_LAYOUT_EVENT,
-        onProjectSidebarLayoutChange
       )
     }
   }, [])
@@ -2190,10 +2169,7 @@ export function AppShell() {
 
   return (
     <div
-      className={cn(
-        "relative flex h-svh bg-background text-foreground",
-        projectSidebarLayout ? "flex-row" : "flex-col"
-      )}
+      className="relative flex h-svh flex-row bg-background text-foreground"
     >
       <CommandPalette
         open={paletteOpen}
@@ -2205,40 +2181,38 @@ export function AppShell() {
         onSelectTab={selectTab}
         onOpenFile={openFileFromCommandPalette}
       />
-      {projectSidebarLayout && (
-        // Keep the sidebar mounted and animate its width so collapse/expand
-        // slides instead of popping. The inner sidebar stays at its full fixed
-        // width so its contents don't reflow while the wrapper clips them.
-        <div
-          aria-hidden={!projectSidebarOpen}
-          style={{ width: projectSidebarOpen ? PROJECT_SIDEBAR_WIDTH : 0 }}
-          className={cn(
-            "shrink-0 overflow-hidden transition-[width] duration-200 ease-out [-webkit-app-region:no-drag]",
-            !projectSidebarOpen && "pointer-events-none"
+      {/* Keep the sidebar mounted and animate its width so collapse/expand
+          slides instead of popping. The inner sidebar stays at its full fixed
+          width so its contents don't reflow while the wrapper clips them. */}
+      <div
+        aria-hidden={!projectSidebarOpen}
+        style={{ width: projectSidebarOpen ? PROJECT_SIDEBAR_WIDTH : 0 }}
+        className={cn(
+          "shrink-0 overflow-hidden transition-[width] duration-200 ease-out [-webkit-app-region:no-drag]",
+          !projectSidebarOpen && "pointer-events-none"
+        )}
+      >
+        <ProjectSidebar
+          projects={projects}
+          activeId={activeProjectId}
+          recents={recents.filter(
+            (r) => !projects.some((p) => p.path === r.path)
           )}
-        >
-          <ProjectSidebar
-            projects={projects}
-            activeId={activeProjectId}
-            recents={recents.filter(
-              (r) => !projects.some((p) => p.path === r.path)
-            )}
-            onSelect={selectProject}
-            onAdd={addProject}
-            onDropFolders={(paths) => void dropProjectFolders(paths)}
-            onPickRecent={pickRecent}
-            onClose={closeProject}
-            onCloseAllTerminals={closeAllProjectTerminals}
-            onCloseOthers={closeOtherProjects}
-            onCloseToRight={closeProjectsToRight}
-            onOpenInVSCode={openProjectInVSCode}
-            onRevealInFinder={revealProjectInFinder}
-            onReorder={reorderProjects}
-            onCollapse={() => setProjectSidebarOpen(false)}
-            onOpenSettings={() => void navigate({ to: "/settings" })}
-          />
-        </div>
-      )}
+          onSelect={selectProject}
+          onAdd={addProject}
+          onDropFolders={(paths) => void dropProjectFolders(paths)}
+          onPickRecent={pickRecent}
+          onClose={closeProject}
+          onCloseAllTerminals={closeAllProjectTerminals}
+          onCloseOthers={closeOtherProjects}
+          onCloseToRight={closeProjectsToRight}
+          onOpenInVSCode={openProjectInVSCode}
+          onRevealInFinder={revealProjectInFinder}
+          onReorder={reorderProjects}
+          onCollapse={() => setProjectSidebarOpen(false)}
+          onOpenSettings={() => void navigate({ to: "/settings" })}
+        />
+      </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {(() => {
         const toggleSidebar = () => {
@@ -2250,8 +2224,7 @@ export function AppShell() {
         }
         // Vertical layout with the project sidebar collapsed: show an expand
         // control (and reclaim the traffic-light gap) in the top bar.
-        const projectSidebarCollapsed =
-          projectSidebarLayout && !projectSidebarOpen
+        const projectSidebarCollapsed = !projectSidebarOpen
         const expandProjectSidebarButton = projectSidebarCollapsed ? (
           <Tooltip>
             <TooltipTrigger
@@ -2274,27 +2247,11 @@ export function AppShell() {
             <TitleBar
               projects={projects}
               activeProjectId={activeProjectId}
-              recents={recents.filter(
-                (r) => !projects.some((p) => p.path === r.path)
-              )}
-              onSelectProject={selectProject}
-              onAddProject={addProject}
-              onPickRecent={pickRecent}
-              onCloseProject={closeProject}
-              onCloseAllProjectTerminals={closeAllProjectTerminals}
-              onCloseOtherProjects={closeOtherProjects}
-              onCloseProjectsToRight={closeProjectsToRight}
-              onOpenProjectInVSCode={openProjectInVSCode}
-              onRevealProjectInFinder={revealProjectInFinder}
-              onReorderProjects={reorderProjects}
               sidebarOpen={sidebarOpen}
               onToggleSidebar={toggleSidebar}
               onOpenChanges={openChanges}
               showRightControls={!sidebarOpen || !activeProject}
-              showProjectTabs={!projectSidebarLayout}
-              showTrafficLightSpacer={
-                !projectSidebarLayout || projectSidebarCollapsed
-              }
+              showTrafficLightSpacer={projectSidebarCollapsed}
               leading={
                 expandProjectSidebarButton ? (
                   <div className="flex items-center pr-2 [-webkit-app-region:no-drag]">
@@ -2417,7 +2374,7 @@ export function AppShell() {
               rightSidebarOverlayOpen
             }
             titleBar={titleBar}
-            hideTitleBar={projectSidebarLayout}
+            hideTitleBar={true}
             sidebarTopActions={sidebarTopActions}
             onTerminalTitleChange={setTerminalTitle}
             onTerminalAgentStatusChange={setTerminalAgentStatus}
@@ -2457,9 +2414,9 @@ export function AppShell() {
                 onOpenInVSCode={() =>
                   void window.shellApi.openInVSCode(activeProject.path)
                 }
-                trailing={projectSidebarLayout ? topBarTrailing : undefined}
-                leading={projectSidebarLayout ? topBarLeading : undefined}
-                draggable={projectSidebarLayout}
+                trailing={topBarTrailing}
+                leading={topBarLeading}
+                draggable={true}
               />
             }
           />

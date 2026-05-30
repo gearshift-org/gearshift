@@ -323,11 +323,6 @@ const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 export const RIGHT_SIDEBAR_EDGE_REVEAL_EVENT =
   "gearshift:rightSidebarEdgeRevealChanged"
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
-export const PROJECT_SIDEBAR_LAYOUT_EVENT =
-  "gearshift:projectSidebarLayoutChanged"
-
-const PROJECT_SIDEBAR_LAYOUT_KEY = "gearshift.projectSidebarLayout"
-
 export type RightSidebarTab = "changes" | "files" | "history"
 
 export function loadRightSidebarTab(): RightSidebarTab {
@@ -386,30 +381,6 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(AUTO_HIDE_TITLE_BAR_EVENT, {
-          detail: enabled,
-        })
-      )
-    }
-  } catch {
-    // ignore
-  }
-}
-
-export function loadProjectSidebarLayout(): boolean {
-  try {
-    // Vertical sidebar is the default; only an explicit "0" disables it.
-    return store.get(PROJECT_SIDEBAR_LAYOUT_KEY) !== "0"
-  } catch {
-    return true
-  }
-}
-
-export function saveProjectSidebarLayout(enabled: boolean): void {
-  try {
-    store.set(PROJECT_SIDEBAR_LAYOUT_KEY, enabled ? "1" : "0")
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent<boolean>(PROJECT_SIDEBAR_LAYOUT_EVENT, {
           detail: enabled,
         })
       )

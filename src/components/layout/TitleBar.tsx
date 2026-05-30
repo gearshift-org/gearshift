@@ -1,35 +1,21 @@
 import type { ReactNode } from "react"
 import { PanelRight } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
-import { ProjectTabs } from "./ProjectTabs"
 import { UpdateButton } from "./UpdateButton"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import type { RecentProject } from "@/lib/projects"
 import type { Project } from "./types"
 
 type Props = {
   projects: Project[]
   activeProjectId: string
-  recents: RecentProject[]
-  onSelectProject: (id: string) => void
-  onAddProject: () => void
-  onPickRecent: (recent: RecentProject) => void
-  onCloseProject: (id: string) => void
-  onCloseAllProjectTerminals?: (id: string) => void
-  onCloseOtherProjects?: (id: string) => void
-  onCloseProjectsToRight?: (id: string) => void
-  onOpenProjectInVSCode?: (id: string) => void
-  onRevealProjectInFinder?: (id: string) => void
-  onReorderProjects?: (fromId: string, toId: string) => void
   sidebarOpen?: boolean
   onToggleSidebar?: () => void
   onOpenChanges?: () => void
   showRightControls?: boolean
-  showProjectTabs?: boolean
   // Reserve the leading 88px gap for the macOS traffic lights.
   showTrafficLightSpacer?: boolean
   // Rendered just after the traffic-light spacer (e.g. an expand control when
@@ -40,22 +26,10 @@ type Props = {
 export function TitleBar({
   projects,
   activeProjectId,
-  recents,
-  onSelectProject,
-  onAddProject,
-  onPickRecent,
-  onCloseProject,
-  onCloseAllProjectTerminals,
-  onCloseOtherProjects,
-  onCloseProjectsToRight,
-  onOpenProjectInVSCode,
-  onRevealProjectInFinder,
-  onReorderProjects,
   sidebarOpen,
   onToggleSidebar,
   onOpenChanges,
   showRightControls = true,
-  showProjectTabs = true,
   showTrafficLightSpacer = true,
   leading,
 }: Props) {
@@ -68,23 +42,6 @@ export function TitleBar({
       {showTrafficLightSpacer && <div className="w-[88px] shrink-0" />}
       {leading}
       <UpdateButton />
-      {showProjectTabs && (
-        <ProjectTabs
-          projects={projects}
-          activeId={activeProjectId}
-          recents={recents}
-          onSelect={onSelectProject}
-          onAdd={onAddProject}
-          onPickRecent={onPickRecent}
-          onClose={onCloseProject}
-          onCloseAllTerminals={onCloseAllProjectTerminals}
-          onCloseOthers={onCloseOtherProjects}
-          onCloseToRight={onCloseProjectsToRight}
-          onOpenInVSCode={onOpenProjectInVSCode}
-          onRevealInFinder={onRevealProjectInFinder}
-          onReorder={onReorderProjects}
-        />
-      )}
       <div className="flex-1" />
       {showRightControls && (
         <>

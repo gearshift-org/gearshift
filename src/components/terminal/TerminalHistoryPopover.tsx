@@ -61,6 +61,7 @@ export function TerminalHistoryPopover({
   const [open, setOpen] = React.useState(false)
   const [messages, setMessages] = React.useState<ChatHistoryMessage[]>([])
   const listRef = React.useRef<HTMLDivElement | null>(null)
+  const shouldScrollToTopRef = React.useRef(false)
 
   // Allow other parts of the pane (e.g. the floating recap box in TerminalView)
   // to open this header popover for the same session.
@@ -71,6 +72,7 @@ export function TerminalHistoryPopover({
 
   React.useEffect(() => {
     if (!open || !sessionId) return
+    shouldScrollToTopRef.current = true
     let cancelled = false
     window.term.history.list(sessionId).then((rows) => {
       if (!cancelled) setMessages(rows)
@@ -84,10 +86,11 @@ export function TerminalHistoryPopover({
     }
   }, [open, sessionId])
 
-  React.useEffect(() => {
-    if (!listRef.current) return
-    listRef.current.scrollTop = listRef.current.scrollHeight
-  }, [messages])
+  React.useLayoutEffect(() => {
+    if (!open || !shouldScrollToTopRef.current || !listRef.current) return
+    listRef.current.scrollTop = 0
+    shouldScrollToTopRef.current = false
+  }, [messages, open])
 
   const handleClear = async () => {
     if (!sessionId) return

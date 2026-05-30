@@ -33,6 +33,8 @@ const IMAGE_EXTS = new Set([
   "avif",
 ])
 
+const AUDIO_EXTS = new Set(["mp3", "wav"])
+
 const MARKDOWN_EXTS = new Set(["md", "markdown", "mdown", "mkd"])
 
 function extOf(path: string): string {
@@ -120,6 +122,18 @@ export function isMarkdownPath(path: string): boolean {
 
 export function isImagePath(path: string): boolean {
   return IMAGE_EXTS.has(extOf(path))
+}
+
+export function isAudioPath(path: string): boolean {
+  return AUDIO_EXTS.has(extOf(path))
+}
+
+export function AudioPreview({ src, path }: { src: string; path: string }) {
+  return (
+    <div className="grid h-full place-items-center overflow-auto bg-card p-4">
+      <audio controls src={src} aria-label={path} className="w-full max-w-xl" />
+    </div>
+  )
 }
 
 export function MarkdownView({ source }: { source: string }) {
@@ -460,10 +474,13 @@ export function FilePreview({
   const abs = useMemo(() => joinPath(cwd, path), [cwd, path])
   const ext = useMemo(() => extOf(path), [path])
   const isImage = IMAGE_EXTS.has(ext)
+  const isAudio = AUDIO_EXTS.has(ext)
   const isMarkdown = MARKDOWN_EXTS.has(ext)
 
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioError, setAudioError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isImage) {
@@ -486,6 +503,28 @@ export function FilePreview({
       cancelled = true
     }
   }, [abs, isImage])
+
+  useEffect(() => {
+    if (!isAudio) {
+      setAudioUrl(null)
+      setAudioError(null)
+      return
+    }
+    let cancelled = false
+    setAudioUrl(null)
+    setAudioError(null)
+    window.fsApi.readAudio(abs).then((res) => {
+      if (cancelled) return
+      if (!res.ok || !res.dataUrl) {
+        setAudioError(res.error ?? "Failed to load audio")
+      } else {
+        setAudioUrl(res.dataUrl)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [abs, isAudio])
 
   const [state, setState] = useState<LoadState>({ kind: "loading" })
   const [savedContent, setSavedContent] = useState<string>("")
@@ -736,7 +775,7 @@ export function FilePreview({
   }, [])
 
   useEffect(() => {
-    if (isImage) return
+    if (isImage || isAudio) return
     let cancelled = false
     loadedAbsRef.current = null
     queueMicrotask(() => {
@@ -763,7 +802,7 @@ export function FilePreview({
     return () => {
       cancelled = true
     }
-  }, [abs, isImage])
+  }, [abs, isAudio, isImage])
 
   const save = useCallback(async () => {
     if (state.kind !== "ready" || !dirty || saving) return
@@ -894,6 +933,26 @@ export function FilePreview({
         />
       </div>
     )
+  }
+
+  if (isAudio) {
+    if (audioError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {audioError === "unsupported-type"
+            ? "Unsupported file preview"
+            : audioError}
+        </div>
+      )
+    }
+    if (!audioUrl) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    return <AudioPreview src={audioUrl} path={path} />
   }
 
   if (state.kind === "loading") {

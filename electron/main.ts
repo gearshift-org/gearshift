@@ -1485,16 +1485,32 @@ app.whenReady().then(async () => {
     }
   })
 
-  ipcMain.handle("fs:readImage", async (_event, absPath: string) => {
+  async function readMediaDataUrl(
+    absPath: string,
+    mimeByExt: Record<string, string>,
+    maxSize: number
+  ) {
     if (!absPath) return { ok: false, error: "no-path" }
     try {
       const stat = await fs.stat(absPath)
-      const MAX = 25 * 1024 * 1024
-      if (stat.size > MAX) {
+      if (stat.size > maxSize) {
         return { ok: false, error: "too-large", size: stat.size }
       }
       const ext = path.extname(absPath).toLowerCase()
-      const mimeByExt: Record<string, string> = {
+      const mime = mimeByExt[ext]
+      if (!mime) return { ok: false, error: "unsupported-type" }
+      const buf = await fs.readFile(absPath)
+      const dataUrl = `data:${mime};base64,${buf.toString("base64")}`
+      return { ok: true, dataUrl, mime, size: stat.size }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  }
+
+  ipcMain.handle("fs:readImage", async (_event, absPath: string) => {
+    return readMediaDataUrl(
+      absPath,
+      {
         ".png": "image/png",
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
@@ -1504,15 +1520,20 @@ app.whenReady().then(async () => {
         ".bmp": "image/bmp",
         ".ico": "image/x-icon",
         ".avif": "image/avif",
-      }
-      const mime = mimeByExt[ext]
-      if (!mime) return { ok: false, error: "unsupported-type" }
-      const buf = await fs.readFile(absPath)
-      const dataUrl = `data:${mime};base64,${buf.toString("base64")}`
-      return { ok: true, dataUrl, mime, size: stat.size }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
+      },
+      25 * 1024 * 1024
+    )
+  })
+
+  ipcMain.handle("fs:readAudio", async (_event, absPath: string) => {
+    return readMediaDataUrl(
+      absPath,
+      {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+      },
+      100 * 1024 * 1024
+    )
   })
 
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {

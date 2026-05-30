@@ -240,6 +240,14 @@ const fsApi = {
       mime?: string
       size?: number
     }>,
+  readAudio: (absPath: string) =>
+    ipcRenderer.invoke("fs:readAudio", absPath) as Promise<{
+      ok: boolean
+      error?: string
+      dataUrl?: string
+      mime?: string
+      size?: number
+    }>,
   writeFile: (absPath: string, content: string) =>
     ipcRenderer.invoke("fs:writeFile", absPath, content) as Promise<{
       ok: boolean

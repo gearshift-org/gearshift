@@ -20,6 +20,7 @@ import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import {
   FilePreview,
+  isAudioPath,
   isImagePath,
   isMarkdownPath,
   readMdMode,
@@ -626,12 +627,14 @@ export function WorkspacePane({
       : null
   const isMarkdownActive = !!activeTabPath && isMarkdownPath(activeTabPath)
   const isImageActive = !!activeTabPath && isImagePath(activeTabPath)
-  // Only the diff tab benefits from a raw/preview switch on images — the
-  // file tab always renders the image. So the toggle is shown when:
+  const isAudioActive = !!activeTabPath && isAudioPath(activeTabPath)
+  const isMediaDiffActive =
+    activeTab?.kind === "diff" && (isImageActive || isAudioActive)
+  // Only the diff tab benefits from a raw/preview switch on media — the
+  // file tab always renders the media preview. So the toggle is shown when:
   //   - active tab is a markdown file/diff (preview vs source), or
-  //   - active tab is a diff for an image (preview image vs the textual diff)
-  const showMdToggle =
-    isMarkdownActive || (isImageActive && activeTab?.kind === "diff")
+  //   - active tab is a media diff (preview media vs the textual diff)
+  const showMdToggle = isMarkdownActive || isMediaDiffActive
   const activeFileDirtyStatus = activeTab
     ? fileDirtyStatuses[activeTab.id]
     : undefined
@@ -669,8 +672,8 @@ export function WorkspacePane({
                       onClick={toggleMdMode}
                       aria-label={
                         mdMode === "preview"
-                          ? "Show raw markdown"
-                          : "Show markdown preview"
+                          ? "Show raw file"
+                          : "Show file preview"
                       }
                       aria-pressed={mdMode === "preview"}
                       className="grid size-6 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"

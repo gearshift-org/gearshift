@@ -4,7 +4,9 @@ import { WorkerPoolContextProvider } from "@pierre/diffs/react"
 import { useTheme } from "@/components/theme-provider"
 import { DiffViewer } from "./DiffViewer"
 import {
+  AudioPreview,
   MarkdownView,
+  isAudioPath,
   isImagePath,
   isMarkdownPath,
   type MdMode,
@@ -65,6 +67,7 @@ export function SingleFileDiff({
 }: Props) {
   const showMarkdownPreview = isMarkdownPath(path) && mdMode === "preview"
   const showImagePreview = isImagePath(path) && mdMode === "preview"
+  const showAudioPreview = isAudioPath(path) && mdMode === "preview"
   const absPath = path.startsWith("/")
     ? path
     : `${cwd.replace(/\/+$/, "")}/${path}`
@@ -114,6 +117,26 @@ export function SingleFileDiff({
       cancelled = true
     }
   }, [absPath, showImagePreview])
+
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioError, setAudioError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showAudioPreview) return
+    let cancelled = false
+    setAudioUrl(null)
+    setAudioError(null)
+    window.fsApi.readAudio(absPath).then((res) => {
+      if (cancelled) return
+      if (!res.ok || !res.dataUrl) {
+        setAudioError(res.error ?? "Failed to load audio")
+      } else {
+        setAudioUrl(res.dataUrl)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [absPath, showAudioPreview])
   const { resolvedTheme } = useTheme()
   const [patch, setPatch] = useState("")
   const [loading, setLoading] = useState(true)
@@ -345,6 +368,26 @@ export function SingleFileDiff({
         />
       </div>
     )
+  }
+
+  if (showAudioPreview) {
+    if (audioError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {audioError === "unsupported-type"
+            ? "Unsupported file preview"
+            : audioError}
+        </div>
+      )
+    }
+    if (!audioUrl) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    return <AudioPreview src={audioUrl} path={path} />
   }
 
   return (

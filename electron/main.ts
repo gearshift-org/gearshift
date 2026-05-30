@@ -916,7 +916,15 @@ async function buildUntrackedPatch(cwd: string, files: string[]) {
         const full = path.resolve(cwd, filePath)
         if (!isPathInside(cwd, full)) return ""
         const buf = await fs.readFile(full)
-        if (isProbablyBinaryBuffer(buf)) return ""
+        if (isProbablyBinaryBuffer(buf)) {
+          return [
+            `diff --git a/${filePath} b/${filePath}`,
+            "new file mode 100644",
+            "index 0000000..0000000",
+            `Binary files /dev/null and b/${filePath} differ`,
+            "",
+          ].join("\n")
+        }
         const raw = await runGitAllowExit1(cwd, [
           "diff",
           "--no-color",
@@ -1927,7 +1935,7 @@ app.whenReady().then(async () => {
     async (_event, cwd: string, filePath: string, staged: boolean) => {
       if (!cwd || !filePath) return { ok: false, error: "no-path", patch: "" }
       try {
-        const args = ["diff", "--no-color", "--text"]
+        const args = ["diff", "--no-color"]
         if (staged) args.push("--cached")
         args.push("--", filePath)
         let patch = await runGitAllowExit1(cwd, args)
@@ -1949,8 +1957,8 @@ app.whenReady().then(async () => {
     }
     try {
       const [unstagedRaw, stagedPatch, statusRaw] = await Promise.all([
-        runGit(cwd, ["diff", "--no-color", "--text"]),
-        runGit(cwd, ["diff", "--no-color", "--text", "--cached"]),
+        runGit(cwd, ["diff", "--no-color"]),
+        runGit(cwd, ["diff", "--no-color", "--cached"]),
         runGit(cwd, [
           "status",
           "--porcelain=v1",

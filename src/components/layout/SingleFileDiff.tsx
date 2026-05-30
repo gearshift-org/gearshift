@@ -49,6 +49,12 @@ const diffsHighlighterOptions = {
   theme: { dark: "one-dark-pro", light: "one-light" },
 } as const
 
+function isUnsupportedDiff(patch: string): boolean {
+  return (
+    /^Binary files .+ differ$/m.test(patch) || /^GIT binary patch$/m.test(patch)
+  )
+}
+
 export function SingleFileDiff({
   cwd,
   path,
@@ -78,7 +84,7 @@ export function SingleFileDiff({
       } else if (res.tooLarge) {
         setMdError("File too large to preview")
       } else if (res.binary) {
-        setMdError("Binary file")
+        setMdError("Unsupported file preview")
       } else {
         setMdSource(res.content ?? "")
       }
@@ -266,6 +272,13 @@ export function SingleFileDiff({
         </div>
       )
     }
+    if (isUnsupportedDiff(patch)) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Unsupported file preview
+        </div>
+      )
+    }
     return (
       <WorkerPoolContextProvider
         poolOptions={diffsWorkerPoolOptions}
@@ -310,7 +323,9 @@ export function SingleFileDiff({
     if (imgError) {
       return (
         <div className="grid h-full place-items-center text-xs text-red-500">
-          {imgError}
+          {imgError === "unsupported-type"
+            ? "Unsupported file preview"
+            : imgError}
         </div>
       )
     }

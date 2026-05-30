@@ -871,7 +871,9 @@ export function FilePreview({
     if (imageError) {
       return (
         <div className="grid h-full place-items-center text-xs text-red-500">
-          {imageError}
+          {imageError === "unsupported-type"
+            ? "Unsupported file preview"
+            : imageError}
         </div>
       )
     }
@@ -911,7 +913,7 @@ export function FilePreview({
   if (state.kind === "binary") {
     return (
       <div className="grid h-full place-items-center text-xs text-muted-foreground">
-        Binary file
+        Unsupported file preview
       </div>
     )
   }

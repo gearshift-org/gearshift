@@ -749,17 +749,6 @@ export function AppShell() {
 
   useEffect(() => {
     if (!activeProjectId) return
-    const activeProject = projects.find((p) => p.id === activeProjectId)
-    if (!activeProject?.agentDone) return
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === activeProjectId && p.agentDone ? { ...p, agentDone: false } : p
-      )
-    )
-  }, [activeProjectId, projects])
-
-  useEffect(() => {
-    if (!activeProjectId) return
     const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
     if (!set || set.size === 0) return
     for (const id of set) toast.dismiss(id)
@@ -893,13 +882,6 @@ export function AppShell() {
 
   const selectProject = (id: string) => {
     const p = projects.find((x) => x.id === id)
-    setProjects((prev) =>
-      prev.map((project) =>
-        project.id === id && project.agentDone
-          ? { ...project, agentDone: false }
-          : project
-      )
-    )
     navigateToProject(id, p?.activeTabId || undefined)
   }
 
@@ -1760,12 +1742,11 @@ export function AppShell() {
         return {
           ...p,
           tabs,
-          agentDone:
-            status.working || p.id === activeProjectId
-              ? false
-              : finishedWork
-                ? true
-                : p.agentDone,
+          agentDone: status.working
+            ? false
+            : finishedWork
+              ? true
+              : p.agentDone,
         }
       })
     )

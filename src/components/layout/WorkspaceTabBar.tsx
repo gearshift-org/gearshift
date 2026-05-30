@@ -144,15 +144,17 @@ function WorkspaceTabItem({
   const tabTitle = tabDisplayName(t)
   const isPreview =
     (t.kind === "diff" || t.kind === "file") && t.preview === true
-  const hasHiddenWorkingAgent =
+  const hasWorkingAgent =
+    isTerminal && t.panes.some((pane) => pane.agentStatus?.working)
+  const hasAttentionAgent =
     isTerminal &&
-    !isActive &&
-    t.panes.some((pane) => pane.agentStatus?.working)
-  const hasHiddenAttentionAgent =
-    isTerminal &&
-    !isActive &&
-    !hasHiddenWorkingAgent &&
+    !hasWorkingAgent &&
     t.panes.some((pane) => pane.agentStatus?.needsAttention)
+  const hasDoneAgent =
+    isTerminal &&
+    !hasWorkingAgent &&
+    !hasAttentionAgent &&
+    t.panes.some((pane) => pane.agentStatus?.completed)
   const {
     attributes,
     listeners,
@@ -197,10 +199,18 @@ function WorkspaceTabItem({
         {...listeners}
       >
         <TabIcon tab={t} />
-        {hasHiddenWorkingAgent ? (
+        {hasWorkingAgent ? (
           <AgentSpinner className="-ml-1" />
-        ) : hasHiddenAttentionAgent ? (
+        ) : hasAttentionAgent ? (
           <AgentAttention className="-ml-1" />
+        ) : hasDoneAgent ? (
+          <span
+            aria-label="Coding agent done"
+            title="Coding agent done"
+            className="relative -ml-1 grid size-2.5 shrink-0 place-items-center"
+          >
+            <span className="gs-status-bounce relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+          </span>
         ) : null}
         {isRenaming && isTerminal ? (
           <input

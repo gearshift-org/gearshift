@@ -1295,7 +1295,7 @@ export function TerminalView({
         <div ref={containerRef} className="terminal-fit-host" />
         {recap && (
           <div
-            className="absolute top-3 left-1/2 z-10 w-[min(34rem,85%)] -translate-x-1/2"
+            className="absolute top-6 left-1/2 z-10 w-[min(34rem,85%)] -translate-x-1/2"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.stopPropagation()}
           >

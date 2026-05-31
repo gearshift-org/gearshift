@@ -267,6 +267,11 @@ const fsApi = {
       ok: boolean
       error?: string
     }>,
+  move: (sourceAbsPath: string, targetDirAbsPath: string) =>
+    ipcRenderer.invoke("fs:move", sourceAbsPath, targetDirAbsPath) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   trash: (absPath: string) =>
     ipcRenderer.invoke("fs:trash", absPath) as Promise<{
       ok: boolean

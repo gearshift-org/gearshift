@@ -1521,6 +1521,48 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle(
+    "fs:move",
+    async (_event, sourceAbsPath: string, targetDirAbsPath: string) => {
+      if (!sourceAbsPath || !targetDirAbsPath) {
+        return { ok: false, error: "no-path" }
+      }
+      try {
+        const source = path.resolve(sourceAbsPath)
+        const targetDir = path.resolve(targetDirAbsPath)
+        const sourceStat = await fs.stat(source)
+        const targetDirStat = await fs.stat(targetDir)
+        if (!targetDirStat.isDirectory()) {
+          return { ok: false, error: "Drop target is not a folder" }
+        }
+        if (source === targetDir) {
+          return { ok: false, error: "Cannot move a folder into itself" }
+        }
+        if (sourceStat.isDirectory() && isPathInside(source, targetDir)) {
+          return { ok: false, error: "Cannot move a folder into itself" }
+        }
+        if (path.dirname(source) === targetDir) {
+          return { ok: false, error: "Already in that folder" }
+        }
+        const target = path.join(targetDir, path.basename(source))
+        try {
+          await fs.lstat(target)
+          return {
+            ok: false,
+            error: "A file or folder with that name already exists",
+          }
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException
+          if (e.code !== "ENOENT") throw err
+        }
+        await fs.rename(source, target)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
   ipcMain.handle("fs:trash", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }
     try {

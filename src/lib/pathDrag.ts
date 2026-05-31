@@ -4,7 +4,7 @@ export function setPathDragData(dataTransfer: DataTransfer, paths: string[]) {
   const cleanPaths = paths.map((path) => path.trim()).filter(Boolean)
   if (cleanPaths.length === 0) return
 
-  dataTransfer.effectAllowed = "copy"
+  dataTransfer.effectAllowed = "copyMove"
   dataTransfer.setData(PATH_DRAG_MIME, JSON.stringify(cleanPaths))
   dataTransfer.setData("text/plain", cleanPaths.join("\n"))
 }

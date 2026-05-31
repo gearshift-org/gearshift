@@ -30,7 +30,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { setPathDragData } from "@/lib/pathDrag"
+import {
+  getPathDragData,
+  hasPathDragData,
+  setPathDragData,
+} from "@/lib/pathDrag"
 import { cn } from "@/lib/utils"
 
 type Entry = { name: string; isDir: boolean; ignored?: boolean }
@@ -62,6 +66,7 @@ type TreeActions = {
   submitCreate: (name: string) => Promise<void>
   cancelCreate: () => void
   trash: (absPath: string, isDir: boolean) => Promise<void>
+  moveToDir: (sourcePaths: string[], targetDirAbs: string) => Promise<void>
 }
 
 const TreeActionsContext = createContext<TreeActions | null>(null)
@@ -105,7 +110,8 @@ function FolderNode({
   const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
   const [forceClosed, setForceClosed] = useState(false)
   const collapseSignal = useContext(CollapseSignalContext)
-  const { pendingCreate } = useTreeActions()
+  const { pendingCreate, moveToDir } = useTreeActions()
+  const [dragOver, setDragOver] = useState(false)
   const isCreateTarget = pendingCreate?.parentAbs === absPath
   useEffect(() => {
     if (collapseSignal > 0 && depth > 0) {
@@ -141,6 +147,25 @@ function FolderNode({
       type="button"
       draggable
       onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
+      onDragOver={(e) => {
+        if (!hasPathDragData(e.dataTransfer)) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = "move"
+        setDragOver(true)
+      }}
+      onDragLeave={(e) => {
+        e.stopPropagation()
+        setDragOver(false)
+      }}
+      onDrop={(e) => {
+        const paths = getPathDragData(e.dataTransfer)
+        if (paths.length === 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        setDragOver(false)
+        void moveToDir(paths, absPath)
+      }}
       onClick={() => {
         if (open) {
           setManuallyOpen(false)
@@ -152,6 +177,7 @@ function FolderNode({
       }}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+        dragOver && "bg-accent/70 ring-1 ring-inset ring-ring/40",
         ignored && "text-muted-foreground opacity-80"
       )}
       style={{ paddingLeft: depth * 12 }}
@@ -423,6 +449,7 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
+  const [rootDragOver, setRootDragOver] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   const allFilesQuery = useQuery({
@@ -567,6 +594,27 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
         }
         invalidateTree()
       },
+      moveToDir: async (sourcePaths, targetDirAbs) => {
+        const uniquePaths = [...new Set(sourcePaths)].filter(
+          (sourcePath) => sourcePath !== targetDirAbs
+        )
+        if (uniquePaths.length === 0) return
+
+        const results = await Promise.all(
+          uniquePaths.map((sourcePath) =>
+            window.fsApi.move(sourcePath, targetDirAbs).then((res) => ({
+              sourcePath,
+              res,
+            }))
+          )
+        )
+        const failed = results.find(({ res }) => !res.ok)
+        if (failed) {
+          const name = failed.sourcePath.split("/").pop() ?? failed.sourcePath
+          toast.error(failed.res.error ?? `Failed to move ${name}`)
+        }
+        if (results.some(({ res }) => res.ok)) invalidateTree()
+      },
     }),
     [pendingCreate, invalidateTree, cwd, onOpenFile]
   )
@@ -695,7 +743,31 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
           <CollapseSignalContext.Provider value={collapseSignal}>
             <ScrollArea className="min-h-0 flex-1">
               <FileTreeContextMenu absPath={cwd} isDir>
-                <div className="min-h-full">
+                <div
+                  className={cn(
+                    "min-h-full",
+                    rootDragOver &&
+                      "bg-accent/20 ring-1 ring-inset ring-ring/30"
+                  )}
+                  onDragOver={(e) => {
+                    if (!hasPathDragData(e.dataTransfer)) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = "move"
+                    setRootDragOver(true)
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                      return
+                    setRootDragOver(false)
+                  }}
+                  onDrop={(e) => {
+                    const paths = getPathDragData(e.dataTransfer)
+                    if (paths.length === 0) return
+                    e.preventDefault()
+                    setRootDragOver(false)
+                    void treeActions.moveToDir(paths, cwd)
+                  }}
+                >
                   <FolderNode
                     key={cwd}
                     cwd={cwd}

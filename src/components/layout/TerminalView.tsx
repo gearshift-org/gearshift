@@ -519,8 +519,9 @@ export function TerminalView({
     emitAgentStatus({
       ...current,
       working: true,
-      workStartedAt: current.workStartedAt ?? now,
+      workStartedAt: current.working ? (current.workStartedAt ?? now) : now,
       completedAt: undefined,
+      completed: false,
       needsAttention: false,
     })
     if (agentWorkingTimerRef.current) {
@@ -1133,7 +1134,7 @@ export function TerminalView({
           running: true,
           working: true,
           agentName: event.agentName,
-          workStartedAt: current.workStartedAt ?? now,
+          workStartedAt: now,
           completedAt: undefined,
           completed: false,
           needsAttention: false,

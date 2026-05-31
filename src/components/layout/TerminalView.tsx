@@ -323,6 +323,8 @@ const TERMINAL_RESIZE_SETTLE_MS = 80
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
 const RECAP_IDLE_DELAY_MS = 30000
+// Recap box temporarily disabled; keep the code path intact for easy restore.
+const TERMINAL_RECAP_BOX_ENABLED = false
 const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
@@ -464,6 +466,7 @@ export function TerminalView({
   // surface the last prompt they sent. Any keystroke (see term.onData) cancels.
   const scheduleRecap = useCallback(
     (kind: "completed" | "needs_attention") => {
+      if (!TERMINAL_RECAP_BOX_ENABLED) return
       if (recapTimerRef.current) window.clearTimeout(recapTimerRef.current)
       const triggeredAt = Date.now()
       recapTimerRef.current = window.setTimeout(() => {
@@ -1314,7 +1317,7 @@ export function TerminalView({
         style={{ "--xterm-bg": themeObj.background } as CSSProperties}
       >
         <div ref={containerRef} className="terminal-fit-host" />
-        {recap && (
+        {TERMINAL_RECAP_BOX_ENABLED && recap && (
           <div
             className="absolute top-6 left-1/2 z-10 w-[min(44rem,92%)] -translate-x-1/2"
             onClick={(e) => e.stopPropagation()}

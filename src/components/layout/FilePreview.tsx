@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { toggleLineComment } from "@codemirror/commands"
+import {
+  copyLineDown,
+  copyLineUp,
+  indentLess,
+  indentMore,
+  indentWithTab,
+  moveLineDown,
+  moveLineUp,
+  toggleLineComment,
+} from "@codemirror/commands"
 import { LanguageDescription, StreamLanguage } from "@codemirror/language"
 import { languages } from "@codemirror/language-data"
 import { Compartment, EditorState, Prec } from "@codemirror/state"
@@ -362,6 +371,42 @@ function CodeEditor({
               onOpenSearchRef.current()
               return true
             },
+          },
+          indentWithTab,
+          {
+            key: "Shift-Tab",
+            preventDefault: true,
+            run: indentLess,
+          },
+          {
+            key: "Mod-]",
+            preventDefault: true,
+            run: indentMore,
+          },
+          {
+            key: "Mod-[",
+            preventDefault: true,
+            run: indentLess,
+          },
+          {
+            key: "Alt-ArrowUp",
+            preventDefault: true,
+            run: moveLineUp,
+          },
+          {
+            key: "Alt-ArrowDown",
+            preventDefault: true,
+            run: moveLineDown,
+          },
+          {
+            key: "Shift-Alt-ArrowUp",
+            preventDefault: true,
+            run: copyLineUp,
+          },
+          {
+            key: "Shift-Alt-ArrowDown",
+            preventDefault: true,
+            run: copyLineDown,
           },
           {
             key: "Mod-/",

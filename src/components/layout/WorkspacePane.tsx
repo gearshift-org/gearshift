@@ -1,4 +1,11 @@
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react"
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { Columns2, Eye, FileCode, Rows3 } from "lucide-react"
 import {
   DndContext,
@@ -630,6 +637,17 @@ export function WorkspacePane({
   const isAudioActive = !!activeTabPath && isAudioPath(activeTabPath)
   const isMediaDiffActive =
     activeTab?.kind === "diff" && (isImageActive || isAudioActive)
+  const lastMediaDiffKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!activeTab || !isMediaDiffActive) {
+      lastMediaDiffKeyRef.current = null
+      return
+    }
+    const key = `${activeTab.id}:${activeTab.path}:${activeTab.staged}`
+    if (lastMediaDiffKeyRef.current === key) return
+    lastMediaDiffKeyRef.current = key
+    setMdMode("preview")
+  }, [activeTab, isMediaDiffActive])
   // Only the diff tab benefits from a raw/preview switch on media — the
   // file tab always renders the media preview. So the toggle is shown when:
   //   - active tab is a markdown file/diff (preview vs source), or

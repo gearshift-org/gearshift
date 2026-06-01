@@ -20,6 +20,7 @@ function clampWidth(n: number): number {
 type Props = {
   projects: Project[]
   activeProjectId: string
+  activeTabId?: string
   titleBar?: ReactNode
   sidebarTopActions?: ReactNode
   workspaceTabs: ReactNode
@@ -34,6 +35,11 @@ type Props = {
     paneId: string,
     status: TerminalAgentStatus
   ) => void
+  terminalFocusRequest?: {
+    tabId: string
+    paneId: string
+    nonce: number
+  } | null
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
   onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
@@ -61,6 +67,7 @@ type Props = {
 export function WorkspaceSplit({
   projects,
   activeProjectId,
+  activeTabId,
   titleBar,
   sidebarTopActions,
   workspaceTabs,
@@ -69,6 +76,7 @@ export function WorkspaceSplit({
   sidebarOverlayVisible = false,
   onTerminalTitleChange,
   onTerminalAgentStatusChange,
+  terminalFocusRequest,
   onStartTerminal,
   onAddTerminal,
   onSplitTerminal,
@@ -187,6 +195,8 @@ export function WorkspaceSplit({
             <WorkspacePane
               project={p}
               isActive={p.id === activeProjectId}
+              activeTabId={p.id === activeProjectId ? activeTabId : undefined}
+              terminalFocusRequest={terminalFocusRequest}
               onTitleChange={onTerminalTitleChange}
               onAgentStatusChange={onTerminalAgentStatusChange}
               onStartTerminal={onStartTerminal}

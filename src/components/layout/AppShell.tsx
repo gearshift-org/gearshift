@@ -348,6 +348,11 @@ export function AppShell() {
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
     loadRightSidebarTab()
   )
+  const [terminalFocusRequest, setTerminalFocusRequest] = useState<{
+    tabId: string
+    paneId: string
+    nonce: number
+  } | null>(null)
   const [stateRestored, setStateRestored] = useState(() => store.isReady())
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
     string | null
@@ -425,6 +430,7 @@ export function AppShell() {
   const lastTerminalByProjectRef = useRef<Record<string, string>>({})
   const agentDoneToastsByProjectRef = useRef<Map<string, Set<string>>>(new Map())
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
+  const terminalFocusRequestNonceRef = useRef(0)
   const windowFocusedRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true
   )
@@ -1472,6 +1478,8 @@ export function AppShell() {
       toastId?: string | number
     ) => {
       if (toastId !== undefined) toast.dismiss(toastId)
+      window.focus()
+      void window.appWindow?.focus?.()
       setProjects((prev) =>
         prev.map((p) =>
           p.id === projectId
@@ -1490,6 +1498,12 @@ export function AppShell() {
         )
       )
       navigateToProject(projectId, tabId)
+      terminalFocusRequestNonceRef.current += 1
+      setTerminalFocusRequest({
+        tabId,
+        paneId,
+        nonce: terminalFocusRequestNonceRef.current,
+      })
     },
     [navigateToProject]
   )
@@ -2569,6 +2583,7 @@ export function AppShell() {
           <WorkspaceSplit
             projects={projects}
             activeProjectId={activeProjectId}
+            activeTabId={activeTabId}
             sidebarOpen={sidebarOpen}
             sidebarOverlayMode={
               rightSidebarEdgeReveal && !sidebarOpen && !!activeProject
@@ -2584,6 +2599,7 @@ export function AppShell() {
             sidebarTopActions={sidebarTopActions}
             onTerminalTitleChange={setTerminalTitle}
             onTerminalAgentStatusChange={setTerminalAgentStatus}
+            terminalFocusRequest={terminalFocusRequest}
             onStartTerminal={(tabId, paneId) => {
               void startTerminalPane(activeProject.id, tabId, paneId)
             }}

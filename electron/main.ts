@@ -1213,6 +1213,15 @@ app.whenReady().then(async () => {
     return { ok: true, nearWindow, cursor, bounds }
   })
 
+  ipcMain.handle("window:focus", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return { ok: false }
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    return { ok: true }
+  })
+
   ipcMain.handle("window:setWindowButtonVisibility", (event, visible) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return { ok: false }

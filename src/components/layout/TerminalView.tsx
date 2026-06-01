@@ -33,6 +33,7 @@ import type { ChatHistoryMessage } from "../../../electron/preload"
 type Props = {
   sessionId: string
   isActive?: boolean
+  focusRequest?: number
   onTitleChange?: (title: string) => void
   onFocusChange?: (focused: boolean) => void
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
@@ -477,6 +478,7 @@ async function pasteClipboard(
 export function TerminalView({
   sessionId,
   isActive = true,
+  focusRequest,
   onTitleChange,
   onFocusChange,
   onAgentStatusChange,
@@ -1515,6 +1517,12 @@ export function TerminalView({
   useEffect(() => {
     if (isActive && !searchOpen) termRef.current?.focus()
   }, [isActive, searchOpen])
+
+  useEffect(() => {
+    if (focusRequest === undefined || !isActive || searchOpen) return
+    const id = requestAnimationFrame(() => termRef.current?.focus())
+    return () => cancelAnimationFrame(id)
+  }, [focusRequest, isActive, searchOpen])
 
   const runSearch = useCallback(
     (q: string, direction: "next" | "prev" = "next") => {

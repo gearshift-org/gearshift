@@ -67,6 +67,12 @@ import type {
 type Props = {
   project: Project | undefined
   isActive?: boolean
+  activeTabId?: string
+  terminalFocusRequest?: {
+    tabId: string
+    paneId: string
+    nonce: number
+  } | null
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onAgentStatusChange?: (
     tabId: string,
@@ -94,6 +100,7 @@ function TerminalPaneView({
   tab,
   pane,
   isTabActive,
+  focusRequest,
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
@@ -104,6 +111,7 @@ function TerminalPaneView({
   tab: TerminalTab
   pane: TerminalPaneType
   isTabActive: boolean
+  focusRequest?: number
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onAgentStatusChange?: (
     tabId: string,
@@ -135,6 +143,7 @@ function TerminalPaneView({
       <TerminalView
         sessionId={pane.sessionId ?? pane.id}
         isActive={isTabActive && tab.activePaneId === pane.id}
+        focusRequest={focusRequest}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
         onFocusChange={(focused) => onTerminalFocusChange?.(pane.id, focused)}
         onAgentStatusChange={(status) =>
@@ -262,6 +271,7 @@ function PaneDropZone({
 function TerminalTabContent({
   tab,
   isActive,
+  focusRequest,
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
@@ -274,6 +284,11 @@ function TerminalTabContent({
 }: {
   tab: TerminalTab
   isActive: boolean
+  focusRequest?: {
+    tabId: string
+    paneId: string
+    nonce: number
+  } | null
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
   onAgentStatusChange?: (
     tabId: string,
@@ -369,6 +384,11 @@ function TerminalTabContent({
         tab={tab}
         pane={pane}
         isTabActive={isActive}
+        focusRequest={
+          focusRequest?.tabId === tab.id && focusRequest.paneId === pane.id
+            ? focusRequest.nonce
+            : undefined
+        }
         onTitleChange={onTitleChange}
         onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
@@ -490,6 +510,7 @@ function PaneContent({
   tab,
   project,
   isActive,
+  terminalFocusRequest,
   diffViewMode,
   mdMode,
   onTitleChange,
@@ -508,6 +529,11 @@ function PaneContent({
   tab: WorkspaceTab
   project: Project
   isActive: boolean
+  terminalFocusRequest?: {
+    tabId: string
+    paneId: string
+    nonce: number
+  } | null
   diffViewMode: "unified" | "split"
   mdMode: MdMode
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
@@ -547,6 +573,7 @@ function PaneContent({
       <TerminalTabContent
         tab={tab}
         isActive={isActive}
+        focusRequest={terminalFocusRequest}
         onTitleChange={onTitleChange}
         onAgentStatusChange={onAgentStatusChange}
         onStartTerminal={onStartTerminal}
@@ -591,6 +618,8 @@ function PaneContent({
 export function WorkspacePane({
   project,
   isActive = true,
+  activeTabId: activeTabIdOverride,
+  terminalFocusRequest,
   onTitleChange,
   onAgentStatusChange,
   onStartTerminal,
@@ -606,7 +635,11 @@ export function WorkspacePane({
 }: Props) {
   const { bindings } = useKeybindings()
   const hasTabs = !!project?.tabs.length
-  const activeTab = project?.tabs.find((t) => t.id === project.activeTabId)
+  const resolvedActiveTabId =
+    activeTabIdOverride && project?.tabs.some((t) => t.id === activeTabIdOverride)
+      ? activeTabIdOverride
+      : project?.activeTabId
+  const activeTab = project?.tabs.find((t) => t.id === resolvedActiveTabId)
   const isDiffActive = activeTab?.kind === "diff"
   // Terminal tabs render their own PaneHeader row (single or split), so the
   // shared header would just stack a redundant row above it. When a project has
@@ -774,16 +807,17 @@ export function WorkspacePane({
           project.tabs.map((t) => (
             <div
               key={t.id}
-              aria-hidden={t.id !== project.activeTabId}
+              aria-hidden={t.id !== resolvedActiveTabId}
               className={cn(
                 "absolute inset-0 transition-opacity duration-75",
-                t.id !== project.activeTabId && "pointer-events-none opacity-0"
+                t.id !== resolvedActiveTabId && "pointer-events-none opacity-0"
               )}
             >
               <PaneContent
                 tab={t}
                 project={project}
-                isActive={isActive && t.id === project.activeTabId}
+                isActive={isActive && t.id === resolvedActiveTabId}
+                terminalFocusRequest={terminalFocusRequest}
                 diffViewMode={diffViewModes[t.id] ?? defaultDiffMode}
                 mdMode={mdMode}
                 onTitleChange={onTitleChange}

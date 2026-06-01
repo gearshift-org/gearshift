@@ -193,6 +193,10 @@ const appApi = {
 }
 
 const appWindowApi = {
+  focus: () =>
+    ipcRenderer.invoke("window:focus") as Promise<{
+      ok: boolean
+    }>,
   pointerState: (outsideLimit = 0) =>
     ipcRenderer.invoke("window:pointerState", outsideLimit) as Promise<{
       ok: boolean

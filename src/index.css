@@ -580,22 +580,46 @@
 
 .terminal-fit-host .xterm-viewport {
   background-color: var(--xterm-bg) !important;
-  overflow: hidden !important;
-  scrollbar-width: none !important;
+  overflow-y: scroll !important;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent)
+    transparent;
 }
 
 .terminal-fit-host .xterm-viewport::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
+  display: block !important;
+  width: 12px !important;
   height: 0 !important;
   background: transparent !important;
+}
+
+.terminal-fit-host .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.terminal-fit-host .xterm-viewport::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 28%,
+    transparent
+  ) !important;
+  border: 3px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+.terminal-fit-host .xterm-viewport:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 38%,
+    transparent
+  ) !important;
 }
 
 .terminal-fit-host .xterm-scrollable-element .scrollbar,
 .terminal-fit-host .xterm-scrollable-element .slider,
 .terminal-fit-host .monaco-scrollable-element .scrollbar,
-.terminal-fit-host .monaco-scrollable-element .slider,
-.terminal-fit-host .xterm-decoration-overview-ruler {
+.terminal-fit-host .monaco-scrollable-element .slider {
   display: none !important;
   opacity: 0 !important;
   width: 0 !important;

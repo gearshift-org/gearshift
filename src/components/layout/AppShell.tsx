@@ -2527,6 +2527,7 @@ export function AppShell() {
           <>
             <div className="w-[84px] shrink-0 self-stretch" />
             {expandProjectSidebarButton}
+            <UpdateButton />
             {activeProject && (
               // Project switcher standing in for the hidden sidebar — lets the
               // user switch projects (or add one) without expanding it.
@@ -2620,12 +2621,7 @@ export function AppShell() {
                   void window.shellApi.openInVSCode(activeProject.path)
                 }
                 trailing={topBarTrailing}
-                leading={
-                  <>
-                    {topBarLeading}
-                    <UpdateButton />
-                  </>
-                }
+                leading={topBarLeading ?? <UpdateButton />}
                 draggable={true}
               />
             }

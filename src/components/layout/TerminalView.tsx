@@ -288,7 +288,9 @@ function expandWrappedTerminalUrl(term: Terminal, uri: string): string {
 
 function refreshTerminalViewport(term: Terminal) {
   try {
-    if (term.rows > 0) term.refresh(0, term.rows - 1)
+    if (term.rows > 0 && ensureTerminalRenderer(term)) {
+      term.refresh(0, term.rows - 1)
+    }
   } catch {
     // Renderer refresh can fail while xterm is disposing.
   }
@@ -299,7 +301,47 @@ function refreshTerminalViewport(term: Terminal) {
 // again. The DOM renderer is the safe fallback.
 let suggestedRendererType: "webgl" | "dom" | undefined
 
+type TerminalWithInternalRenderer = Terminal & {
+  _core?: {
+    _store?: { _isDisposed?: boolean }
+    _renderService?: {
+      hasRenderer?: () => boolean
+      setRenderer?: (renderer: unknown) => void
+      handleResize?: (cols: number, rows: number) => void
+    }
+    _createRenderer?: () => unknown
+  }
+}
+
+function ensureTerminalRenderer(term: Terminal): boolean {
+  try {
+    const core = (term as TerminalWithInternalRenderer)._core
+    if (core?._store?._isDisposed) return false
+    const renderService = core?._renderService
+    if (!renderService) return false
+    if (renderService.hasRenderer?.()) return true
+
+    const renderer = core?._createRenderer?.()
+    if (!renderer || !renderService.setRenderer) return false
+    renderService.setRenderer(renderer)
+    renderService.handleResize?.(term.cols, term.rows)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function safeTerminalFocus(term: Terminal) {
+  if (!ensureTerminalRenderer(term)) return
+  try {
+    term.focus()
+  } catch {
+    // xterm may be between renderer swaps while WebGL falls back to DOM.
+  }
+}
+
 function recoverTerminalRenderer(term: Terminal) {
+  ensureTerminalRenderer(term)
   try {
     term.clearTextureAtlas()
   } catch {
@@ -464,7 +506,7 @@ async function pasteClipboard(
         const filePath = await window.clipboardApi.getImagePath()
         if (filePath) term.paste(shellQuote(filePath) + " ")
       }
-      term.focus()
+      safeTerminalFocus(term)
       return
     }
   } catch {
@@ -472,7 +514,7 @@ async function pasteClipboard(
   }
   const text = await navigator.clipboard.readText()
   if (text) term.paste(text)
-  term.focus()
+  safeTerminalFocus(term)
 }
 
 export function TerminalView({
@@ -549,7 +591,8 @@ export function TerminalView({
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
     searchRef.current?.clearDecorations()
-    termRef.current?.focus()
+    const term = termRef.current
+    if (term) safeTerminalFocus(term)
   }, [])
 
   useEffect(() => {
@@ -1053,6 +1096,7 @@ export function TerminalView({
           return false
         }
         if (term.cols !== dims.cols || term.rows !== dims.rows) {
+          if (!ensureTerminalRenderer(term)) return false
           term.resize(dims.cols, dims.rows)
           window.term.resize(sessionId, dims.cols, dims.rows)
           refreshTerminalViewport(term)
@@ -1079,7 +1123,7 @@ export function TerminalView({
     void document.fonts?.ready.then(() => {
       if (!unmounted) fitTerminal()
     })
-    if (isActive) term.focus()
+    if (isActive) safeTerminalFocus(term)
 
     // Pull whatever scrollback the daemon captured before this view mounted
     // (empty for freshly spawned sessions), THEN subscribe to live data.
@@ -1201,7 +1245,7 @@ export function TerminalView({
     const pastePaths = (paths: string[]) => {
       if (paths.length === 0) return
       term.paste(paths.map(shellQuote).join(" ") + " ")
-      term.focus()
+      safeTerminalFocus(term)
     }
     const onDragOver = (e: DragEvent) => {
       if (!isFileDrag(e) && !isPathDrag(e)) return
@@ -1485,6 +1529,7 @@ export function TerminalView({
           webgl.dispose()
           if (webglRef.current === webgl) webglRef.current = null
           suggestedRendererType = "dom"
+          ensureTerminalRenderer(t)
           refreshTerminalViewport(t)
         })
         t.loadAddon(webgl)
@@ -1515,12 +1560,16 @@ export function TerminalView({
   }, [themeObj, isDark, sessionId])
 
   useEffect(() => {
-    if (isActive && !searchOpen) termRef.current?.focus()
+    const term = termRef.current
+    if (isActive && !searchOpen && term) safeTerminalFocus(term)
   }, [isActive, searchOpen])
 
   useEffect(() => {
     if (focusRequest === undefined || !isActive || searchOpen) return
-    const id = requestAnimationFrame(() => termRef.current?.focus())
+    const id = requestAnimationFrame(() => {
+      const term = termRef.current
+      if (term) safeTerminalFocus(term)
+    })
     return () => cancelAnimationFrame(id)
   }, [focusRequest, isActive, searchOpen])
 
@@ -1553,7 +1602,7 @@ export function TerminalView({
     if (!term) return
     const sel = trimTerminalSelection(term.getSelection())
     if (sel) await navigator.clipboard.writeText(sel)
-    term.focus()
+    safeTerminalFocus(term)
   }
 
   const pasteFromClipboard = async () => {
@@ -1572,7 +1621,7 @@ export function TerminalView({
     const term = termRef.current
     if (!term) return
     term.clear()
-    term.focus()
+    safeTerminalFocus(term)
   }
 
   const matchLabel =
@@ -1607,8 +1656,9 @@ export function TerminalView({
           <button
             type="button"
             onClick={() => {
-              termRef.current?.scrollToBottom()
-              termRef.current?.focus()
+              const term = termRef.current
+              term?.scrollToBottom()
+              if (term) safeTerminalFocus(term)
             }}
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"

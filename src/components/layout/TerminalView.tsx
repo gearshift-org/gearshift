@@ -184,7 +184,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
       selectionInactiveBackground: "#353b45",
     },
     "light-claude": {
-      background: "#f8f6ef",
+      background: "#FDFDFC",
       foreground: "#3d3d3a",
       cursor: "#d97757",
       selectionBackground: "#ece2d8",

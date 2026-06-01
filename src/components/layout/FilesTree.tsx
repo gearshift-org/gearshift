@@ -15,8 +15,12 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
+  Clipboard,
+  ClipboardPaste,
+  Copy,
   FilePlus,
   FolderPlus,
+  Pencil,
   Search,
   X,
 } from "lucide-react"
@@ -60,11 +64,23 @@ type PendingCreate = {
   kind: "file" | "folder"
 }
 
+type PendingRename = {
+  absPath: string
+  initialName: string
+}
+
 type TreeActions = {
   pendingCreate: PendingCreate | null
+  pendingRename: PendingRename | null
+  copiedPaths: string[]
   startCreate: (parentAbs: string, kind: "file" | "folder") => void
   submitCreate: (name: string) => Promise<void>
   cancelCreate: () => void
+  startRename: (absPath: string) => void
+  submitRename: (name: string) => Promise<void>
+  cancelRename: () => void
+  copyPaths: (sourcePaths: string[]) => void
+  pasteIntoDir: (targetDirAbs: string) => Promise<void>
   trash: (absPath: string, isDir: boolean) => Promise<void>
   moveToDir: (sourcePaths: string[], targetDirAbs: string) => Promise<void>
 }
@@ -110,9 +126,10 @@ function FolderNode({
   const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
   const [forceClosed, setForceClosed] = useState(false)
   const collapseSignal = useContext(CollapseSignalContext)
-  const { pendingCreate, moveToDir } = useTreeActions()
+  const { pendingCreate, pendingRename, moveToDir } = useTreeActions()
   const [dragOver, setDragOver] = useState(false)
   const isCreateTarget = pendingCreate?.parentAbs === absPath
+  const isRenaming = pendingRename?.absPath === absPath
   useEffect(() => {
     if (collapseSignal > 0 && depth > 0) {
       setManuallyOpen(false)
@@ -177,7 +194,7 @@ function FolderNode({
       }}
       className={cn(
         "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
-        dragOver && "bg-accent/70 ring-1 ring-inset ring-ring/40",
+        dragOver && "bg-accent/70 ring-1 ring-ring/40 ring-inset",
         ignored && "text-muted-foreground opacity-80"
       )}
       style={{ paddingLeft: depth * 12 }}
@@ -198,18 +215,21 @@ function FolderNode({
 
   return (
     <div>
-      {folderButton && (
+      {depth > 0 && isRenaming && pendingRename ? (
+        <RenameEntryRow
+          initialName={pendingRename.initialName}
+          isDir
+          depth={depth}
+        />
+      ) : folderButton ? (
         <FileTreeContextMenu absPath={absPath} isDir>
           {folderButton}
         </FileTreeContextMenu>
-      )}
+      ) : null}
       {open && (
         <div>
           {isCreateTarget && pendingCreate && (
-            <NewEntryRow
-              kind={pendingCreate.kind}
-              depth={depth + 1}
-            />
+            <NewEntryRow kind={pendingCreate.kind} depth={depth + 1} />
           )}
           {entriesQuery.isLoading && entries === undefined && (
             <div
@@ -319,31 +339,109 @@ function NewEntryRow({
   )
 }
 
+function RenameEntryRow({
+  initialName,
+  isDir,
+  depth,
+}: {
+  initialName: string
+  isDir: boolean
+  depth: number
+}) {
+  const { submitRename, cancelRename } = useTreeActions()
+  const [value, setValue] = useState(initialName)
+  const [submitting, setSubmitting] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  const submit = async () => {
+    const name = value.trim()
+    if (submitting) return
+    if (!name || name === initialName) {
+      cancelRename()
+      return
+    }
+    setSubmitting(true)
+    try {
+      await submitRename(name)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-[3px] text-xs"
+      style={{ paddingLeft: isDir ? depth * 12 : (depth + 1) * 12 + 12 }}
+    >
+      {isDir ? (
+        <>
+          <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+          <FolderIcon
+            name={value || initialName}
+            open
+            className="size-4 shrink-0"
+          />
+        </>
+      ) : (
+        <FileIcon name={value || initialName} className="size-4 shrink-0" />
+      )}
+      <input
+        ref={inputRef}
+        value={value}
+        disabled={submitting}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            void submit()
+          } else if (e.key === "Escape") {
+            e.preventDefault()
+            cancelRename()
+          }
+        }}
+        onBlur={() => {
+          void submit()
+        }}
+        className="min-w-0 flex-1 rounded-sm border border-ring/40 bg-background px-1 py-0 outline-none focus:border-ring"
+      />
+    </div>
+  )
+}
+
 function FileTreeContextMenu({
   absPath,
   isDir,
+  canRenameCopy = true,
   children,
 }: {
   absPath: string
   isDir: boolean
+  canRenameCopy?: boolean
   children: ReactElement
 }) {
-  const { startCreate, trash } = useTreeActions()
+  const {
+    copiedPaths,
+    startCreate,
+    startRename,
+    copyPaths,
+    pasteIntoDir,
+    trash,
+  } = useTreeActions()
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
       <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
         {isDir && (
           <>
-            <ContextMenuItem
-              onClick={() => startCreate(absPath, "file")}
-            >
+            <ContextMenuItem onClick={() => startCreate(absPath, "file")}>
               <FilePlus className="size-3.5" />
               New File
             </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => startCreate(absPath, "folder")}
-            >
+            <ContextMenuItem onClick={() => startCreate(absPath, "folder")}>
               <FolderPlus className="size-3.5" />
               New Folder
             </ContextMenuItem>
@@ -366,11 +464,43 @@ function FileTreeContextMenu({
           Reveal in Finder
         </ContextMenuItem>
         <ContextMenuSeparator />
+        {canRenameCopy && (
+          <>
+            <ContextMenuItem
+              onClick={() => {
+                startRename(absPath)
+              }}
+            >
+              <Pencil className="size-3.5" />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => {
+                copyPaths([absPath])
+              }}
+            >
+              <Copy className="size-3.5" />
+              Copy
+            </ContextMenuItem>
+          </>
+        )}
+        {isDir && (
+          <ContextMenuItem
+            disabled={copiedPaths.length === 0}
+            onClick={() => {
+              void pasteIntoDir(absPath)
+            }}
+          >
+            <ClipboardPaste className="size-3.5" />
+            Paste
+          </ContextMenuItem>
+        )}
         <ContextMenuItem
           onClick={() => {
             void navigator.clipboard.writeText(absPath)
           }}
         >
+          <Clipboard className="size-3.5" />
           Copy Path
         </ContextMenuItem>
         <ContextMenuSeparator />
@@ -405,11 +535,23 @@ function FileNode({
   ignored?: boolean
 }) {
   const ref = useRef<HTMLButtonElement>(null)
+  const { pendingRename } = useTreeActions()
+  const isRenaming = pendingRename?.absPath === absPath
 
   useEffect(() => {
     if (!active) return
     ref.current?.scrollIntoView({ block: "nearest" })
   }, [active])
+
+  if (isRenaming && pendingRename) {
+    return (
+      <RenameEntryRow
+        initialName={pendingRename.initialName}
+        isDir={false}
+        depth={depth}
+      />
+    )
+  }
 
   return (
     <FileTreeContextMenu absPath={absPath} isDir={false}>
@@ -449,6 +591,8 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
+  const [pendingRename, setPendingRename] = useState<PendingRename | null>(null)
+  const [copiedPaths, setCopiedPaths] = useState<string[]>([])
   const [rootDragOver, setRootDragOver] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -544,6 +688,7 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
 
   useEffect(() => {
     setPendingCreate(null)
+    setPendingRename(null)
   }, [cwd])
 
   const invalidateTree = useCallback(() => {
@@ -558,8 +703,9 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   const treeActions = useMemo<TreeActions>(
     () => ({
       pendingCreate,
-      startCreate: (parentAbs, kind) =>
-        setPendingCreate({ parentAbs, kind }),
+      pendingRename,
+      copiedPaths,
+      startCreate: (parentAbs, kind) => setPendingCreate({ parentAbs, kind }),
       cancelCreate: () => setPendingCreate(null),
       submitCreate: async (name) => {
         if (!pendingCreate) return
@@ -580,6 +726,62 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
             : null
           if (relPath) onOpenFile(relPath)
         }
+      },
+      startRename: (absPath) => {
+        const initialName = absPath.split("/").pop() ?? absPath
+        setPendingCreate(null)
+        setPendingRename({ absPath, initialName })
+      },
+      cancelRename: () => setPendingRename(null),
+      submitRename: async (name) => {
+        if (!pendingRename) return
+        const res = await window.fsApi.rename(pendingRename.absPath, name)
+        if (!res.ok) {
+          toast.error(res.error ?? "Failed to rename")
+          return
+        }
+        const oldRelPath = pendingRename.absPath.startsWith(cwd + "/")
+          ? pendingRename.absPath.slice(cwd.length + 1)
+          : null
+        const newRelPath =
+          res.newPath && res.newPath.startsWith(cwd + "/")
+            ? res.newPath.slice(cwd.length + 1)
+            : null
+        setPendingRename(null)
+        invalidateTree()
+        if (oldRelPath && newRelPath) {
+          if (activePath === oldRelPath) {
+            onOpenFile(newRelPath)
+          } else if (activePath?.startsWith(`${oldRelPath}/`)) {
+            onOpenFile(
+              `${newRelPath}/${activePath.slice(oldRelPath.length + 1)}`
+            )
+          }
+        }
+      },
+      copyPaths: (sourcePaths) => {
+        setCopiedPaths([...new Set(sourcePaths)])
+      },
+      pasteIntoDir: async (targetDirAbs) => {
+        const uniquePaths = [...new Set(copiedPaths)].filter(
+          (sourcePath) => sourcePath !== targetDirAbs
+        )
+        if (uniquePaths.length === 0) return
+
+        const results = await Promise.all(
+          uniquePaths.map((sourcePath) =>
+            window.fsApi.copy(sourcePath, targetDirAbs).then((res) => ({
+              sourcePath,
+              res,
+            }))
+          )
+        )
+        const failed = results.find(({ res }) => !res.ok)
+        if (failed) {
+          const name = failed.sourcePath.split("/").pop() ?? failed.sourcePath
+          toast.error(failed.res.error ?? `Failed to copy ${name}`)
+        }
+        if (results.some(({ res }) => res.ok)) invalidateTree()
       },
       trash: async (absPath, isDir) => {
         const name = absPath.split("/").pop() ?? absPath
@@ -616,13 +818,21 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
         if (results.some(({ res }) => res.ok)) invalidateTree()
       },
     }),
-    [pendingCreate, invalidateTree, cwd, onOpenFile]
+    [
+      pendingCreate,
+      pendingRename,
+      copiedPaths,
+      invalidateTree,
+      cwd,
+      activePath,
+      onOpenFile,
+    ]
   )
 
   return (
     <TreeActionsContext.Provider value={treeActions}>
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           <span>Files</span>
           <div className="flex items-center gap-1">
             <button
@@ -702,7 +912,9 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
               className="min-w-0 flex-1 bg-transparent px-1 py-0.5 outline-none placeholder:text-muted-foreground"
             />
             {filtering && (
-              <span className="px-1 text-muted-foreground">{matches.length}</span>
+              <span className="px-1 text-muted-foreground">
+                {matches.length}
+              </span>
             )}
             <button
               type="button"
@@ -742,12 +954,12 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
         ) : (
           <CollapseSignalContext.Provider value={collapseSignal}>
             <ScrollArea className="min-h-0 flex-1">
-              <FileTreeContextMenu absPath={cwd} isDir>
+              <FileTreeContextMenu absPath={cwd} isDir canRenameCopy={false}>
                 <div
                   className={cn(
                     "min-h-full",
                     rootDragOver &&
-                      "bg-accent/20 ring-1 ring-inset ring-ring/30"
+                      "bg-accent/20 ring-1 ring-ring/30 ring-inset"
                   )}
                   onDragOver={(e) => {
                     if (!hasPathDragData(e.dataTransfer)) return
@@ -756,7 +968,9 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
                     setRootDragOver(true)
                   }}
                   onDragLeave={(e) => {
-                    if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                    if (
+                      e.currentTarget.contains(e.relatedTarget as Node | null)
+                    )
                       return
                     setRootDragOver(false)
                   }}

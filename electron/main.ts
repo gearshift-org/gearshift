@@ -1563,6 +1563,80 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle(
+    "fs:copy",
+    async (_event, sourceAbsPath: string, targetDirAbsPath: string) => {
+      if (!sourceAbsPath || !targetDirAbsPath) {
+        return { ok: false, error: "no-path" }
+      }
+      try {
+        const source = path.resolve(sourceAbsPath)
+        const targetDir = path.resolve(targetDirAbsPath)
+        const sourceStat = await fs.stat(source)
+        const targetDirStat = await fs.stat(targetDir)
+        if (!targetDirStat.isDirectory()) {
+          return { ok: false, error: "Paste target is not a folder" }
+        }
+        if (source === targetDir) {
+          return { ok: false, error: "Cannot copy a folder into itself" }
+        }
+        if (sourceStat.isDirectory() && isPathInside(source, targetDir)) {
+          return { ok: false, error: "Cannot copy a folder into itself" }
+        }
+        const target = path.join(targetDir, path.basename(source))
+        try {
+          await fs.lstat(target)
+          return {
+            ok: false,
+            error: "A file or folder with that name already exists",
+          }
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException
+          if (e.code !== "ENOENT") throw err
+        }
+        await fs.cp(source, target, {
+          recursive: sourceStat.isDirectory(),
+          errorOnExist: true,
+          force: false,
+        })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    "fs:rename",
+    async (_event, sourceAbsPath: string, newName: string) => {
+      if (!sourceAbsPath || !newName) return { ok: false, error: "no-path" }
+      try {
+        const source = path.resolve(sourceAbsPath)
+        const trimmedName = newName.trim()
+        if (!trimmedName) return { ok: false, error: "Name is required" }
+        if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+          return { ok: false, error: "Name cannot contain path separators" }
+        }
+        const target = path.join(path.dirname(source), trimmedName)
+        if (source === target) return { ok: true, newPath: target }
+        try {
+          await fs.lstat(target)
+          return {
+            ok: false,
+            error: "A file or folder with that name already exists",
+          }
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException
+          if (e.code !== "ENOENT") throw err
+        }
+        await fs.rename(source, target)
+        return { ok: true, newPath: target }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
   ipcMain.handle("fs:trash", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }
     try {

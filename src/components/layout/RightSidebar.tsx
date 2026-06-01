@@ -821,7 +821,7 @@ export function RightSidebar({
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3 [-webkit-app-region:drag]">
+        <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border px-3 pt-px [-webkit-app-region:drag]">
           <TabsList
             variant="line"
             className="h-full gap-1 bg-transparent p-0 [-webkit-app-region:no-drag]"

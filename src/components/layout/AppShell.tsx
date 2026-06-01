@@ -2013,9 +2013,11 @@ export function AppShell() {
               const notification = new Notification(
                 targetProject.name || "GearShift",
                 {
+                  // Title: project name. Body: terminal name, then the last
+                  // chat message on its own line.
                   body: latestPrompt
-                    ? `Agent finished in ${terminalName}: ${latestPrompt}`
-                    : `Agent finished in ${terminalName}`,
+                    ? `${terminalName}\n${latestPrompt}`
+                    : terminalName,
                   silent: true,
                 }
               )

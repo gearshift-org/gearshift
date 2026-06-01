@@ -57,6 +57,7 @@ import {
   saveAutoHideTitleBar,
   saveProjectSidebarOpen,
   saveProjects,
+  saveRecentProjects,
   saveRightSidebarTab,
   saveSidebarOpen,
   stableProjectId,
@@ -913,6 +914,14 @@ export function AppShell() {
 
   const pickRecent = (recent: RecentProject) => {
     void openProjectByPath(recent.path, recent.name)
+  }
+
+  const removeRecent = (recent: RecentProject) => {
+    setRecents((current) => {
+      const next = current.filter((r) => r.path !== recent.path)
+      saveRecentProjects(next)
+      return next
+    })
   }
 
   const dropProjectFolders = async (paths: string[]) => {
@@ -2293,6 +2302,7 @@ export function AppShell() {
           onAdd={addProject}
           onDropFolders={(paths) => void dropProjectFolders(paths)}
           onPickRecent={pickRecent}
+          onRemoveRecent={removeRecent}
           onClose={closeProject}
           onCloseAllTerminals={closeAllProjectTerminals}
           onCloseOthers={closeOtherProjects}

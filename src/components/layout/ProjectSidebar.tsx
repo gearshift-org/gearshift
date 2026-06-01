@@ -54,6 +54,7 @@ type Props = {
   onAdd: () => void
   onDropFolders?: (paths: string[]) => void
   onPickRecent: (recent: RecentProject) => void
+  onRemoveRecent?: (recent: RecentProject) => void
   onClose?: (id: string) => void
   onCloseAllTerminals?: (id: string) => void
   onCloseOthers?: (id: string) => void
@@ -256,6 +257,7 @@ export function ProjectSidebar({
   onAdd,
   onDropFolders,
   onPickRecent,
+  onRemoveRecent,
   onClose,
   onCloseAllTerminals,
   onCloseOthers,
@@ -371,6 +373,7 @@ export function ProjectSidebar({
           recents={recents}
           onOpenDialog={onAdd}
           onPickRecent={onPickRecent}
+          onRemoveRecent={onRemoveRecent}
         />
       </div>
       <div className="shrink-0 px-3 pb-3 pt-1.5">

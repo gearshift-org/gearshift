@@ -57,6 +57,7 @@ type Props = {
   onSelect: (id: string) => void
   onAdd: () => void
   onPickRecent: (recent: RecentProject) => void
+  onRemoveRecent?: (recent: RecentProject) => void
   onClose?: (id: string) => void
   onCloseAllTerminals?: (id: string) => void
   onCloseOthers?: (id: string) => void
@@ -347,6 +348,7 @@ export function ProjectTabs({
   onSelect,
   onAdd,
   onPickRecent,
+  onRemoveRecent,
   onClose,
   onCloseAllTerminals,
   onCloseOthers,
@@ -403,6 +405,7 @@ export function ProjectTabs({
         recents={recents}
         onOpenDialog={onAdd}
         onPickRecent={onPickRecent}
+        onRemoveRecent={onRemoveRecent}
       />
     </div>
   )

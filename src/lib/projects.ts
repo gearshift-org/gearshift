@@ -34,7 +34,6 @@ export type StoredProject = {
 const KEY = "gearshift.projects"
 const ACTIVE_KEY = "gearshift.activeProjectId"
 const RECENTS_KEY = "gearshift.recentProjects"
-const RECENTS_MAX = 10
 const PALETTE_RECENTS_KEY = "gearshift.paletteRecents"
 const PALETTE_RECENTS_MAX = 200
 
@@ -164,12 +163,12 @@ export function loadRecentProjects(): RecentProject[] {
 }
 
 export function saveRecentProjects(recents: RecentProject[]): void {
-  store.set(RECENTS_KEY, JSON.stringify(recents.slice(0, RECENTS_MAX)))
+  store.set(RECENTS_KEY, JSON.stringify(recents))
 }
 
 export function pushRecentProject(entry: RecentProject): RecentProject[] {
   const existing = loadRecentProjects().filter((p) => p.path !== entry.path)
-  const next = [entry, ...existing].slice(0, RECENTS_MAX)
+  const next = [entry, ...existing]
   saveRecentProjects(next)
   return next
 }

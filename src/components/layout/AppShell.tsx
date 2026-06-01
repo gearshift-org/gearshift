@@ -785,39 +785,56 @@ export function AppShell() {
       const hasRemainingProjectNotifications =
         (agentDoneToastsByProjectRef.current.get(projectId)?.size ?? 0) > 0
 
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === projectId
-            ? {
-                ...p,
-                agentDone: hasRemainingProjectNotifications ? p.agentDone : false,
-                agentNeedsAttention: hasRemainingProjectNotifications
-                  ? p.agentNeedsAttention
-                  : false,
-                tabs: p.tabs.map((t) =>
-                  t.id === tabId && t.kind === "terminal"
-                    ? {
-                        ...t,
-                        panes: t.panes.map((pane) =>
-                          pane.id === paneId && pane.agentStatus
-                            ? {
-                                ...pane,
-                                agentStatus: {
-                                  ...pane.agentStatus,
-                                  completed: false,
-                                  completedAt: undefined,
-                                  needsAttention: false,
-                                },
-                              }
-                            : pane
-                        ),
-                      }
-                    : t
-                ),
+      // Important: this callback is used by effects that depend on activeProject.
+      // Returning new project/tab objects when nothing changed creates a render
+      // loop that makes terminal-heavy UI interactions feel laggy.
+      setProjects((prev) => {
+        let changed = false
+        const next = prev.map((p) => {
+          if (p.id !== projectId) return p
+
+          const shouldClearProjectFlags =
+            !hasRemainingProjectNotifications &&
+            (p.agentDone || p.agentNeedsAttention)
+          let tabChanged = false
+          const tabs = p.tabs.map((t) => {
+            if (t.id !== tabId || t.kind !== "terminal") return t
+
+            let paneChanged = false
+            const panes = t.panes.map((pane) => {
+              const status = pane.id === paneId ? pane.agentStatus : undefined
+              if (!status?.completed && !status?.needsAttention) return pane
+              paneChanged = true
+              return {
+                ...pane,
+                agentStatus: {
+                  ...status,
+                  completed: false,
+                  completedAt: undefined,
+                  needsAttention: false,
+                },
               }
-            : p
-        )
-      )
+            })
+
+            if (!paneChanged) return t
+            tabChanged = true
+            return { ...t, panes }
+          })
+
+          if (!shouldClearProjectFlags && !tabChanged) return p
+          changed = true
+          return {
+            ...p,
+            agentDone: hasRemainingProjectNotifications ? p.agentDone : false,
+            agentNeedsAttention: hasRemainingProjectNotifications
+              ? p.agentNeedsAttention
+              : false,
+            tabs: tabChanged ? tabs : p.tabs,
+          }
+        })
+
+        return changed ? next : prev
+      })
     },
     []
   )

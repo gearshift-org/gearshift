@@ -33,6 +33,7 @@ import type { ChatHistoryMessage } from "../../../electron/preload"
 type Props = {
   sessionId: string
   isActive?: boolean
+  suppressTerminalResponses?: boolean
   onTitleChange?: (title: string) => void
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
   onClose?: () => void
@@ -292,6 +293,69 @@ function refreshTerminalViewport(term: Terminal) {
   }
 }
 
+function stripTerminalReportSequences(data: string): string {
+  let out = ""
+  let i = 0
+
+  while (i < data.length) {
+    const ch = data[i]
+    if (ch !== "\x1b") {
+      out += ch
+      i += 1
+      continue
+    }
+
+    const next = data[i + 1]
+    if (!next) break
+
+    // OSC/DCS/SOS/PM/APC reports, including xterm.js color-palette and
+    // termcap replies, terminate with BEL or ST.
+    if (
+      next === "]" ||
+      next === "P" ||
+      next === "X" ||
+      next === "^" ||
+      next === "_"
+    ) {
+      let j = i + 2
+      while (j < data.length) {
+        if (data[j] === "\x07") {
+          j += 1
+          break
+        }
+        if (data[j] === "\x1b" && data[j + 1] === "\\") {
+          j += 2
+          break
+        }
+        j += 1
+      }
+      i = j
+      continue
+    }
+
+    // CSI reports such as DA/DSR. During pane drag these are terminal-generated
+    // replies, not intentional keyboard input.
+    if (next === "[") {
+      let j = i + 2
+      while (j < data.length) {
+        const code = data.charCodeAt(j)
+        if (code >= 0x40 && code <= 0x7e) {
+          j += 1
+          break
+        }
+        j += 1
+      }
+      i = j
+      continue
+    }
+
+    // Other ESC-prefixed one-byte reports.
+    i += 2
+  }
+
+  return out
+}
+
 // Once WebGL's GPU context is lost we stop using it for every subsequent
 // terminal (VS Code's pattern) — retrying tends to thrash and lose context
 // again. The DOM renderer is the safe fallback.
@@ -320,6 +384,7 @@ const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
 const TERMINAL_RESIZE_SETTLE_MS = 80
+const TERMINAL_RESPONSE_SUPPRESS_AFTER_DRAG_MS = 1500
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
 const RECAP_IDLE_DELAY_MS = 30000
@@ -476,6 +541,7 @@ async function pasteClipboard(
 export function TerminalView({
   sessionId,
   isActive = true,
+  suppressTerminalResponses = false,
   onTitleChange,
   onAgentStatusChange,
   onClose,
@@ -496,6 +562,8 @@ export function TerminalView({
   const themeObj = useMemo(() => getTerminalTheme(themeId), [themeId])
   const themeRef = useRef({ isDark })
   themeRef.current.isDark = isDark
+  const suppressTerminalResponsesUntilRef = useRef(0)
+  const wasSuppressingTerminalResponsesRef = useRef(false)
   const colorSchemeSubscribedRef = useRef(false)
   const onTitleChangeRef = useRef(onTitleChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
@@ -682,6 +750,19 @@ export function TerminalView({
     suppressAgentActivityUntilRef.current =
       Date.now() + FOCUS_ACTIVITY_SUPPRESS_MS
   }, [isActive])
+
+  useEffect(() => {
+    if (suppressTerminalResponses) {
+      wasSuppressingTerminalResponsesRef.current = true
+      suppressTerminalResponsesUntilRef.current = Number.POSITIVE_INFINITY
+      return
+    }
+    if (wasSuppressingTerminalResponsesRef.current) {
+      wasSuppressingTerminalResponsesRef.current = false
+      suppressTerminalResponsesUntilRef.current =
+        Date.now() + TERMINAL_RESPONSE_SUPPRESS_AFTER_DRAG_MS
+    }
+  }, [suppressTerminalResponses])
 
   useEffect(() => {
     const container = containerRef.current
@@ -1050,7 +1131,11 @@ export function TerminalView({
             now + USER_INPUT_ECHO_SUPPRESS_MS
         }
       }
-      window.term.write(sessionId, d)
+      const output =
+        Date.now() < suppressTerminalResponsesUntilRef.current
+          ? stripTerminalReportSequences(d)
+          : d
+      if (output) window.term.write(sessionId, output)
     })
     const titleSub = term.onTitleChange((t) => {
       const trimmed = t.trim()

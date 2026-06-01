@@ -99,6 +99,7 @@ function TerminalPaneView({
   onStartTerminal,
   onClosePane,
   onFocus,
+  suppressTerminalResponses,
 }: {
   tab: TerminalTab
   pane: TerminalPaneType
@@ -112,6 +113,7 @@ function TerminalPaneView({
   onStartTerminal?: (tabId: string, paneId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocus?: () => void
+  suppressTerminalResponses?: boolean
 }) {
   if (pane.pendingStart) {
     return (
@@ -133,6 +135,7 @@ function TerminalPaneView({
       <TerminalView
         sessionId={pane.sessionId ?? pane.id}
         isActive={isTabActive && tab.activePaneId === pane.id}
+        suppressTerminalResponses={suppressTerminalResponses}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
         onAgentStatusChange={(status) =>
           onAgentStatusChange?.(tab.id, pane.id, status)
@@ -346,14 +349,7 @@ function TerminalTabContent({
   }
 
   const renderTerminal = (pane: TerminalPaneType) => (
-    <div
-      className={cn(
-        "group/pane relative h-full",
-        multi &&
-          tab.activePaneId === pane.id &&
-          "ring-1 ring-foreground/15 ring-inset"
-      )}
-    >
+    <div className="group/pane relative h-full">
       <TerminalPaneView
         tab={tab}
         pane={pane}
@@ -363,6 +359,7 @@ function TerminalTabContent({
         onStartTerminal={onStartTerminal}
         onClosePane={onClosePane}
         onFocus={() => onFocusPane?.(tab.id, pane.id)}
+        suppressTerminalResponses={draggingPaneId !== null}
       />
     </div>
   )
@@ -387,8 +384,9 @@ function TerminalTabContent({
   const renderLeaf = (paneId: string) => {
     const pane = tab.panes.find((p) => p.id === paneId)
     if (!pane) return null
+    const activePane = multi && isActive && tab.activePaneId === paneId
     return (
-      <div className="flex h-full flex-col">
+      <div className="relative flex h-full flex-col">
         <HeaderDropZone
           paneId={paneId}
           enabled={draggingPaneId !== null && draggingPaneId !== paneId}
@@ -401,6 +399,9 @@ function TerminalTabContent({
         >
           {renderTerminal(pane)}
         </PaneDropZone>
+        {activePane ? (
+          <div className="pointer-events-none absolute inset-0 z-30 ring-1 ring-ring ring-inset" />
+        ) : null}
       </div>
     )
   }

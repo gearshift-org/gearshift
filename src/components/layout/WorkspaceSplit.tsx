@@ -226,8 +226,8 @@ export function WorkspaceSplit({
         aria-orientation="vertical"
         aria-hidden={!sidebarOpen}
         className={cn(
-          "group relative -mx-[3px] shrink-0 cursor-col-resize",
-          sidebarOpen ? "w-[7px]" : "pointer-events-none w-0",
+          "group relative shrink-0 cursor-col-resize",
+          sidebarOpen ? "-mx-[3px] w-[7px]" : "pointer-events-none w-0",
           !isDragging && "transition-[width] duration-150 ease-out"
         )}
       >

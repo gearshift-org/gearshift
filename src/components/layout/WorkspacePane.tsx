@@ -419,7 +419,7 @@ function TerminalTabContent({
           {renderTerminal(pane)}
         </PaneDropZone>
         {activePane ? (
-          <div className="pointer-events-none absolute inset-0 z-30 ring-1 ring-ring ring-inset" />
+          <div className="pointer-events-none absolute inset-0 z-30 box-border border border-ring" />
         ) : null}
       </div>
     )

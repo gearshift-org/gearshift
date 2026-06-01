@@ -5,7 +5,13 @@ import { defineConfig } from "vite"
 import electron from "vite-plugin-electron"
 
 export default defineConfig({
-  server: { port: 5011, strictPort: true },
+  server: {
+    port: 5011,
+    strictPort: true,
+    watch: {
+      ignored: ["**/release/**"],
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

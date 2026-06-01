@@ -733,6 +733,10 @@ export function TerminalView({
       scrollback: 5000,
       // Keep a small scrollbar gutter so terminal scrollback is visible.
       scrollbar: { width: 8 },
+      // Prevent xterm from reflowing scrollback when a split narrows the pane.
+      // Old full-screen agent screens (Claude, etc.) cannot repaint after the
+      // agent is stopped, so reflow turns box UI into diagonal fragments.
+      windowsPty: { backend: "winpty", buildNumber: 1 },
       theme: themeObj,
       allowProposedApi: true,
       linkHandler: {
@@ -777,6 +781,12 @@ export function TerminalView({
       })
     })
 
+    // Snapshot replay paints historical PTY output into a fresh xterm instance.
+    // It must be side-effect-free: xterm answers old terminal queries (DA,
+    // XTVERSION, OSC color requests, DECRQSS, …) by firing `onData`. Feeding
+    // those answers into the current shell makes them appear as prompt text.
+    let replayingSnapshot = false
+
     // Use the legacy ESC+Enter newline sequence by default because Claude Code,
     // Codex, and OpenCode already understand it. If a TUI probes/enables
     // modified keyboard modes (like pi), switch Enter to an explicit modified
@@ -785,21 +795,21 @@ export function TerminalView({
     const kittyKeyboardQuerySub = term.parser.registerCsiHandler(
       { prefix: "?", final: "u" },
       () => {
-        modifiedEnterSequence = "\x1b[13;2u"
+        if (!replayingSnapshot) modifiedEnterSequence = "\x1b[13;2u"
         return true
       }
     )
     const kittyKeyboardPushSub = term.parser.registerCsiHandler(
       { prefix: ">", final: "u" },
       () => {
-        modifiedEnterSequence = "\x1b[13;2u"
+        if (!replayingSnapshot) modifiedEnterSequence = "\x1b[13;2u"
         return true
       }
     )
     const kittyKeyboardPopSub = term.parser.registerCsiHandler(
       { prefix: "<", final: "u" },
       () => {
-        modifiedEnterSequence = "\x1b\r"
+        if (!replayingSnapshot) modifiedEnterSequence = "\x1b\r"
         return true
       }
     )
@@ -809,7 +819,9 @@ export function TerminalView({
         const first = Array.isArray(params[0]) ? params[0][0] : params[0]
         const second = Array.isArray(params[1]) ? params[1][0] : params[1]
         if (first !== 4) return false
-        modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
+        if (!replayingSnapshot) {
+          modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
+        }
         return true
       }
     )
@@ -822,6 +834,7 @@ export function TerminalView({
       { prefix: "?", final: "h" },
       (params) => {
         if (csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) {
+          if (replayingSnapshot) return true
           colorSchemeSubscribedRef.current = true
         }
         return false
@@ -831,6 +844,7 @@ export function TerminalView({
       { prefix: "?", final: "l" },
       (params) => {
         if (csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) {
+          if (replayingSnapshot) return true
           colorSchemeSubscribedRef.current = false
         }
         return false
@@ -840,6 +854,7 @@ export function TerminalView({
       { prefix: "?", final: "n" },
       (params) => {
         if (!csiParamsInclude(params, DEC_COLOR_SCHEME_QUERY)) return false
+        if (replayingSnapshot) return true
         const reply = themeRef.current.isDark ? 1 : 2
         window.term.write(
           sessionId,
@@ -1085,14 +1100,27 @@ export function TerminalView({
     }
     void window.term.snapshot(sessionId).then((snap) => {
       if (unmounted) return
-      if (snap) term.write(snap)
-      offData = window.term.onData(sessionId, onDataChunk)
+      const attachLiveData = () => {
+        if (!unmounted && !offData) {
+          offData = window.term.onData(sessionId, onDataChunk)
+        }
+      }
+      if (!snap) {
+        attachLiveData()
+        return
+      }
+      replayingSnapshot = true
+      term.write(snap, () => {
+        replayingSnapshot = false
+        attachLiveData()
+      })
     })
     const offExit = window.term.onExit(sessionId, () => {
       term.write("\r\n\x1b[31m[process exited]\x1b[0m\r\n")
     })
 
     const inputSub = term.onData((d) => {
+      if (replayingSnapshot) return
       const current = agentStatusRef.current
       if (current.running) {
         const now = Date.now()

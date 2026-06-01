@@ -35,6 +35,7 @@ type Props = {
   isActive?: boolean
   suppressTerminalResponses?: boolean
   onTitleChange?: (title: string) => void
+  onFocusChange?: (focused: boolean) => void
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
   onClose?: () => void
 }
@@ -543,6 +544,7 @@ export function TerminalView({
   isActive = true,
   suppressTerminalResponses = false,
   onTitleChange,
+  onFocusChange,
   onAgentStatusChange,
   onClose,
 }: Props) {
@@ -566,6 +568,7 @@ export function TerminalView({
   const wasSuppressingTerminalResponsesRef = useRef(false)
   const colorSchemeSubscribedRef = useRef(false)
   const onTitleChangeRef = useRef(onTitleChange)
+  const onFocusChangeRef = useRef(onFocusChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
   const agentStatusRef = useRef<TerminalAgentStatus>({
     running: false,
@@ -613,6 +616,10 @@ export function TerminalView({
   useEffect(() => {
     onTitleChangeRef.current = onTitleChange
   }, [onTitleChange])
+
+  useEffect(() => {
+    onFocusChangeRef.current = onFocusChange
+  }, [onFocusChange])
 
   useEffect(() => {
     onAgentStatusChangeRef.current = onAgentStatusChange
@@ -801,6 +808,17 @@ export function TerminalView({
       setShowScrollToBottom(buf.viewportY < buf.baseY)
     })
 
+    const onTerminalFocusIn = () => onFocusChangeRef.current?.(true)
+    const onTerminalFocusOut = () => {
+      requestAnimationFrame(() => {
+        if (!container.contains(document.activeElement)) {
+          onFocusChangeRef.current?.(false)
+        }
+      })
+    }
+    container.addEventListener("focusin", onTerminalFocusIn)
+    container.addEventListener("focusout", onTerminalFocusOut)
+
     const resultsSub = search.onDidChangeResults((e) => {
       setSearchResults({
         resultIndex: e.resultIndex,
@@ -936,15 +954,17 @@ export function TerminalView({
       const ctrl = e.ctrlKey
       const shift = e.shiftKey
 
-      // Cmd+F — open search overlay.
-      if ((meta || ctrl) && !alt && !shift && key === "f") {
+      // Cmd+F — open search overlay. Let Ctrl+F pass through to terminal
+      // TUIs like OpenCode, where it can be an in-app shortcut.
+      if (meta && !ctrl && !alt && !shift && key === "f") {
         e.preventDefault()
         openSearch()
         return false
       }
 
-      // Clipboard / selection (Cmd or Ctrl).
-      if ((meta || ctrl) && !alt) {
+      // Cmd-based clipboard / selection shortcuts. Ctrl shortcuts should remain
+      // available to terminal TUIs (for example OpenCode uses Ctrl+A/Ctrl+F).
+      if (meta && !ctrl && !alt) {
         if (key === "c" && term.hasSelection()) {
           e.preventDefault()
           const sel = trimTerminalSelection(term.getSelection())
@@ -964,6 +984,22 @@ export function TerminalView({
         if (key === "k") {
           e.preventDefault()
           term.clear()
+          return false
+        }
+      }
+
+      // Keep Ctrl+C/Ctrl+V conveniences, but only for copy/paste. Other Ctrl
+      // combinations pass through to the PTY.
+      if (ctrl && !meta && !alt) {
+        if (key === "c" && term.hasSelection()) {
+          e.preventDefault()
+          const sel = trimTerminalSelection(term.getSelection())
+          if (sel) void navigator.clipboard.writeText(sel)
+          return false
+        }
+        if (key === "v") {
+          e.preventDefault()
+          void pasteClipboard(term, sessionId, !!agentStatusRef.current.running)
           return false
         }
       }
@@ -1219,6 +1255,8 @@ export function TerminalView({
     return () => {
       unmounted = true
       ro.disconnect()
+      container.removeEventListener("focusin", onTerminalFocusIn)
+      container.removeEventListener("focusout", onTerminalFocusOut)
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
       if (resizeTimer) window.clearTimeout(resizeTimer)

@@ -100,6 +100,7 @@ function TerminalPaneView({
   onClosePane,
   onFocus,
   suppressTerminalResponses,
+  onTerminalFocusChange,
 }: {
   tab: TerminalTab
   pane: TerminalPaneType
@@ -114,6 +115,7 @@ function TerminalPaneView({
   onClosePane?: (tabId: string, paneId: string) => void
   onFocus?: () => void
   suppressTerminalResponses?: boolean
+  onTerminalFocusChange?: (paneId: string, focused: boolean) => void
 }) {
   if (pane.pendingStart) {
     return (
@@ -137,6 +139,7 @@ function TerminalPaneView({
         isActive={isTabActive && tab.activePaneId === pane.id}
         suppressTerminalResponses={suppressTerminalResponses}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
+        onFocusChange={(focused) => onTerminalFocusChange?.(pane.id, focused)}
         onAgentStatusChange={(status) =>
           onAgentStatusChange?.(tab.id, pane.id, status)
         }
@@ -306,9 +309,24 @@ function TerminalTabContent({
 
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null)
   const [tabBarDropRect, setTabBarDropRect] = useState<DOMRect | null>(null)
+  const [focusedTerminalPaneId, setFocusedTerminalPaneId] = useState<string | null>(null)
   const draggingPane = draggingPaneId
     ? tab.panes.find((p) => p.id === draggingPaneId)
     : undefined
+
+  useEffect(() => {
+    if (!isActive) setFocusedTerminalPaneId(null)
+  }, [isActive])
+
+  const handleTerminalFocusChange = useCallback(
+    (paneId: string, focused: boolean) => {
+      setFocusedTerminalPaneId((current) => {
+        if (focused) return paneId
+        return current === paneId ? null : current
+      })
+    },
+    []
+  )
 
   const handleDragStart = (event: DragStartEvent) => {
     setDraggingPaneId(String(event.active.id))
@@ -360,6 +378,7 @@ function TerminalTabContent({
         onClosePane={onClosePane}
         onFocus={() => onFocusPane?.(tab.id, pane.id)}
         suppressTerminalResponses={draggingPaneId !== null}
+        onTerminalFocusChange={handleTerminalFocusChange}
       />
     </div>
   )
@@ -384,7 +403,11 @@ function TerminalTabContent({
   const renderLeaf = (paneId: string) => {
     const pane = tab.panes.find((p) => p.id === paneId)
     if (!pane) return null
-    const activePane = multi && isActive && tab.activePaneId === paneId
+    const activePane =
+      multi &&
+      isActive &&
+      tab.activePaneId === paneId &&
+      focusedTerminalPaneId === paneId
     return (
       <div className="relative flex h-full flex-col">
         <HeaderDropZone

@@ -328,10 +328,122 @@ const TERMINAL_RECAP_BOX_ENABLED = false
 const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
+const KITTY_IMAGE_MIME_BY_FORMAT: Record<string, string> = {
+  "100": "image/png",
+}
+
+type KittyImagePayload = {
+  id: string
+  params: Record<string, string>
+  data: string
+}
 
 function shellQuote(s: string) {
   if (/^[A-Za-z0-9_\-./]+$/.test(s)) return s
   return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+function parseKittyImagePayload(raw: string): KittyImagePayload | null {
+  const separator = raw.indexOf(";")
+  if (separator === -1) return null
+  const params: Record<string, string> = {}
+  for (const part of raw.slice(0, separator).split(",")) {
+    const eq = part.indexOf("=")
+    if (eq === -1) continue
+    params[part.slice(0, eq)] = part.slice(eq + 1)
+  }
+  const id = params.i || params.I || "default"
+  return { id, params, data: raw.slice(separator + 1) }
+}
+
+function cleanBase64(value: string): string {
+  return value.replace(/\s/g, "")
+}
+
+function decodeBase64Utf8(value: string): string {
+  const binary = atob(cleanBase64(value))
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new TextDecoder().decode(bytes)
+}
+
+function kittyImageDimensions(term: Terminal, params: Record<string, string>) {
+  const cols = Math.max(1, Number.parseInt(params.c || "", 10) || 48)
+  const rows = Math.max(1, Number.parseInt(params.r || "", 10) || 18)
+  return {
+    cols: Math.min(cols, Math.max(1, term.cols)),
+    rows: Math.min(rows, Math.max(1, term.rows)),
+  }
+}
+
+function renderKittyImage(
+  term: Terminal,
+  params: Record<string, string>,
+  src: string,
+  marker = term.registerMarker(0)
+) {
+  if (!marker) return
+  const { cols, rows } = kittyImageDimensions(term, params)
+  const decoration = term.registerDecoration({
+    marker,
+    width: cols,
+    height: rows,
+  })
+  if (!decoration) return
+
+  decoration.onRender((element) => {
+    element.classList.add("terminal-kitty-image")
+    element.textContent = ""
+
+    const img = document.createElement("img")
+    img.src = src
+    img.alt = ""
+    img.draggable = false
+    img.style.display = "block"
+    img.style.maxWidth = "100%"
+    img.style.maxHeight = "100%"
+    img.style.objectFit = "contain"
+    element.appendChild(img)
+  })
+}
+
+async function kittyImageSource(params: Record<string, string>, data: string) {
+  if (params.t === "f" || params.t === "t") {
+    const path = decodeBase64Utf8(data).replace(/\0+$/, "")
+    const res = await window.fsApi.readImage(path)
+    return res.ok ? (res.dataUrl ?? null) : null
+  }
+
+  const mime = KITTY_IMAGE_MIME_BY_FORMAT[params.f || ""]
+  if (!mime) return null
+  return `data:${mime};base64,${cleanBase64(data)}`
+}
+
+function parseInlineImageOptions(value: string): Record<string, string> | null {
+  if (!value.startsWith("File=")) return null
+  const options: Record<string, string> = {}
+  for (const part of value.slice("File=".length).split(";")) {
+    const eq = part.indexOf("=")
+    if (eq === -1) continue
+    options[part.slice(0, eq)] = part.slice(eq + 1)
+  }
+  return options
+}
+
+function renderItermImage(term: Terminal, raw: string): boolean {
+  const separator = raw.indexOf(":")
+  if (separator === -1) return false
+  const options = parseInlineImageOptions(raw.slice(0, separator))
+  if (!options || options.inline !== "1") return false
+
+  const marker = term.registerMarker(0)
+  renderKittyImage(
+    term,
+    { c: "48", r: "18" },
+    `data:image/png;base64,${cleanBase64(raw.slice(separator + 1))}`,
+    marker
+  )
+  return true
 }
 
 async function pasteClipboard(
@@ -401,6 +513,8 @@ export function TerminalView({
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(false)
   const recapTimerRef = useRef<number | undefined>(undefined)
+  const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
+  const lastKittyImageChunkIdRef = useRef<string | null>(null)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -683,6 +797,45 @@ export function TerminalView({
         )
         return true
       }
+    )
+    const kittyImageSub = term.parser.registerApcHandler(
+      { final: "G" },
+      (data) => {
+        const payload = parseKittyImagePayload(data)
+        if (!payload) return false
+        const chunks = kittyImageChunksRef.current
+        const explicitId = payload.params.i || payload.params.I
+        const id = explicitId || lastKittyImageChunkIdRef.current || payload.id
+        const previous = chunks.get(id)
+        const combined = previous
+          ? {
+              id,
+              params: { ...previous.params, ...payload.params },
+              data: previous.data + payload.data,
+            }
+          : { ...payload, id }
+
+        if (combined.params.m === "1") {
+          lastKittyImageChunkIdRef.current = id
+          chunks.set(id, combined)
+          return true
+        }
+
+        chunks.delete(id)
+        if (lastKittyImageChunkIdRef.current === id) {
+          lastKittyImageChunkIdRef.current = null
+        }
+        // Capture the line synchronously. Resolving image data can take a tick,
+        // and registering the marker later anchors the image near later output.
+        const marker = term.registerMarker(0)
+        void kittyImageSource(combined.params, combined.data).then((src) => {
+          if (src) renderKittyImage(term, combined.params, src, marker)
+        })
+        return true
+      }
+    )
+    const itermImageSub = term.parser.registerOscHandler(1337, (data) =>
+      renderItermImage(term, data)
     )
 
     // Clipboard + macOS-style readline navigation. xterm otherwise either
@@ -1008,6 +1161,8 @@ export function TerminalView({
       colorSchemeSetSub.dispose()
       colorSchemeResetSub.dispose()
       colorSchemeQuerySub.dispose()
+      kittyImageSub.dispose()
+      itermImageSub.dispose()
       search.dispose()
       webglRef.current?.dispose()
       webglRef.current = null

@@ -624,6 +624,11 @@
   display: none !important;
 }
 
+.terminal-fit-host .terminal-kitty-image {
+  pointer-events: none;
+  overflow: hidden;
+}
+
 .terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar {
   background: var(--xterm-bg) !important;
 }

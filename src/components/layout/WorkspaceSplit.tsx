@@ -215,7 +215,7 @@ export function WorkspaceSplit({
   // toggling unmounts `WorkspacePane`/`TerminalView`, the xterm remeasures
   // before layout settles, and TUIs (Claude Code, etc.) get stuck at cols=1.
   return (
-    <div ref={containerRef} className="relative flex min-h-0 flex-1">
+    <div ref={containerRef} className="relative flex min-h-0 flex-1 overflow-hidden">
       <div className="min-w-0 flex-1">{workspaceSection}</div>
       <div
         onMouseDown={sidebarOpen ? startDrag : undefined}

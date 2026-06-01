@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+import { existsSync, realpathSync, statSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
+import { spawn, spawnSync } from "node:child_process"
+import { connect } from "node:net"
+import { homedir } from "node:os"
+
+function usage() {
+  console.log(
+    "Usage: gearshift [dir]\n\nOpen a folder in GearShift, like `code .` for VS Code."
+  )
+}
+
+function run(command, args) {
+  const result = spawnSync(command, args, { stdio: "ignore" })
+  if (result.status !== 0) process.exit(result.status ?? 1)
+}
+
+function launch(command, args) {
+  const child = spawn(command, args, { detached: true, stdio: "ignore" })
+  child.on("error", () => process.exit(1))
+  child.unref()
+}
+
+function sendToRunningApp(projectPath) {
+  return new Promise((resolve) => {
+    if (!projectPath || process.platform === "win32") {
+      resolve(false)
+      return
+    }
+    const socketPath = join(
+      homedir(),
+      "Library",
+      "Application Support",
+      "com.gearshift",
+      "cli-open.sock"
+    )
+    const socket = connect(socketPath)
+    let settled = false
+    const done = (ok) => {
+      if (settled) return
+      settled = true
+      socket.destroy()
+      resolve(ok)
+    }
+    socket.setTimeout(500, () => done(false))
+    socket.on("error", () => done(false))
+    socket.on("connect", () => {
+      socket.end(JSON.stringify({ paths: [projectPath] }), () => done(true))
+    })
+  })
+}
+
+function bundledAppExecutable() {
+  const realCliPath = realpathSync(process.argv[1])
+  const contentsDir = join(dirname(realCliPath), "..", "..")
+  const appExecutable = join(contentsDir, "MacOS", "GearShift")
+  return existsSync(appExecutable) ? appExecutable : null
+}
+
+const args = process.argv.slice(2)
+if (args.includes("-h") || args.includes("--help")) {
+  usage()
+  process.exit(0)
+}
+
+const target = args.find((arg) => !arg.startsWith("-"))
+const projectPath = target ? resolve(process.cwd(), target) : undefined
+
+if (projectPath) {
+  try {
+    if (!statSync(projectPath).isDirectory()) {
+      console.error(`gearshift: not a directory: ${projectPath}`)
+      process.exit(1)
+    }
+  } catch {
+    console.error(`gearshift: path does not exist: ${projectPath}`)
+    process.exit(1)
+  }
+}
+
+if (process.platform === "darwin") {
+  if (await sendToRunningApp(projectPath)) process.exit(0)
+
+  const appExecutable = bundledAppExecutable()
+  if (appExecutable) {
+    launch(appExecutable, projectPath ? ["--open-project", projectPath] : [])
+  } else {
+    const openArgs = ["-b", "com.gearshift"]
+    if (projectPath) openArgs.push("--args", "--open-project", projectPath)
+    run("open", openArgs)
+  }
+  process.exit(0)
+}
+
+console.error(
+  "gearshift: CLI launcher currently supports macOS app builds only."
+)
+process.exit(1)

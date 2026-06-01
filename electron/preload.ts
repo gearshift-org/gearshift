@@ -163,12 +163,25 @@ const appApi = {
   onNewTerminal: (cb: () => void) => {
     const listener = () => cb()
     ipcRenderer.on("app:new-terminal", listener)
-    return () => ipcRenderer.removeListener("app:new-terminal", listener)
+    return () => {
+      ipcRenderer.removeListener("app:new-terminal", listener)
+    }
   },
   onCloseTerminal: (cb: () => void) => {
     const listener = () => cb()
     ipcRenderer.on("app:close-terminal", listener)
-    return () => ipcRenderer.removeListener("app:close-terminal", listener)
+    return () => {
+      ipcRenderer.removeListener("app:close-terminal", listener)
+    }
+  },
+  takeOpenProjects: () =>
+    ipcRenderer.invoke("app:takeOpenProjects") as Promise<string[]>,
+  onOpenProjects: (cb: (paths: string[]) => void) => {
+    const listener = (_e: unknown, paths: string[]) => cb(paths)
+    ipcRenderer.on("app:open-projects", listener)
+    return () => {
+      ipcRenderer.removeListener("app:open-projects", listener)
+    }
   },
 }
 

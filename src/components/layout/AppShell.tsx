@@ -409,6 +409,7 @@ export function AppShell() {
   // Forward reference: closePane (defined below) calls closeTab when the last
   // pane is being closed. Wired via effect once both are defined.
   const closeTabRef = useRef<(id: string) => void>(() => undefined)
+  const projectsRef = useRef(projects)
   const lastTerminalByProjectRef = useRef<Record<string, string>>({})
   const agentDoneToastsByProjectRef = useRef<Map<string, Set<string>>>(new Map())
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
@@ -444,6 +445,10 @@ export function AppShell() {
   }, [])
 
   useEffect(() => clearPinRightSidebarTimer, [clearPinRightSidebarTimer])
+
+  useEffect(() => {
+    projectsRef.current = projects
+  }, [projects])
 
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
@@ -849,41 +854,56 @@ export function AppShell() {
     saveProjects(serializeProjects(projects))
   }, [projects])
 
-  const openProjectByPath = async (path: string, name?: string) => {
-    const existing = projects.find((p) => p.path === path)
-    if (existing) {
-      navigateToProject(existing.id, existing.activeTabId || undefined)
-      return
+  const openProjectByPath = useCallback(
+    async (path: string, name?: string) => {
+      const existing = projectsRef.current.find((p) => p.path === path)
+      if (existing) {
+        navigateToProject(existing.id, existing.activeTabId || undefined)
+        return
+      }
+      const id = stableProjectId(path)
+      const tabId = makeId()
+      const resolvedName = name || basename(path)
+      const { id: paneId } = await window.term.create({
+        cwd: path,
+        theme: resolvedTheme,
+        projectId: id,
+      })
+      setProjects((prev) => [
+        ...prev,
+        {
+          id,
+          name: resolvedName,
+          path,
+          tabs: [
+            {
+              kind: "terminal" as const,
+              id: tabId,
+              name: "Terminal 1",
+              panes: [{ id: paneId, sessionId: paneId }],
+              activePaneId: paneId,
+            },
+          ],
+          activeTabId: tabId,
+        },
+      ])
+      navigateToProject(id, tabId)
+      setRecents(pushRecentProject({ name: resolvedName, path }))
+    },
+    [navigateToProject, resolvedTheme]
+  )
+
+  useEffect(() => {
+    if (!stateRestored) return
+    const openPaths = (paths: string[]) => {
+      for (const path of paths) void openProjectByPath(path)
     }
-    const id = stableProjectId(path)
-    const tabId = makeId()
-    const resolvedName = name || basename(path)
-    const { id: paneId } = await window.term.create({
-      cwd: path,
-      theme: resolvedTheme,
-      projectId: id,
-    })
-    setProjects((prev) => [
-      ...prev,
-      {
-        id,
-        name: resolvedName,
-        path,
-        tabs: [
-          {
-            kind: "terminal" as const,
-            id: tabId,
-            name: "Terminal 1",
-            panes: [{ id: paneId, sessionId: paneId }],
-            activePaneId: paneId,
-          },
-        ],
-        activeTabId: tabId,
-      },
-    ])
-    navigateToProject(id, tabId)
-    setRecents(pushRecentProject({ name: resolvedName, path }))
-  }
+    void window.appApi.takeOpenProjects().then(openPaths)
+    const off = window.appApi.onOpenProjects(openPaths)
+    return () => {
+      off()
+    }
+  }, [openProjectByPath, stateRestored])
 
   const addProject = async () => {
     const path = await window.dialogApi.openProject()

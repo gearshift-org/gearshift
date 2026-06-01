@@ -11,6 +11,7 @@ import {
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { execFile, spawn } from "node:child_process"
+import net from "node:net"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
 import { readFileSync, writeFileSync } from "node:fs"
@@ -24,6 +25,7 @@ import {
   quitAndInstall,
 } from "./updater"
 import { ensureDaemonRunning } from "./daemonSupervisor"
+import { ensureCliInstalled } from "./cliInstaller"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
 import * as chatDb from "./db/chatDb"
@@ -85,6 +87,103 @@ if (VITE_DEV_SERVER_URL) {
 
 let daemonClient: DaemonClient | null = null
 let daemonConnectPromise: Promise<DaemonClient> | null = null
+let pendingCliProjectPaths: string[] = []
+const readyWebContents = new Set<number>()
+let cliOpenServer: net.Server | null = null
+
+function cliProjectPaths(argv: string[], cwd = process.cwd()): string[] {
+  const paths: string[] = []
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]
+    if (arg === "--open-project") {
+      const value = argv[i + 1]
+      if (value) {
+        paths.push(path.resolve(cwd, value))
+        i += 1
+      }
+      continue
+    }
+    if (arg.startsWith("--open-project=")) {
+      paths.push(path.resolve(cwd, arg.slice("--open-project=".length)))
+    }
+  }
+  return paths
+}
+
+async function validProjectPaths(paths: string[]): Promise<string[]> {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const projectPath of paths) {
+    try {
+      const resolved = path.resolve(projectPath)
+      if (seen.has(resolved)) continue
+      const stat = await fs.stat(resolved)
+      if (!stat.isDirectory()) continue
+      seen.add(resolved)
+      out.push(resolved)
+    } catch {
+      // Ignore missing/non-directory paths; the CLI should only open folders.
+    }
+  }
+  return out
+}
+
+function cliOpenSocketPath() {
+  return path.join(app.getPath("userData"), "cli-open.sock")
+}
+
+async function startCliOpenServer() {
+  if (process.platform === "win32" || cliOpenServer) return
+  const socketPath = cliOpenSocketPath()
+  await fs.mkdir(path.dirname(socketPath), { recursive: true })
+  try {
+    await fs.unlink(socketPath)
+  } catch {
+    // Missing/stale socket is fine.
+  }
+
+  cliOpenServer = net.createServer((socket) => {
+    let raw = ""
+    socket.setEncoding("utf8")
+    socket.on("data", (chunk) => {
+      raw += chunk
+    })
+    socket.on("end", () => {
+      try {
+        const parsed = JSON.parse(raw) as { paths?: unknown }
+        const paths = Array.isArray(parsed.paths)
+          ? parsed.paths.filter((p): p is string => typeof p === "string")
+          : []
+        void sendCliProjectPaths(paths)
+      } catch {
+        // Ignore malformed CLI requests.
+      }
+    })
+  })
+  cliOpenServer.on("error", (err) => {
+    console.warn("[cli] open server failed", err)
+  })
+  cliOpenServer.listen(socketPath)
+}
+
+async function sendCliProjectPaths(paths: string[]) {
+  const valid = await validProjectPaths(paths)
+  if (valid.length === 0) return
+  const win =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  if (
+    !win ||
+    win.webContents.isDestroyed() ||
+    !readyWebContents.has(win.webContents.id)
+  ) {
+    pendingCliProjectPaths.push(...valid)
+    return
+  }
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  win.webContents.send("app:open-projects", valid)
+}
 
 // Single source of truth for the daemon connection. Reconnects transparently
 // after a daemon crash or its idle-exit so the renderer doesn't have to
@@ -479,6 +578,7 @@ function createWindow() {
     const b = win.getBounds()
     lastNormalBounds = { width: b.width, height: b.height, x: b.x, y: b.y }
   }
+  const webContentsId = win.webContents.id
   const onChange = () => persistWindowState(win)
   win.on("resize", onChange)
   win.on("move", onChange)
@@ -493,6 +593,9 @@ function createWindow() {
   })
   win.on("focus", () => {
     if (!win.isDestroyed()) win.webContents.send("window:focus")
+  })
+  win.on("closed", () => {
+    readyWebContents.delete(webContentsId)
   })
   win.on("close", () => {
     if (windowStateWriteTimer) {
@@ -537,6 +640,8 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, "../dist/index.html"))
   }
+
+  return win
 }
 
 function sendToFocused(channel: string) {
@@ -1013,6 +1118,19 @@ async function flushState() {
   }
 }
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.exit(0)
+} else {
+  app.on("second-instance", (_event, argv, cwd) => {
+    const paths = cliProjectPaths(argv, cwd)
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    void sendCliProjectPaths(paths)
+  })
+}
+
+pendingCliProjectPaths = cliProjectPaths(process.argv)
+
 app.whenReady().then(async () => {
   buildMenu()
   initUpdater()
@@ -1030,6 +1148,26 @@ app.whenReady().then(async () => {
   // current run's hook updates and pick them up on the next start.
   void installAgentHooks().catch((err) => {
     console.warn("[agent-hooks] install failed", err)
+  })
+  void startCliOpenServer()
+  void ensureCliInstalled({
+    appVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    mainDir: __dirname,
+  }).then((result) => {
+    if (result.ok && result.updated) {
+      console.log(`[cli] installed ${result.path}`)
+    } else if (!result.ok) {
+      console.warn(`[cli] install skipped: ${result.error}`)
+    }
+  })
+
+  ipcMain.handle("app:takeOpenProjects", async (event) => {
+    readyWebContents.add(event.sender.id)
+    const paths = [...pendingCliProjectPaths]
+    pendingCliProjectPaths = []
+    return validProjectPaths(paths)
   })
 
   ipcMain.handle(
@@ -2326,6 +2464,8 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   closeAgentHookServer()
+  cliOpenServer?.close()
+  cliOpenServer = null
   // Sessions outlive Electron. Just detach the client; the daemon keeps
   // PTYs alive until the user kills them, the daemon's own no-clients
   // grace timer fires, or the 24h per-session idle sweep triggers.

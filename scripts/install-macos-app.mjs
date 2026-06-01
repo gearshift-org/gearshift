@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs"
-import { rm } from "node:fs/promises"
+import { access, chmod, mkdir, rm, writeFile } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { join } from "node:path"
+import { homedir } from "node:os"
 
 const PRODUCT_NAME = "GearShift"
 const APP_NAME = `${PRODUCT_NAME}.app`
 const APPLICATIONS_APP = `/Applications/${APP_NAME}`
 const APP_ID = "com.gearshift"
+const CLI_TARGET = `${APPLICATIONS_APP}/Contents/Resources/bin/gearshift`
+const CLI_NAME = "gearshift"
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -30,6 +33,38 @@ function run(command, args, options = {}) {
       }
     })
   })
+}
+
+async function isWritableDir(dir) {
+  try {
+    await access(dir)
+    await access(dir, 2)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function shellQuote(value) {
+  return `'${value.replace(/'/g, `'"'"'`)}'`
+}
+
+async function installCli() {
+  const preferred = ["/opt/homebrew/bin", "/usr/local/bin"]
+  const writable = await Promise.all(preferred.map(isWritableDir))
+  const installDir = preferred.find((_, i) => writable[i]) ?? join(homedir(), ".local", "bin")
+  await mkdir(installDir, { recursive: true })
+  const link = join(installDir, CLI_NAME)
+
+  await chmod(CLI_TARGET, 0o755)
+  await rm(link, { force: true })
+  await writeFile(link, `#!/bin/sh\nexec ${shellQuote(CLI_TARGET)} "$@"\n`, "utf8")
+  await chmod(link, 0o755)
+
+  console.log(`Installed CLI: ${link}`)
+  if (installDir.startsWith(homedir())) {
+    console.log(`Add ${installDir} to PATH if \`${CLI_NAME}\` is not found.`)
+  }
 }
 
 async function tryRun(command, args) {
@@ -113,6 +148,8 @@ async function main() {
   await run("ditto", [builtApp, APPLICATIONS_APP])
 
   console.log(`Installed ${APPLICATIONS_APP}`)
+
+  await installCli()
 }
 
 main().catch((error) => {

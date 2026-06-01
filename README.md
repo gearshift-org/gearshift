@@ -99,6 +99,7 @@ src/lib/                  Renderer utilities, stores, project state, and keybind
 - The app uses `vite-plugin-electron` so `bun run dev` starts the renderer and Electron together.
 - Native modules are rebuilt after install through `electron-builder install-app-deps`.
 - The app stores development data under `gearshift-dev` and production data under `com.gearshift`.
+- GearShift auto-installs/updates a `gearshift` CLI on macOS in a writable bin directory. Use `gearshift .` or `gearshift /path/to/project` to open a folder in GearShift.
 - The GitHub integration uses the local `gh` CLI. GearShift does not manage GitHub API tokens.
 - If `direnv` is installed, GearShift evaluates the opened project's `.envrc` before running `gh`.
 

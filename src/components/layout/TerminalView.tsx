@@ -506,6 +506,9 @@ export function TerminalView({
     running: false,
     working: false,
   })
+  // Last agent-native session id reported by a lifecycle hook. Sticky: kept
+  // across status churn so every emitted status carries it once known.
+  const agentSessionIdRef = useRef<string | undefined>(undefined)
   const agentWorkingTimerRef = useRef<number | undefined>(undefined)
   const lastAgentActivityAtRef = useRef(0)
   const lastUserInputAtRef = useRef(0)
@@ -558,20 +561,27 @@ export function TerminalView({
   }, [onAgentStatusChange])
 
   const emitAgentStatus = useCallback((next: TerminalAgentStatus) => {
+    // Carry the last-known agent-native session id onto every status so it
+    // survives status resets and reaches AppShell for persistence.
+    const merged: TerminalAgentStatus = {
+      ...next,
+      agentSessionId: next.agentSessionId ?? agentSessionIdRef.current,
+    }
     const prev = agentStatusRef.current
     if (
-      prev.running === next.running &&
-      prev.working === next.working &&
-      prev.agentName === next.agentName &&
-      prev.workStartedAt === next.workStartedAt &&
-      prev.completedAt === next.completedAt &&
-      prev.completed === next.completed &&
-      prev.needsAttention === next.needsAttention
+      prev.running === merged.running &&
+      prev.working === merged.working &&
+      prev.agentName === merged.agentName &&
+      prev.workStartedAt === merged.workStartedAt &&
+      prev.completedAt === merged.completedAt &&
+      prev.completed === merged.completed &&
+      prev.needsAttention === merged.needsAttention &&
+      prev.agentSessionId === merged.agentSessionId
     ) {
       return
     }
-    agentStatusRef.current = next
-    onAgentStatusChangeRef.current?.(next)
+    agentStatusRef.current = merged
+    onAgentStatusChangeRef.current?.(merged)
   }, [])
 
   const dismissRecap = useCallback(() => {
@@ -1319,6 +1329,9 @@ export function TerminalView({
         agentWorkingTimerRef.current = undefined
       }
       lastHookEventAtRef.current = Date.now()
+      if (event.agentSessionId) {
+        agentSessionIdRef.current = event.agentSessionId
+      }
       const current = agentStatusRef.current
       if (event.event === "start") {
         // Authoritative "agent is working" signal from the lifecycle hook

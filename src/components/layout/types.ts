@@ -11,6 +11,12 @@ export type TerminalPane = {
   customName?: string
   /** Ephemeral coding-agent status detected from the PTY process/output. */
   agentStatus?: TerminalAgentStatus
+  /**
+   * The coding agent's own session id (e.g. Claude's resumable session UUID),
+   * reported via lifecycle hooks. Persisted so a restored pane knows which
+   * agent conversation it belongs to.
+   */
+  agentSessionId?: string
   /** True for restored panes whose PTY has not been spawned (or adopted) yet. */
   pendingStart?: boolean
 }
@@ -34,6 +40,8 @@ export type TerminalAgentStatus = {
   completed?: boolean
   /** True when the agent is blocked waiting on the user (permission/idle prompt). */
   needsAttention?: boolean
+  /** The agent's own session id (e.g. Claude's resumable session UUID), if reported by a hook. */
+  agentSessionId?: string
 }
 
 export type TerminalTab = {

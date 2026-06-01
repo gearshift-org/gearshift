@@ -64,6 +64,7 @@ const termApi = {
       agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
       event: "start" | "stop" | "needs_attention"
       body?: string
+      agentSessionId?: string
     }) => void
   ) => {
     const channel = `term:agentEvent:${id}`

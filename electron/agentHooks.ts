@@ -14,6 +14,8 @@ export type AgentHookEvent = {
   agentName: TerminalAgentName
   event: "start" | "stop" | "needs_attention"
   body?: string
+  /** The agent's own session id (e.g. Claude's resumable session UUID). */
+  agentSessionId?: string
 }
 
 const AGENT_HOOK_SOCKET_FILENAME = "gearshift-agent-hooks.sock"
@@ -39,10 +41,19 @@ function opencodePluginSourcePath(): string {
 function parseAgentHookPayload(
   raw: string
 ): { sessionId: string; event: AgentHookEvent } | null {
-  const [agentRaw, sessionIdRaw, eventRaw, ...bodyParts] = raw
-    .replace(/\0/g, "")
-    .trim()
-    .split("|")
+  const parts = raw.replace(/\0/g, "").trim().split("|")
+  const [agentRaw, sessionIdRaw, eventRaw] = parts
+  // Wire format: agent|sessionId|event|body|agentSessionId. The native session
+  // id is the last field when present (5+ parts); older 3-4 part payloads
+  // (pre-agentSessionId) still parse with agentSessionId left empty. body never
+  // contains a literal "|" — senders sanitize it — so slicing is unambiguous.
+  const hasAgentSessionId = parts.length >= 5
+  const bodyParts = hasAgentSessionId
+    ? parts.slice(3, parts.length - 1)
+    : parts.slice(3)
+  const agentSessionId = hasAgentSessionId
+    ? parts[parts.length - 1]?.trim()
+    : ""
   const agentName = agentRaw as TerminalAgentName
   if (!["claude", "codex", "opencode", "pi", "gemini"].includes(agentName)) {
     return null
@@ -69,6 +80,7 @@ function parseAgentHookPayload(
       agentName,
       event,
       ...(body ? { body } : {}),
+      ...(agentSessionId ? { agentSessionId } : {}),
     },
   }
 }
@@ -227,9 +239,25 @@ case "$agent" in
   *) exit 0 ;;
 esac
 
-# Only "stop" needs to parse the assistant message out of stdin — for "start"
-# and "needs_attention" we skip stdin entirely so the bash spawn returns as
-# quickly as it can. This is the main savings over the previous version.
+# Read a bounded slice of stdin once (if any). The agent's own session id lives
+# in this JSON ("session_id") and we want it for every event, so we can no
+# longer skip stdin on "start"/"needs_attention". head -c bounds the cost: it
+# returns as soon as the agent closes the pipe and never blocks on huge Stop
+# payloads.
+input=""
+if [ ! -t 0 ]; then
+  input="$(head -c 65536 || true)"
+fi
+
+# The agent-native session id (Claude/Codex emit it as "session_id" on stdin).
+# Best-effort: stays empty for agents/events that don't include it.
+agent_session_id=""
+if [ -n "$input" ] && [[ "$input" == *'"session_id"'* ]]; then
+  agent_session_id=$(printf '%s' "$input" \\
+    | grep -o '"session_id":"[^"]*"' \\
+    | head -1 | cut -d'"' -f4 || true)
+fi
+
 case "$event" in
   NeedsAttention|needs_attention|"needs attention"|notification)
     event="needs_attention"
@@ -241,27 +269,24 @@ case "$event" in
     ;;
   *)
     event="stop"
-    if [ -t 0 ]; then
+    if [ -z "$input" ]; then
       body="Session completed"
-    else
-      input="$(cat || true)"
-      if [ -n "$input" ] && [[ "$input" == *'"last_assistant_message"'* ]]; then
-        body=$(printf '%s' "$input" \\
-          | grep -o '"last_assistant_message":"[^"]*"' \\
-          | head -1 | cut -d'"' -f4 || true)
-        if [ -n "$body" ]; then
-          body=$(printf '%s' "$body" | tr '|\\n\\r' '   ' | head -c 500)
-        else
-          body="Session completed"
-        fi
+    elif [[ "$input" == *'"last_assistant_message"'* ]]; then
+      body=$(printf '%s' "$input" \\
+        | grep -o '"last_assistant_message":"[^"]*"' \\
+        | head -1 | cut -d'"' -f4 || true)
+      if [ -n "$body" ]; then
+        body=$(printf '%s' "$body" | tr '|\\n\\r' '   ' | head -c 500)
       else
         body="Session completed"
       fi
+    else
+      body="Session completed"
     fi
     ;;
 esac
 
-printf '%s|%s|%s|%s' "$agent" "$GEARSHIFT_SESSION_ID" "$event" "$body" \\
+printf '%s|%s|%s|%s|%s' "$agent" "$GEARSHIFT_SESSION_ID" "$event" "$body" "$agent_session_id" \\
   | nc -U "$GEARSHIFT_AGENT_SOCKET" 2>/dev/null || true
 `
   const filePath = agentHookScriptPath()
@@ -384,12 +409,12 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
   const cancelledSessions = new Set()
   const childSessionCache = new Map() // sessionID -> boolean isChild
 
-  const send = async (event, body) => {
+  const send = async (event, body, nativeSessionId) => {
     try {
       const { createConnection } = await import("net")
       const conn = createConnection({ path: socketPath })
       conn.on("error", () => {})
-      const payload = \`opencode|\${sessionEnvId}|\${event}|\${body ?? ""}\`
+      const payload = \`opencode|\${sessionEnvId}|\${event}|\${body ?? ""}|\${nativeSessionId ?? ""}\`
       log("send", event, body ? body.slice(0, 80) : "")
       await new Promise((resolve) => {
         conn.write(payload, () => conn.end())
@@ -430,7 +455,7 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
     if (currentState === "busy") return
     currentState = "busy"
     stopSent = false
-    await send("start", "")
+    await send("start", "", rootSessionID)
   }
 
   const buildStopBody = async (sessionID) => {
@@ -470,12 +495,12 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
       cancelledSessions.delete(sessionID)
       rootSessionID = null
       log("cancelled, suppress stop body")
-      await send("stop", "Cancelled")
+      await send("stop", "Cancelled", sessionID)
       return
     }
 
     const body = await buildStopBody(sessionID)
-    await send("stop", body)
+    await send("stop", body, sessionID)
     rootSessionID = null
   }
 
@@ -530,7 +555,7 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
     },
     "permission.ask": async (_permission, output) => {
       if (output?.status === "ask") {
-        await send("needs_attention", "Permission requested")
+        await send("needs_attention", "Permission requested", rootSessionID)
       }
     },
   }
@@ -560,21 +585,41 @@ async function writePiExtension(): Promise<void> {
 
 import { createConnection } from "node:net"
 
+type PiContext = {
+  hasUI?: boolean
+  sessionManager?: { getSessionId?: () => string }
+}
+
 export default function (pi: {
   on: (
     event: string,
-    handler: (event: unknown, ctx: { hasUI?: boolean }) => void,
+    handler: (event: unknown, ctx: PiContext) => void,
   ) => void
 }) {
   const socketPath = process.env.GEARSHIFT_AGENT_SOCKET
   const sessionId = process.env.GEARSHIFT_SESSION_ID
   if (!socketPath || !sessionId) return
 
-  const fire = (event: "start" | "stop" | "needs_attention") => {
+  // pi exposes its own session id on the handler context, not the event
+  // payload: ctx.sessionManager.getSessionId(). Gearshift persists it next to
+  // the pane so a restored pane knows which pi conversation it belongs to.
+  const nativeSessionId = (ctx: PiContext): string => {
+    try {
+      const id = ctx.sessionManager?.getSessionId?.()
+      return typeof id === "string" ? id : ""
+    } catch {
+      return ""
+    }
+  }
+
+  const fire = (
+    event: "start" | "stop" | "needs_attention",
+    agentSessionId: string,
+  ) => {
     try {
       const conn = createConnection({ path: socketPath })
       conn.on("error", () => {})
-      conn.write(\`pi|\${sessionId}|\${event}|\`, () => conn.end())
+      conn.write(\`pi|\${sessionId}|\${event}||\${agentSessionId}\`, () => conn.end())
     } catch {
       // Stay silent — hook failures must never affect pi.
     }
@@ -582,15 +627,15 @@ export default function (pi: {
 
   // Subagents and print mode (-p) set hasUI=false; never toggle the pane dot
   // for those. Older pi versions without hasUI still fire (best-effort).
-  const skip = (ctx: { hasUI?: boolean }) => ctx.hasUI === false
+  const skip = (ctx: PiContext) => ctx.hasUI === false
 
   // session_start only means the TUI opened. Wait for a prompt submission
   // before marking the terminal agent as busy.
-  pi.on("before_agent_start", (_e, ctx) => { if (!skip(ctx)) fire("start") })
-  pi.on("tool_execution_end", (_e, ctx) => { if (!skip(ctx)) fire("start") })
-  pi.on("agent_end", (_e, ctx) => { if (!skip(ctx)) fire("stop") })
-  pi.on("session_end", (_e, ctx) => { if (!skip(ctx)) fire("stop") })
-  pi.on("session_shutdown", (_e, ctx) => { if (!skip(ctx)) fire("stop") })
+  pi.on("before_agent_start", (_e, ctx) => { if (!skip(ctx)) fire("start", nativeSessionId(ctx)) })
+  pi.on("tool_execution_end", (_e, ctx) => { if (!skip(ctx)) fire("start", nativeSessionId(ctx)) })
+  pi.on("agent_end", (_e, ctx) => { if (!skip(ctx)) fire("stop", nativeSessionId(ctx)) })
+  pi.on("session_end", (_e, ctx) => { if (!skip(ctx)) fire("stop", nativeSessionId(ctx)) })
+  pi.on("session_shutdown", (_e, ctx) => { if (!skip(ctx)) fire("stop", nativeSessionId(ctx)) })
 }
 `
   const extensionsDir = path.join(

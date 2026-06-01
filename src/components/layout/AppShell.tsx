@@ -99,6 +99,7 @@ function hydrateProjectSnapshot(): {
             ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
             ...(sp.autoTitle ? { autoTitle: sp.autoTitle } : {}),
             ...(sp.customName ? { customName: sp.customName } : {}),
+            ...(sp.agentSessionId ? { agentSessionId: sp.agentSessionId } : {}),
           }))
           const activePaneId =
             (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
@@ -222,6 +223,9 @@ function serializeProjects(projects: Project[]) {
             ...(sid ? { sessionId: sid } : {}),
             ...(pp.autoTitle ? { autoTitle: pp.autoTitle } : {}),
             ...(pp.customName ? { customName: pp.customName } : {}),
+            ...(pp.agentSessionId
+              ? { agentSessionId: pp.agentSessionId }
+              : {}),
           }
         }),
       })),
@@ -1876,7 +1880,15 @@ export function AppShell() {
           return {
             ...t,
             panes: t.panes.map((pp) =>
-              pp.id === paneId ? { ...pp, agentStatus: status } : pp
+              pp.id === paneId
+                ? {
+                    ...pp,
+                    agentStatus: status,
+                    // Sticky: only overwrite when a hook actually reported an
+                    // id, so we never clobber a persisted one with undefined.
+                    agentSessionId: status.agentSessionId ?? pp.agentSessionId,
+                  }
+                : pp
             ),
           }
         })

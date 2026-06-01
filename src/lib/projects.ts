@@ -10,6 +10,8 @@ export type StoredPane = {
   autoTitle?: string
   /** User-set name for this pane. */
   customName?: string
+  /** The coding agent's own session id (e.g. Claude's resumable session UUID), reported via hooks. */
+  agentSessionId?: string
 }
 
 export type StoredTab = {

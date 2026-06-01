@@ -99,7 +99,6 @@ function TerminalPaneView({
   onStartTerminal,
   onClosePane,
   onFocus,
-  suppressTerminalResponses,
   onTerminalFocusChange,
 }: {
   tab: TerminalTab
@@ -114,7 +113,6 @@ function TerminalPaneView({
   onStartTerminal?: (tabId: string, paneId: string) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocus?: () => void
-  suppressTerminalResponses?: boolean
   onTerminalFocusChange?: (paneId: string, focused: boolean) => void
 }) {
   if (pane.pendingStart) {
@@ -137,7 +135,6 @@ function TerminalPaneView({
       <TerminalView
         sessionId={pane.sessionId ?? pane.id}
         isActive={isTabActive && tab.activePaneId === pane.id}
-        suppressTerminalResponses={suppressTerminalResponses}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
         onFocusChange={(focused) => onTerminalFocusChange?.(pane.id, focused)}
         onAgentStatusChange={(status) =>
@@ -377,7 +374,6 @@ function TerminalTabContent({
         onStartTerminal={onStartTerminal}
         onClosePane={onClosePane}
         onFocus={() => onFocusPane?.(tab.id, pane.id)}
-        suppressTerminalResponses={draggingPaneId !== null}
         onTerminalFocusChange={handleTerminalFocusChange}
       />
     </div>

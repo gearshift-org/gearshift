@@ -11,6 +11,7 @@ import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
 import { AgentSpinner } from "./AgentSpinner"
 import { AgentAttention } from "./AgentAttention"
+import { AgentIcon } from "./AgentIcon"
 import type { TerminalPane } from "./types"
 
 type Props = {
@@ -72,6 +73,11 @@ export function PaneHeader({
 
   const agentWorking = pane.agentStatus?.working
   const agentNeedsAttention = pane.agentStatus?.needsAttention
+  // Show the agent's brand icon while an agent is active in this pane (running,
+  // working, or waiting on the user). AgentIcon renders nothing for any agent
+  // without a registered icon.
+  const agentActive =
+    !!pane.agentStatus?.running || !!agentWorking || !!agentNeedsAttention
 
   return (
     <div
@@ -87,6 +93,9 @@ export function PaneHeader({
         isActive && "bg-muted/60 text-foreground",
       )}
     >
+      {agentActive ? (
+        <AgentIcon agent={pane.agentStatus?.agentName} className="mr-1 size-3.5" />
+      ) : null}
       {agentWorking ? (
         <AgentSpinner className="mr-0.5" />
       ) : agentNeedsAttention ? (

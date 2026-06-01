@@ -18,6 +18,8 @@ import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
 import { AgentSpinner } from "./AgentSpinner"
 import { AgentAttention } from "./AgentAttention"
+import { AgentIcon } from "./AgentIcon"
+import { hasAgentIcon } from "./agentIcons"
 import {
   TAB_LABEL_CLASS,
   TAB_NAME_TOOLTIP_DELAY_MS,
@@ -26,7 +28,12 @@ import {
   useTabOpenAnimation,
 } from "./tabSizing"
 import { displayName, tabDisplayName } from "./terminalName"
-import type { TerminalAgentName, TerminalTab, WorkspaceTab } from "./types"
+import type {
+  TerminalAgentName,
+  TerminalPane,
+  TerminalTab,
+  WorkspaceTab,
+} from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -105,7 +112,13 @@ type TabItemProps = {
   onOpenInVSCode?: () => void
 }
 
-function TabIcon({ tab }: { tab: WorkspaceTab }) {
+function TabIcon({
+  tab,
+  agentName,
+}: {
+  tab: WorkspaceTab
+  agentName?: TerminalAgentName
+}) {
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
   if (tab.kind === "file") {
     return (
@@ -114,6 +127,10 @@ function TabIcon({ tab }: { tab: WorkspaceTab }) {
         className="size-4 shrink-0"
       />
     )
+  }
+  // An active agent's brand icon stands in for the generic terminal icon.
+  if (hasAgentIcon(agentName)) {
+    return <AgentIcon agent={agentName} className="size-3.5" />
   }
   return <TerminalSquare className="size-3.5 shrink-0" />
 }
@@ -155,6 +172,19 @@ function WorkspaceTabItem({
     !hasWorkingAgent &&
     !hasAttentionAgent &&
     t.panes.some((pane) => pane.agentStatus?.completed)
+  // The brand icon of the agent active in the *focused* pane (running, working,
+  // or waiting on the user) — matching how the tab title tracks the active
+  // pane. A focused pane with no agent shows the generic terminal icon, even if
+  // a sibling split pane is running an agent.
+  const paneAgent = (pane: TerminalPane | undefined) =>
+    pane?.agentStatus?.running ||
+    pane?.agentStatus?.working ||
+    pane?.agentStatus?.needsAttention
+      ? pane.agentStatus?.agentName
+      : undefined
+  const activeAgentName = isTerminal
+    ? paneAgent(t.panes.find((pane) => pane.id === t.activePaneId) ?? t.panes[0])
+    : undefined
   const {
     attributes,
     listeners,
@@ -198,7 +228,7 @@ function WorkspaceTabItem({
         {...attributes}
         {...listeners}
       >
-        <TabIcon tab={t} />
+        <TabIcon tab={t} agentName={activeAgentName} />
         {hasWorkingAgent ? (
           <AgentSpinner className="-ml-1" />
         ) : hasAttentionAgent ? (
@@ -439,7 +469,7 @@ export function WorkspaceTabBar({
             }
           />
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={() => onAdd()}>
+            <DropdownMenuItem className="gap-2" onClick={() => onAdd()}>
               <TerminalSquare className="size-3.5" />
               Terminal
             </DropdownMenuItem>
@@ -447,8 +477,10 @@ export function WorkspaceTabBar({
             {AGENT_TERMINAL_OPTIONS.map((agent) => (
               <DropdownMenuItem
                 key={agent.value}
+                className="gap-2"
                 onClick={() => onAdd(agent.value)}
               >
+                <AgentIcon agent={agent.value} className="size-3.5" />
                 {agent.label}
               </DropdownMenuItem>
             ))}

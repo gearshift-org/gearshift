@@ -8,13 +8,15 @@ import type {
 // Strip leading sparkle/asterisk-style glyphs that some TUIs (e.g. Claude Code)
 // prepend to their window title — we already render a dedicated agent icon
 // next to the title, so the duplicate decorative glyph looks like garbage.
-// Covers ASCII *, common Unicode sparkles, asterisk variants, and the Braille
-// spinner range (U+2800–U+28FF) that Claude Code cycles through while busy.
+// Covers ASCII *, common Unicode sparkles, asterisk variants, the Braille
+// spinner range (U+2800–U+28FF) that Claude Code cycles through while busy, and
+// the π glyph pi prepends (e.g. "π - wayfinder").
 const LEADING_SPARKLE_RE =
-  /^[∗✱✳✴✵✶✷✸✹✺✻✼✽✢✣✤✥✦✧✨✩✪✫✬✭✮✯✰☄⚝⁂⁎⁕٭⁂*⠀-⣿]+\s*/
+  /^[∗✱✳✴✵✶✷✸✹✺✻✼✽✢✣✤✥✦✧✨✩✪✫✬✭✮✯✰☄⚝⁂⁎⁕٭⁂*πΠ⠀-⣿]+\s*/
 // Some agents emit "<sparkle> · <title>" — after the sparkle is stripped we'd
-// be left with a leading separator. Strip those too.
-const LEADING_SEPARATOR_RE = /^[·•‧⋅∙・⸱⸳◦●○◇◆▪▫►▶–—−‒|]\s*/
+// be left with a leading separator. Strip those too (incl. ASCII hyphen, e.g.
+// pi's "π - <cwd>").
+const LEADING_SEPARATOR_RE = /^[·•‧⋅∙・⸱⸳◦●○◇◆▪▫►▶–—−‒|-]\s*/
 const SHELL_TITLE_RE = /^[^@:\s]+@[^:]+:(.+)$/
 
 function agentDisplayName(agentName: TerminalAgentName | undefined): string | undefined {

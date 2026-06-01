@@ -187,9 +187,20 @@ export function moveLeafBeside(
   return insertBeside(removed, targetPaneId, movingPaneId, direction, before)
 }
 
-/** Stable, unique key for a layout node among its siblings. */
+/**
+ * Stable, unique key for a layout node among its siblings — used as the React
+ * key and the react-resizable-panels panel id (which tracks each panel's drag
+ * size while mounted).
+ *
+ * Keyed off the node's *first* pane id rather than the whole pane set. This is
+ * what keeps a resized panel's size when you split one of its panes: splitting
+ * pane B (in a top/bottom-resized layout) wraps `leaf(B)` into
+ * `split([leaf(B), leaf(C)])`, and since B stays the first pane the slot id
+ * remains "B" instead of becoming "g:B-C". The panel library maps the existing
+ * size to the unchanged id, so the surrounding proportions survive and only the
+ * new split divides evenly. A node's first pane id is globally unique (each pane
+ * lives in exactly one subtree), so sibling keys never collide.
+ */
 export function nodeKey(node: TerminalLayout): string {
-  return node.type === "leaf"
-    ? node.paneId
-    : `g:${orderedPaneIds(node).join("-")}`
+  return node.type === "leaf" ? node.paneId : orderedPaneIds(node)[0]
 }

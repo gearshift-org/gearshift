@@ -164,25 +164,54 @@ async function readJsonObject(
   return {}
 }
 
+/**
+ * Write `content` to `filePath` only when it differs from what's already on
+ * disk. Returns true if a write happened, false if the file was already
+ * identical. Skipping no-op writes matters: agents like Codex gate hooks behind
+ * a "hooks changed, please review" prompt that re-triggers whenever the file is
+ * rewritten — even with identical bytes. Leaving the file untouched keeps that
+ * prompt quiet across the many Gearshift launches that change nothing.
+ */
+async function writeFileIfChanged(
+  filePath: string,
+  content: string,
+  options: { mode: number; backup?: boolean }
+): Promise<boolean> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  let existing: string | null = null
+  try {
+    existing = await fs.readFile(filePath, "utf8")
+  } catch {
+    // missing file: treat as a change so we create it
+  }
+  if (existing === content) return false
+  if (options.backup && existing !== null) {
+    try {
+      await fs.copyFile(filePath, `${filePath}.gearshift-backup`)
+    } catch {
+      // best effort
+    }
+  }
+  await fs.writeFile(filePath, content, {
+    encoding: "utf8",
+    mode: options.mode,
+  })
+  try {
+    await fs.chmod(filePath, options.mode)
+  } catch {
+    // best effort
+  }
+  return true
+}
+
 async function writeJsonWithBackup(
   filePath: string,
   data: Record<string, unknown>
 ): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  try {
-    await fs.copyFile(filePath, `${filePath}.gearshift-backup`)
-  } catch {
-    // no existing file to back up
-  }
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2) + "\n", {
-    encoding: "utf8",
+  await writeFileIfChanged(filePath, JSON.stringify(data, null, 2) + "\n", {
     mode: 0o600,
+    backup: true,
   })
-  try {
-    await fs.chmod(filePath, 0o600)
-  } catch {
-    // best effort
-  }
 }
 
 function isMarkedHookEntry(entry: unknown): boolean {
@@ -289,14 +318,7 @@ esac
 printf '%s|%s|%s|%s|%s' "$agent" "$GEARSHIFT_SESSION_ID" "$event" "$body" "$agent_session_id" \\
   | nc -U "$GEARSHIFT_AGENT_SOCKET" 2>/dev/null || true
 `
-  const filePath = agentHookScriptPath()
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, script, { encoding: "utf8", mode: 0o700 })
-  try {
-    await fs.chmod(filePath, 0o700)
-  } catch {
-    // best effort
-  }
+  await writeFileIfChanged(agentHookScriptPath(), script, { mode: 0o700 })
 }
 
 async function installClaudeHooks(scriptPath: string): Promise<void> {
@@ -561,17 +583,10 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
   }
 }
 `
-  const sourcePath = opencodePluginSourcePath()
-  await fs.writeFile(sourcePath, plugin, "utf8")
+  await writeFileIfChanged(opencodePluginSourcePath(), plugin, { mode: 0o644 })
   const pluginsDir = path.join(app.getPath("home"), ".opencode", "plugins")
   const targetPath = path.join(pluginsDir, OPENCODE_PLUGIN_FILENAME)
-  await fs.mkdir(pluginsDir, { recursive: true })
-  try {
-    await fs.copyFile(targetPath, `${targetPath}.gearshift-backup`)
-  } catch {
-    // no existing plugin to back up
-  }
-  await fs.copyFile(sourcePath, targetPath)
+  await writeFileIfChanged(targetPath, plugin, { mode: 0o644, backup: true })
 }
 
 async function writePiExtension(): Promise<void> {
@@ -645,15 +660,7 @@ export default function (pi: {
     "extensions"
   )
   const targetPath = path.join(extensionsDir, "gearshift-hooks.ts")
-  await fs.mkdir(extensionsDir, { recursive: true })
-  try {
-    const existing = await fs.readFile(targetPath, "utf8")
-    if (existing === extension) return
-    await fs.copyFile(targetPath, `${targetPath}.gearshift-backup`)
-  } catch {
-    // no existing extension to back up
-  }
-  await fs.writeFile(targetPath, extension, { encoding: "utf8", mode: 0o644 })
+  await writeFileIfChanged(targetPath, extension, { mode: 0o644, backup: true })
 }
 
 export async function installAgentHooks(): Promise<void> {

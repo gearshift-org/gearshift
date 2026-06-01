@@ -131,7 +131,7 @@ function TerminalPaneView({
   return (
     <div onMouseDown={onFocus} className="h-full">
       <TerminalView
-        sessionId={pane.id}
+        sessionId={pane.sessionId ?? pane.id}
         isActive={isTabActive && tab.activePaneId === pane.id}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
         onAgentStatusChange={(status) =>

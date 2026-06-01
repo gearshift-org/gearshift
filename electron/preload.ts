@@ -36,6 +36,7 @@ const termApi = {
     rows?: number
     theme?: "light" | "dark"
     projectId?: string | null
+    sessionId?: string
   }) => ipcRenderer.invoke("term:create", opts) as Promise<{ id: string }>,
   adopt: (sessionId: string, projectId?: string | null) =>
     ipcRenderer.invoke("term:adopt", sessionId, projectId ?? null) as Promise<{

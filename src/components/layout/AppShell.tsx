@@ -864,12 +864,8 @@ export function AppShell() {
       }
       const id = stableProjectId(path)
       const tabId = makeId()
+      const paneId = makeId()
       const resolvedName = name || basename(path)
-      const { id: paneId } = await window.term.create({
-        cwd: path,
-        theme: resolvedTheme,
-        projectId: id,
-      })
       setProjects((prev) => [
         ...prev,
         {
@@ -890,6 +886,13 @@ export function AppShell() {
       ])
       navigateToProject(id, tabId)
       setRecents(pushRecentProject({ name: resolvedName, path }))
+
+      await window.term.create({
+        cwd: path,
+        theme: resolvedTheme,
+        projectId: id,
+        sessionId: paneId,
+      })
     },
     [navigateToProject, resolvedTheme]
   )
@@ -1226,20 +1229,14 @@ export function AppShell() {
 
   const addTerminal = async (agentName?: TerminalAgentName) => {
     if (!activeProject) return
-    const { id: paneId } = await window.term.create({
-      cwd: activeProject.path,
-      theme: resolvedTheme,
-      projectId: activeProject.id,
-    })
-    if (agentName) {
-      window.term.write(paneId, `${AGENT_TERMINAL_COMMANDS[agentName]}\r`)
-    }
+    const project = activeProject
     const tabId = makeId()
+    const paneId = makeId()
     setOpeningTerminalTabId(tabId)
     window.setTimeout(() => setOpeningTerminalTabId(null), 300)
     setProjects((prev) =>
       prev.map((p) => {
-        if (p.id !== activeProject.id) return p
+        if (p.id !== project.id) return p
         const terminalCount = p.tabs.filter((t) => t.kind === "terminal").length
         const name = agentName
           ? AGENT_TERMINAL_LABELS[agentName]
@@ -1261,6 +1258,16 @@ export function AppShell() {
       })
     )
     navigateToTab(tabId)
+
+    await window.term.create({
+      cwd: project.path,
+      theme: resolvedTheme,
+      projectId: project.id,
+      sessionId: paneId,
+    })
+    if (agentName) {
+      window.term.write(paneId, `${AGENT_TERMINAL_COMMANDS[agentName]}\r`)
+    }
   }
 
   /** Add a new terminal pane to an existing terminal tab (Cmd+D / split). */

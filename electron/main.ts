@@ -2397,6 +2397,7 @@ app.whenReady().then(async () => {
         rows?: number
         theme?: "light" | "dark"
         projectId?: string | null
+        sessionId?: string
       }
     ) => {
       const client = await getDaemonClient()
@@ -2406,7 +2407,7 @@ app.whenReady().then(async () => {
         rows: opts.rows,
         theme: opts.theme,
       })
-      const id = randomUUID()
+      const id = opts.sessionId ?? randomUUID()
       resolved.env = {
         ...resolved.env,
         ...hookEnv(id),

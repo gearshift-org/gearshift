@@ -1065,11 +1065,11 @@ export function TerminalView({
         if (hookAuthoritative) {
           emitAgentStatus({
             running: current.running || detected.running,
-            working: current.working,
+            working: current.completed ? false : current.working,
             agentName: current.agentName ?? detected.agentName,
             workStartedAt: current.workStartedAt,
-            completedAt: undefined,
-            completed: false,
+            completedAt: current.completedAt,
+            completed: current.completed,
             needsAttention: current.needsAttention,
           })
           return
@@ -1077,11 +1077,16 @@ export function TerminalView({
 
         emitAgentStatus({
           running: detected.running,
-          working: detected.running ? current.working || recentlyActive : false,
+          working: detected.running
+            ? current.working || recentlyActive
+            : false,
           agentName: detected.agentName,
-          workStartedAt: detected.running ? current.workStartedAt : undefined,
-          completedAt: undefined,
-          completed: false,
+          workStartedAt:
+            detected.running || current.completed
+              ? current.workStartedAt
+              : undefined,
+          completedAt: detected.running ? undefined : current.completedAt,
+          completed: detected.running ? false : current.completed,
           needsAttention: detected.running ? current.needsAttention : false,
         })
       } catch {

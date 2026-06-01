@@ -767,49 +767,103 @@ export function AppShell() {
       setPaletteRecents(pushRecentPaletteProject(activeProjectPath))
   }, [activeProjectId, activeProjectPath, stateRestored])
 
-  useEffect(() => {
-    if (!activeProjectId) return
-    const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
-    if (set && set.size > 0) {
-      for (const id of set) toast.dismiss(id)
-      agentDoneToastsByProjectRef.current.delete(activeProjectId)
-    }
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === activeProjectId && (p.agentDone || p.agentNeedsAttention)
-          ? { ...p, agentDone: false, agentNeedsAttention: false }
-          : p
-      )
-    )
-  }, [activeProjectId])
-
-  useEffect(() => {
-    if (!activeProjectId) return
-    const dismissActiveProjectToasts = () => {
-      if (!isAppVisibleAndFocused()) return
-      const set = agentDoneToastsByProjectRef.current.get(activeProjectId)
-      if (set && set.size > 0) {
-        for (const id of set) toast.dismiss(id)
-        agentDoneToastsByProjectRef.current.delete(activeProjectId)
+  const dismissViewedTerminalNotifications = useCallback(
+    (projectId: string, tabId: string, paneId: string) => {
+      const set = agentDoneToastsByProjectRef.current.get(projectId)
+      if (set) {
+        for (const id of [
+          agentDoneToastId(projectId, tabId, paneId),
+          agentAttentionToastId(projectId, tabId, paneId),
+        ]) {
+          if (!set.has(id)) continue
+          toast.dismiss(id)
+          set.delete(id)
+        }
+        if (set.size === 0) agentDoneToastsByProjectRef.current.delete(projectId)
       }
+
+      const hasRemainingProjectNotifications =
+        (agentDoneToastsByProjectRef.current.get(projectId)?.size ?? 0) > 0
+
       setProjects((prev) =>
         prev.map((p) =>
-          p.id === activeProjectId && (p.agentDone || p.agentNeedsAttention)
-            ? { ...p, agentDone: false, agentNeedsAttention: false }
+          p.id === projectId
+            ? {
+                ...p,
+                agentDone: hasRemainingProjectNotifications ? p.agentDone : false,
+                agentNeedsAttention: hasRemainingProjectNotifications
+                  ? p.agentNeedsAttention
+                  : false,
+                tabs: p.tabs.map((t) =>
+                  t.id === tabId && t.kind === "terminal"
+                    ? {
+                        ...t,
+                        panes: t.panes.map((pane) =>
+                          pane.id === paneId && pane.agentStatus
+                            ? {
+                                ...pane,
+                                agentStatus: {
+                                  ...pane.agentStatus,
+                                  completed: false,
+                                  completedAt: undefined,
+                                  needsAttention: false,
+                                },
+                              }
+                            : pane
+                        ),
+                      }
+                    : t
+                ),
+              }
             : p
         )
       )
-    }
-    window.addEventListener("focus", dismissActiveProjectToasts)
-    document.addEventListener("visibilitychange", dismissActiveProjectToasts)
-    return () => {
-      window.removeEventListener("focus", dismissActiveProjectToasts)
-      document.removeEventListener(
-        "visibilitychange",
-        dismissActiveProjectToasts
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (!activeProjectId || !activeTabId || !isAppVisibleAndFocused()) return
+    const activeTab = activeProject?.tabs.find((t) => t.id === activeTabId)
+    if (activeTab?.kind !== "terminal") return
+    dismissViewedTerminalNotifications(
+      activeProjectId,
+      activeTabId,
+      activeTab.activePaneId
+    )
+  }, [
+    activeProject,
+    activeProjectId,
+    activeTabId,
+    dismissViewedTerminalNotifications,
+  ])
+
+  useEffect(() => {
+    const dismissActiveTerminalToasts = () => {
+      if (!activeProjectId || !activeTabId || !isAppVisibleAndFocused()) return
+      const activeTab = activeProject?.tabs.find((t) => t.id === activeTabId)
+      if (activeTab?.kind !== "terminal") return
+      dismissViewedTerminalNotifications(
+        activeProjectId,
+        activeTabId,
+        activeTab.activePaneId
       )
     }
-  }, [activeProjectId])
+    window.addEventListener("focus", dismissActiveTerminalToasts)
+    document.addEventListener("visibilitychange", dismissActiveTerminalToasts)
+    return () => {
+      window.removeEventListener("focus", dismissActiveTerminalToasts)
+      document.removeEventListener(
+        "visibilitychange",
+        dismissActiveTerminalToasts
+      )
+    }
+  }, [
+    activeProject,
+    activeProjectId,
+    activeTabId,
+    dismissViewedTerminalNotifications,
+  ])
 
   useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return
@@ -1783,14 +1837,17 @@ export function AppShell() {
     const becameNeedsAttention =
       !wasNeedsAttention && status.needsAttention === true
     const appVisibleAndFocused = isAppVisibleAndFocused()
+    const targetTerminalIsActive =
+      !!targetProject &&
+      targetProject.id === activeProjectId &&
+      activeTabId === tabId &&
+      targetTab?.kind === "terminal" &&
+      targetTab.activePaneId === paneId &&
+      appVisibleAndFocused
     const finishedAwayFromAttention =
-      finishedWork &&
-      !!targetProject &&
-      (targetProject.id !== activeProjectId || !appVisibleAndFocused)
+      finishedWork && !!targetProject && !targetTerminalIsActive
     const needsAttentionAway =
-      becameNeedsAttention &&
-      !!targetProject &&
-      (targetProject.id !== activeProjectId || !appVisibleAndFocused)
+      becameNeedsAttention && !!targetProject && !targetTerminalIsActive
 
     setProjects((prev) =>
       prev.map((p) => {

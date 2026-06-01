@@ -6,7 +6,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { AgentAttention } from "./AgentAttention"
+import { AgentSpinner } from "./AgentSpinner"
 import { ProjectAvatar } from "./ProjectAvatar"
+import {
+  projectHasAttentionAgent,
+  projectHasDoneAgent,
+  projectHasWorkingAgent,
+} from "@/lib/projectAgentStatus"
 import type { Project } from "./types"
 
 type Props = {
@@ -14,6 +21,26 @@ type Props = {
   activeProjectId: string
   onSelect: (id: string) => void
   onAdd: () => void
+}
+
+function ProjectAgentState({ project }: { project: Project }) {
+  const hasWorkingAgent = projectHasWorkingAgent(project)
+  const hasAttentionAgent = !hasWorkingAgent && projectHasAttentionAgent(project)
+  const hasDoneAgent = projectHasDoneAgent(project)
+
+  if (hasWorkingAgent) return <AgentSpinner className="shrink-0" />
+  if (hasAttentionAgent) return <AgentAttention className="shrink-0" />
+  if (!hasDoneAgent) return null
+
+  return (
+    <span
+      aria-label="Coding agent done"
+      title="Coding agent done"
+      className="grid size-3 shrink-0 place-items-center"
+    >
+      <span className="gs-status-bounce size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
+    </span>
+  )
 }
 
 /**
@@ -42,8 +69,13 @@ export function ProjectSwitcher({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[220px]">
         {projects.map((p) => (
-          <DropdownMenuItem key={p.id} onClick={() => onSelect(p.id)} className="gap-2">
+          <DropdownMenuItem
+            key={p.id}
+            onClick={() => onSelect(p.id)}
+            className="gap-2"
+          >
             <ProjectAvatar name={p.name} path={p.path} />
+            <ProjectAgentState project={p} />
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
             {p.id === activeProjectId && (
               <Check className="size-3.5 shrink-0 text-muted-foreground" />

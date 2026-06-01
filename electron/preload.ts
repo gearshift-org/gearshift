@@ -285,6 +285,17 @@ const fsApi = {
       ok: boolean
       error?: string
     }>,
+  copy: (sourceAbsPath: string, targetDirAbsPath: string) =>
+    ipcRenderer.invoke("fs:copy", sourceAbsPath, targetDirAbsPath) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  rename: (sourceAbsPath: string, newName: string) =>
+    ipcRenderer.invoke("fs:rename", sourceAbsPath, newName) as Promise<{
+      ok: boolean
+      error?: string
+      newPath?: string
+    }>,
   trash: (absPath: string) =>
     ipcRenderer.invoke("fs:trash", absPath) as Promise<{
       ok: boolean

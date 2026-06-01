@@ -963,6 +963,16 @@ function parsePullRequest(raw: string): PullRequestInfo | null {
   }
 }
 
+function isExpectedPullRequestStatusError(message: string): boolean {
+  return [
+    /no git remotes found/i,
+    /not a git repository/i,
+    /could not resolve to a repository/i,
+    /repository not found/i,
+    /none of the git remotes configured/i,
+  ].some((pattern) => pattern.test(message))
+}
+
 function isDefaultBranch(currentBranch: string, defaultBranch: string | null) {
   return (
     currentBranch === defaultBranch ||
@@ -1701,6 +1711,80 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle(
+    "fs:copy",
+    async (_event, sourceAbsPath: string, targetDirAbsPath: string) => {
+      if (!sourceAbsPath || !targetDirAbsPath) {
+        return { ok: false, error: "no-path" }
+      }
+      try {
+        const source = path.resolve(sourceAbsPath)
+        const targetDir = path.resolve(targetDirAbsPath)
+        const sourceStat = await fs.stat(source)
+        const targetDirStat = await fs.stat(targetDir)
+        if (!targetDirStat.isDirectory()) {
+          return { ok: false, error: "Paste target is not a folder" }
+        }
+        if (source === targetDir) {
+          return { ok: false, error: "Cannot copy a folder into itself" }
+        }
+        if (sourceStat.isDirectory() && isPathInside(source, targetDir)) {
+          return { ok: false, error: "Cannot copy a folder into itself" }
+        }
+        const target = path.join(targetDir, path.basename(source))
+        try {
+          await fs.lstat(target)
+          return {
+            ok: false,
+            error: "A file or folder with that name already exists",
+          }
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException
+          if (e.code !== "ENOENT") throw err
+        }
+        await fs.cp(source, target, {
+          recursive: sourceStat.isDirectory(),
+          errorOnExist: true,
+          force: false,
+        })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    "fs:rename",
+    async (_event, sourceAbsPath: string, newName: string) => {
+      if (!sourceAbsPath || !newName) return { ok: false, error: "no-path" }
+      try {
+        const source = path.resolve(sourceAbsPath)
+        const trimmedName = newName.trim()
+        if (!trimmedName) return { ok: false, error: "Name is required" }
+        if (trimmedName.includes("/") || trimmedName.includes("\\")) {
+          return { ok: false, error: "Name cannot contain path separators" }
+        }
+        const target = path.join(path.dirname(source), trimmedName)
+        if (source === target) return { ok: true, newPath: target }
+        try {
+          await fs.lstat(target)
+          return {
+            ok: false,
+            error: "A file or folder with that name already exists",
+          }
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException
+          if (e.code !== "ENOENT") throw err
+        }
+        await fs.rename(source, target)
+        return { ok: true, newPath: target }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
   ipcMain.handle("fs:trash", async (_event, absPath: string) => {
     if (!absPath) return { ok: false, error: "no-path" }
     try {
@@ -2038,11 +2122,10 @@ app.whenReady().then(async () => {
         } | null
         const signal = e?.signal
         const message = `${e?.stderr ?? ""}\n${e?.message ?? ""}`
-        const expectedMissingRemote = message.includes("no git remotes found")
         if (
           signal !== "SIGINT" &&
           signal !== "SIGTERM" &&
-          !expectedMissingRemote
+          !isExpectedPullRequestStatusError(message)
         ) {
           console.warn("pull request check failed", err)
         }

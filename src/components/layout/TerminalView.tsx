@@ -578,9 +578,9 @@ export function TerminalView({
       fontSize: appearance.fontSize,
       fontFamily: appearance.fontFamily,
       scrollback: 5000,
-      // `width` enables a 1px overview ruler so search-match decorations show
-      // up the scrollbar gutter (xterm 6.1 merged overviewRuler into scrollbar).
-      scrollbar: { width: 1 },
+      // Keep a real scrollbar gutter so terminal scrollback is visible and
+      // still leaves room for xterm search-match decorations.
+      scrollbar: { width: 12 },
       theme: themeObj,
       allowProposedApi: true,
       linkHandler: {
@@ -1313,7 +1313,7 @@ export function TerminalView({
   return (
     <ContextMenu>
       <ContextMenuTrigger
-        className="relative block h-full w-full bg-[var(--xterm-bg)] px-3 py-3"
+        className="relative block h-full w-full bg-[var(--xterm-bg)] py-3 pr-0 pl-3"
         style={{ "--xterm-bg": themeObj.background } as CSSProperties}
       >
         <div ref={containerRef} className="terminal-fit-host" />

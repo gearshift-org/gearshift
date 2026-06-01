@@ -7,6 +7,7 @@ import { PanelLeft, PanelRight, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
+import { UpdateButton } from "./UpdateButton"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
@@ -2597,7 +2598,12 @@ export function AppShell() {
                   void window.shellApi.openInVSCode(activeProject.path)
                 }
                 trailing={topBarTrailing}
-                leading={topBarLeading}
+                leading={
+                  <>
+                    {topBarLeading}
+                    <UpdateButton />
+                  </>
+                }
                 draggable={true}
               />
             }

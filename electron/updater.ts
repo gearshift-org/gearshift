@@ -109,6 +109,22 @@ export async function checkForUpdatesNow(options: CheckForUpdatesOptions = {}) {
   try {
     const result = await autoUpdater.checkForUpdates()
     log.info("[updater] checkForUpdates result", result?.updateInfo?.version)
+    if (result?.isUpdateAvailable && lastState.status === "checking") {
+      broadcast({ status: "available", version: result.updateInfo.version })
+    }
+    if (result?.downloadPromise) {
+      void result.downloadPromise
+        .then(() => {
+          broadcast({ status: "ready", version: result.updateInfo.version })
+        })
+        .catch((err) => {
+          log.error("[updater] downloadPromise failed", err)
+          broadcast({
+            status: "error",
+            message: err instanceof Error ? err.message : String(err),
+          })
+        })
+    }
   } catch (err) {
     clearNoUpdateAlert()
     log.error("[updater] checkForUpdates failed", err)

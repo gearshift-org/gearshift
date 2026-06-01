@@ -858,6 +858,16 @@ function parsePullRequest(raw: string): PullRequestInfo | null {
   }
 }
 
+function isExpectedPullRequestStatusError(message: string): boolean {
+  return [
+    /no git remotes found/i,
+    /not a git repository/i,
+    /could not resolve to a repository/i,
+    /repository not found/i,
+    /none of the git remotes configured/i,
+  ].some((pattern) => pattern.test(message))
+}
+
 function isDefaultBranch(currentBranch: string, defaultBranch: string | null) {
   return (
     currentBranch === defaultBranch ||
@@ -1974,11 +1984,10 @@ app.whenReady().then(async () => {
         } | null
         const signal = e?.signal
         const message = `${e?.stderr ?? ""}\n${e?.message ?? ""}`
-        const expectedMissingRemote = message.includes("no git remotes found")
         if (
           signal !== "SIGINT" &&
           signal !== "SIGTERM" &&
-          !expectedMissingRemote
+          !isExpectedPullRequestStatusError(message)
         ) {
           console.warn("pull request check failed", err)
         }

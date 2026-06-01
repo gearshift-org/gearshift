@@ -58,6 +58,11 @@ const termApi = {
       running: boolean
       agentName?: "claude" | "codex" | "opencode" | "pi" | "gemini"
     }>,
+  agentSessionTitle: (args: {
+    agent: "claude" | "codex" | "opencode" | "pi" | "gemini"
+    agentSessionId: string
+  }) =>
+    ipcRenderer.invoke("term:agentSessionTitle", args) as Promise<string | null>,
   onAgentEvent: (
     id: string,
     cb: (event: {

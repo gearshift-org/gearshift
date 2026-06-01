@@ -38,6 +38,7 @@ import {
   type AgentHookEvent,
   type TerminalAgentName,
 } from "./agentHooks"
+import { getAgentSessionTitle } from "./agentSessionTitle"
 
 type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 
@@ -2485,6 +2486,16 @@ app.whenReady().then(async () => {
     if (!pid) return { running: false } satisfies AgentStatusInfo
     return detectPtyAgent(pid)
   })
+
+  ipcMain.handle(
+    "term:agentSessionTitle",
+    async (
+      _e,
+      args: { agent: TerminalAgentName; agentSessionId: string }
+    ): Promise<string | null> => {
+      return getAgentSessionTitle(args.agent, args.agentSessionId)
+    }
+  )
 
   ipcMain.on("term:kill", (_e, id: string) => {
     daemonClient?.kill(id)

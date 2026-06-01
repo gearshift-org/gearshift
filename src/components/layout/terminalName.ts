@@ -63,9 +63,14 @@ export function hasAgentActivityTitleSignal(title: string | undefined): boolean 
 }
 
 export function displayName(t: TerminalTab): string {
+  // Explicit user-set name always wins.
   if (t.customName?.trim()) return t.customName.trim()
   const activePane =
     t.panes.find((p) => p.id === t.activePaneId) ?? t.panes[0]
+  // Agent session title (AI title / first prompt) preferred over the raw TUI
+  // window title, which is usually just the agent name.
+  const sessionTitle = activePane?.agentSessionTitle?.trim()
+  if (sessionTitle) return sessionTitle
   const autoFromPane = formatAutoTitle(activePane?.autoTitle)
   return autoFromPane || agentDisplayName(activePane?.agentStatus?.agentName) || t.name
 }
@@ -82,6 +87,8 @@ export function paneDisplayName(
   index: number,
 ): string {
   if (pane.customName?.trim()) return pane.customName.trim()
+  const sessionTitle = pane.agentSessionTitle?.trim()
+  if (sessionTitle) return sessionTitle
   const auto = formatAutoTitle(pane.autoTitle)
   if (auto) return auto
   const agentName = agentDisplayName(pane.agentStatus?.agentName)

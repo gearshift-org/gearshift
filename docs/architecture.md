@@ -51,6 +51,20 @@ Where each agent's id is sourced (all in `electron/agentHooks.ts`):
 
 The shared bash hook reads a **bounded** slice of stdin (`head -c 65536`) so capturing the id on every event (including `start`/`UserPromptSubmit`) never blocks on huge `Stop` payloads. The id is only populated once an agent fires its first `start` hook (i.e. on prompt submit) — merely opening the TUI does not set it.
 
+### Agent session titles
+
+The stored `agentSessionId` is used to resolve a human-readable **session title** that becomes the pane/tab name. `electron/agentSessionTitle.ts` (`getAgentSessionTitle`, exposed over IPC as `term:agentSessionTitle`) locates the agent's session file by id and returns a title in two tiers:
+
+| Agent | Title source |
+|-------|--------------|
+| **Claude** | last `"type":"ai-title"` line in `~/.claude/projects/<cwd>/<id>.jsonl` |
+| **OpenCode** | `"title"` field in `~/.local/share/opencode/storage/session/<projectID>/<id>.json` |
+| **Codex** | first real user message in `~/.codex/sessions/**/rollout-…-<id>.jsonl` (skips the injected `AGENTS.md`/instructions envelope) |
+| **pi** | first user message in `~/.pi/agent/sessions/<cwd>/<ts>_<id>.jsonl` |
+| **Gemini** | first user message in `~/.gemini/tmp/<hash>/logs.json` whose `sessionId` matches |
+
+Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The title precedence in `terminalName.ts` is: **`customName` (explicit user name) → `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. So a user-set name always wins; otherwise the agent's own title replaces the generic TUI title (e.g. "✳ Claude Code").
+
 ## GitHub Pull Requests
 
 The changes panel shows pull request status beside the branch picker when the GitHub CLI is installed and available. GearShift checks the current branch with `gh pr list`; if an open pull request exists, it opens that PR. If no PR exists and the branch is pushed upstream, GearShift opens GitHub's pull request creation page.

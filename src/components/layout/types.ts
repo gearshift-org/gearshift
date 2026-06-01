@@ -17,6 +17,13 @@ export type TerminalPane = {
    * agent conversation it belongs to.
    */
   agentSessionId?: string
+  /**
+   * Human-readable title for the agent session — the agent's own AI title
+   * (Claude/OpenCode) or first user message (codex/pi/gemini). Used as the
+   * pane/tab title, below an explicit customName. Resolved from disk via the
+   * agentSessionId.
+   */
+  agentSessionTitle?: string
   /** True for restored panes whose PTY has not been spawned (or adopted) yet. */
   pendingStart?: boolean
 }
@@ -42,6 +49,8 @@ export type TerminalAgentStatus = {
   needsAttention?: boolean
   /** The agent's own session id (e.g. Claude's resumable session UUID), if reported by a hook. */
   agentSessionId?: string
+  /** Human-readable session title resolved from the agent's transcript (AI title or first prompt). */
+  agentSessionTitle?: string
 }
 
 export type TerminalTab = {

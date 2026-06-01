@@ -12,6 +12,8 @@ export type StoredPane = {
   customName?: string
   /** The coding agent's own session id (e.g. Claude's resumable session UUID), reported via hooks. */
   agentSessionId?: string
+  /** Human-readable agent session title (AI title or first prompt) shown as the pane title. */
+  agentSessionTitle?: string
 }
 
 export type StoredTab = {

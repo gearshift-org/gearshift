@@ -509,6 +509,8 @@ export function TerminalView({
   // Last agent-native session id reported by a lifecycle hook. Sticky: kept
   // across status churn so every emitted status carries it once known.
   const agentSessionIdRef = useRef<string | undefined>(undefined)
+  // Last resolved agent session title (AI title / first prompt). Sticky too.
+  const agentSessionTitleRef = useRef<string | undefined>(undefined)
   const agentWorkingTimerRef = useRef<number | undefined>(undefined)
   const lastAgentActivityAtRef = useRef(0)
   const lastUserInputAtRef = useRef(0)
@@ -566,6 +568,7 @@ export function TerminalView({
     const merged: TerminalAgentStatus = {
       ...next,
       agentSessionId: next.agentSessionId ?? agentSessionIdRef.current,
+      agentSessionTitle: next.agentSessionTitle ?? agentSessionTitleRef.current,
     }
     const prev = agentStatusRef.current
     if (
@@ -576,13 +579,32 @@ export function TerminalView({
       prev.completedAt === merged.completedAt &&
       prev.completed === merged.completed &&
       prev.needsAttention === merged.needsAttention &&
-      prev.agentSessionId === merged.agentSessionId
+      prev.agentSessionId === merged.agentSessionId &&
+      prev.agentSessionTitle === merged.agentSessionTitle
     ) {
       return
     }
     agentStatusRef.current = merged
     onAgentStatusChangeRef.current?.(merged)
   }, [])
+
+  // Resolve the agent's session title from disk (AI title for Claude/OpenCode,
+  // first prompt otherwise) and fold it into the live status so it becomes the
+  // pane title. Best-effort: a null result leaves the existing title untouched.
+  const refreshAgentSessionTitle = useCallback(async () => {
+    const agent = agentStatusRef.current.agentName
+    const agentSessionId = agentSessionIdRef.current
+    if (!agent || !agentSessionId) return
+    try {
+      const title = await window.term.agentSessionTitle({ agent, agentSessionId })
+      if (title && title !== agentSessionTitleRef.current) {
+        agentSessionTitleRef.current = title
+        emitAgentStatus({ ...agentStatusRef.current, agentSessionTitle: title })
+      }
+    } catch {
+      // ignore — fall back to existing title
+    }
+  }, [emitAgentStatus])
 
   const dismissRecap = useCallback(() => {
     if (recapTimerRef.current) {
@@ -1352,6 +1374,8 @@ export function TerminalView({
           completed: false,
           needsAttention: false,
         })
+        // First prompt is on disk now (first-message agents); refresh the title.
+        void refreshAgentSessionTitle()
         return
       }
       if (event.event === "needs_attention") {
@@ -1406,9 +1430,11 @@ export function TerminalView({
         completed: true,
         needsAttention: false,
       })
+      // Turn finished — AI titles (Claude/OpenCode) are finalized by now.
+      void refreshAgentSessionTitle()
       scheduleRecap("completed")
     })
-  }, [sessionId, emitAgentStatus, scheduleRecap, dismissRecap])
+  }, [sessionId, emitAgentStatus, scheduleRecap, dismissRecap, refreshAgentSessionTitle])
 
   // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens
   // (deferred to a rAF) so xterm has stable cell metrics and we don't race its

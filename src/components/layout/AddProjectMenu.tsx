@@ -97,7 +97,7 @@ export function AddProjectMenu({
         onClick={() => pickRecent(r)}
         onMouseMove={() => setSelectedIndex(index)}
         className={cn(
-          "group/recent relative flex items-center gap-2 pr-7",
+          "group/recent relative mx-1 flex items-center gap-2 pr-7",
           selected && "bg-accent text-accent-foreground"
         )}
       >
@@ -188,7 +188,7 @@ export function AddProjectMenu({
               </DropdownMenuLabel>
               {filteredRecents.length > 0 ? (
                 shouldScrollRecents ? (
-                  <ScrollArea className="-mr-2 h-72 overflow-hidden">
+                  <ScrollArea className="-mr-1 h-72 overflow-hidden pr-1">
                     {recentItems}
                   </ScrollArea>
                 ) : (

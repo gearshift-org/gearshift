@@ -2425,7 +2425,7 @@ export function AppShell() {
           </Tooltip>
         ) : null
         const titleBar = (
-          <AutoHideTitleBar enabled={autoHideTitleBar}>
+          <AutoHideTitleBar enabled={autoHideTitleBar && !!activeProject}>
             <TitleBar
               projects={projects}
               activeProjectId={activeProjectId}

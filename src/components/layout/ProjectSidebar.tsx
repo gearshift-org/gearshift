@@ -148,8 +148,8 @@ function ProjectSidebarRow({
         className={cn(
           "group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left outline-none transition-colors focus:outline-none focus-visible:ring-0",
           isActive
-            ? "bg-foreground/10 text-foreground"
-            : "text-foreground hover:bg-foreground/[0.06]",
+            ? "bg-sidebar-accent text-foreground"
+            : "text-foreground hover:bg-sidebar-accent/70",
           isDragging && "opacity-80 shadow-lg"
         )}
         {...attributes}

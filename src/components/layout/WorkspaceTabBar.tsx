@@ -213,8 +213,8 @@ function WorkspaceTabItem({
           TAB_OPEN_TRANSITION_CLASS,
           openAnim.isOpening && "overflow-hidden",
           isActive
-            ? "bg-secondary text-foreground"
-            : "text-foreground hover:bg-accent/40",
+            ? "bg-sidebar-accent text-foreground"
+            : "text-foreground hover:bg-sidebar-accent/70",
           isDragging && "opacity-80 shadow-lg",
         )}
         onClick={() => onSelect(t.id)}
@@ -408,7 +408,7 @@ export function WorkspaceTabBar({
     <div
       data-terminal-tab-drop-target="true"
       className={cn(
-        "flex h-[34px] shrink-0 items-stretch border-b border-border bg-background",
+        "flex h-[34px] shrink-0 items-stretch border-b border-sidebar-border bg-sidebar",
         draggable && "[-webkit-app-region:drag]"
       )}
     >
@@ -460,7 +460,7 @@ export function WorkspaceTabBar({
               <button
                 type="button"
                 aria-label="New terminal"
-                className="group/add sticky right-0 grid h-full w-10 shrink-0 place-items-center bg-background text-muted-foreground"
+                className="group/add sticky right-0 grid h-full w-10 shrink-0 place-items-center bg-sidebar text-muted-foreground"
               >
                 <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">
                   <Plus className="size-3.5" />

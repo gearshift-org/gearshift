@@ -304,13 +304,13 @@
   --border: #e5e2d8;
   --input: #f0eee6;
   --ring: #d97757;
-  --sidebar: #f0eee6;
+  --sidebar: #fbfaf6;
   --sidebar-foreground: #3d3d3a;
   --sidebar-primary: #d97757;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e8e5db;
+  --sidebar-accent: #f4f1ea;
   --sidebar-accent-foreground: #3d3d3a;
-  --sidebar-border: #e5e2d8;
+  --sidebar-border: #f1eee6;
   --sidebar-ring: #d97757;
 }
 

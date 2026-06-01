@@ -226,8 +226,8 @@ function ProjectTabItem({
                 TAB_OPEN_TRANSITION_CLASS,
                 openAnim.isOpening && "overflow-hidden",
                 isActive
-                  ? "bg-secondary text-foreground"
-                  : "text-foreground hover:bg-accent/40",
+                  ? "bg-sidebar-accent text-foreground"
+                  : "text-foreground hover:bg-sidebar-accent/70",
                 isDragging && "opacity-80 shadow-lg"
               )}
               {...attributes}

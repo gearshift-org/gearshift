@@ -588,13 +588,17 @@
 
 .terminal-fit-host .xterm-viewport::-webkit-scrollbar {
   display: block !important;
-  width: 12px !important;
+  width: 8px !important;
   height: 0 !important;
-  background: transparent !important;
+  background: var(--xterm-bg) !important;
+}
+
+.terminal-fit-host .xterm-viewport::-webkit-scrollbar-corner {
+  background: var(--xterm-bg) !important;
 }
 
 .terminal-fit-host .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent !important;
+  background: var(--xterm-bg) !important;
 }
 
 .terminal-fit-host .xterm-viewport::-webkit-scrollbar-thumb {
@@ -604,11 +608,36 @@
     var(--foreground) 28%,
     transparent
   ) !important;
-  border: 3px solid transparent !important;
+  border: 2px solid var(--xterm-bg) !important;
   background-clip: padding-box !important;
 }
 
 .terminal-fit-host .xterm-viewport:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 38%,
+    transparent
+  ) !important;
+}
+
+.terminal-fit-host .xterm-decoration-overview-ruler {
+  display: none !important;
+}
+
+.terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar {
+  background: var(--xterm-bg) !important;
+}
+
+.terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 28%,
+    transparent
+  ) !important;
+  border-radius: 999px;
+}
+
+.terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar:hover > .xterm-slider {
   background-color: color-mix(
     in srgb,
     var(--foreground) 38%,

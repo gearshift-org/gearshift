@@ -578,9 +578,8 @@ export function TerminalView({
       fontSize: appearance.fontSize,
       fontFamily: appearance.fontFamily,
       scrollback: 5000,
-      // Keep a real scrollbar gutter so terminal scrollback is visible and
-      // still leaves room for xterm search-match decorations.
-      scrollbar: { width: 12 },
+      // Keep a small scrollbar gutter so terminal scrollback is visible.
+      scrollbar: { width: 8 },
       theme: themeObj,
       allowProposedApi: true,
       linkHandler: {

@@ -28,6 +28,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { TerminalRecapBox } from "@/components/terminal/TerminalRecapBox"
+import { Button } from "@/components/ui/button"
 import type { ChatHistoryMessage } from "../../../electron/preload"
 
 type Props = {
@@ -1653,7 +1654,7 @@ export function TerminalView({
           </div>
         )}
         {showScrollToBottom && (
-          <button
+          <Button
             type="button"
             onClick={() => {
               const term = termRef.current
@@ -1662,11 +1663,11 @@ export function TerminalView({
             }}
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
-            className="absolute bottom-4 left-1/2 z-10 flex h-8 -translate-x-1/2 animate-in items-center gap-1.5 rounded-full border border-border bg-popover/95 px-4 text-xs text-muted-foreground shadow-md backdrop-blur transition-colors duration-200 fade-in slide-in-from-bottom-2 hover:bg-accent/60 hover:text-foreground"
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 animate-in rounded-full shadow-md fade-in slide-in-from-bottom-2"
           >
-            <ChevronDown className="size-3.5" />
+            <ChevronDown data-icon="inline-start" />
             Scroll to bottom
-          </button>
+          </Button>
         )}
         {searchOpen && (
           <div

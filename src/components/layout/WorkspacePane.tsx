@@ -52,6 +52,7 @@ import {
   ensureLayout,
   nodeKey,
   orderedPaneIds,
+  updateSplitSizes,
 } from "./terminalLayout"
 import type {
   DropZone,
@@ -91,6 +92,7 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
   fileReveal?: FileReveal | null
@@ -280,6 +282,7 @@ function TerminalTabContent({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onLayoutChange,
   onExtractPaneToTab,
 }: {
   tab: TerminalTab
@@ -306,6 +309,7 @@ function TerminalTabContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
 }) {
   const multi = tab.panes.length > 1
@@ -450,15 +454,28 @@ function TerminalTabContent({
   // panel's drag size while mounted, keyed by its stable nodeKey.
   const renderNode = (node: TerminalLayout): ReactNode => {
     if (node.type === "leaf") return renderLeaf(node.paneId)
+    const splitKey = nodeKey(node)
     return (
-      <ResizablePanelGroup orientation={node.direction} className="min-h-0 flex-1">
+      <ResizablePanelGroup
+        orientation={node.direction}
+        className="min-h-0 flex-1"
+        onLayoutChanged={(sizesById) => {
+          const sizes = node.children.map(
+            (child, idx) =>
+              sizesById[nodeKey(child)] ??
+              node.sizes?.[idx] ??
+              100 / node.children.length
+          )
+          onLayoutChange?.(tab.id, updateSplitSizes(layout, splitKey, sizes))
+        }}
+      >
         {node.children.map((child, idx) => (
           <Fragment key={nodeKey(child)}>
             {idx > 0 && <ResizableHandle />}
             <ResizablePanel
               id={nodeKey(child)}
               minSize={10}
-              defaultSize={100 / node.children.length}
+              defaultSize={node.sizes?.[idx] ?? 100 / node.children.length}
             >
               {renderNode(child)}
             </ResizablePanel>
@@ -521,6 +538,7 @@ function PaneContent({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onLayoutChange,
   onExtractPaneToTab,
   onOpenFile,
   onFileDirtyChange,
@@ -553,6 +571,7 @@ function PaneContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
   onFileDirtyChange?: (
@@ -582,6 +601,7 @@ function PaneContent({
         onFocusPane={onFocusPane}
         onRenamePane={onRenamePane}
         onDropPane={onDropPane}
+        onLayoutChange={onLayoutChange}
         onExtractPaneToTab={onExtractPaneToTab}
       />
     )
@@ -629,6 +649,7 @@ export function WorkspacePane({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onLayoutChange,
   onExtractPaneToTab,
   onOpenFile,
   fileReveal,
@@ -828,6 +849,7 @@ export function WorkspacePane({
                 onFocusPane={onFocusPane}
                 onRenamePane={onRenamePane}
                 onDropPane={onDropPane}
+                onLayoutChange={onLayoutChange}
                 onExtractPaneToTab={onExtractPaneToTab}
                 onOpenFile={onOpenFile}
                 onFileDirtyChange={handleFileDirtyChange}

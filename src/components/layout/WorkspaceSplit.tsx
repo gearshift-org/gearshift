@@ -6,7 +6,13 @@ import { RightSidebar } from "./RightSidebar"
 import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { DropZone, FileReveal, Project, TerminalAgentStatus } from "./types"
+import type {
+  DropZone,
+  FileReveal,
+  Project,
+  TerminalAgentStatus,
+  TerminalLayout,
+} from "./types"
 
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
@@ -52,6 +58,7 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onTerminalLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
@@ -84,6 +91,7 @@ export function WorkspaceSplit({
   onFocusPane,
   onRenamePane,
   onDropPane,
+  onTerminalLayoutChange,
   onExtractPaneToTab,
   onOpenDiffTab,
   onOpenFileTab,
@@ -206,6 +214,7 @@ export function WorkspaceSplit({
               onFocusPane={onFocusPane}
               onRenamePane={onRenamePane}
               onDropPane={onDropPane}
+              onLayoutChange={onTerminalLayoutChange}
               onExtractPaneToTab={onExtractPaneToTab}
               onOpenFile={onOpenFileTab}
               fileReveal={fileReveal}

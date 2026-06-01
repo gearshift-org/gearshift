@@ -38,6 +38,7 @@ import type {
   SplitDirection,
   TerminalAgentName,
   TerminalAgentStatus,
+  TerminalLayout,
   WorkspaceTab,
 } from "./types"
 import {
@@ -1470,6 +1471,24 @@ export function AppShell() {
     [activeProjectId]
   )
 
+  const setTerminalLayout = useCallback(
+    (tabId: string, layout: TerminalLayout) => {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProjectId
+            ? {
+                ...p,
+                tabs: p.tabs.map((t) =>
+                  t.id === tabId && t.kind === "terminal" ? { ...t, layout } : t
+                ),
+              }
+            : p
+        )
+      )
+    },
+    [activeProjectId]
+  )
+
   const openAgentDoneTarget = useCallback(
     (
       projectId: string,
@@ -2611,6 +2630,7 @@ export function AppShell() {
             onFocusPane={setActivePane}
             onRenamePane={renamePane}
             onDropPane={dropPane}
+            onTerminalLayoutChange={setTerminalLayout}
             onExtractPaneToTab={extractPaneToTab}
             onOpenDiffTab={openDiffTab}
             onOpenFileTab={openFileTab}

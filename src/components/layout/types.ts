@@ -85,7 +85,13 @@ export type DropZone = "left" | "right" | "top" | "bottom" | "center"
  */
 export type TerminalLayout =
   | { type: "leaf"; paneId: string }
-  | { type: "split"; direction: SplitDirection; children: TerminalLayout[] }
+  | {
+      type: "split"
+      direction: SplitDirection
+      children: TerminalLayout[]
+      /** Panel percentages from react-resizable-panels, persisted per split. */
+      sizes?: number[]
+    }
 
 export type DiffTab = {
   kind: "diff"

@@ -5,6 +5,10 @@ export function leaf(paneId: string): TerminalLayout {
   return { type: "leaf", paneId }
 }
 
+function equalSizes(count: number): number[] {
+  return Array.from({ length: count }, () => 100 / count)
+}
+
 /**
  * Build a default layout for a flat list of pane ids: one leaf when there's a
  * single pane, otherwise a horizontal row. Used for legacy tabs (and freshly
@@ -12,7 +16,12 @@ export function leaf(paneId: string): TerminalLayout {
  */
 export function defaultLayout(paneIds: string[]): TerminalLayout {
   if (paneIds.length <= 1) return leaf(paneIds[0] ?? "")
-  return { type: "split", direction: "horizontal", children: paneIds.map(leaf) }
+  return {
+    type: "split",
+    direction: "horizontal",
+    children: paneIds.map(leaf),
+    sizes: equalSizes(paneIds.length),
+  }
 }
 
 /** The layout for a tab, falling back to a default row when none is stored. */
@@ -47,6 +56,7 @@ export function splitLeaf(
       type: "split",
       direction,
       children: [leaf(targetPaneId), leaf(newPaneId)],
+      sizes: equalSizes(2),
     }
   }
   const directIdx = node.children.findIndex(
@@ -55,7 +65,7 @@ export function splitLeaf(
   if (directIdx >= 0 && node.direction === direction) {
     const children = node.children.slice()
     children.splice(directIdx + 1, 0, leaf(newPaneId))
-    return { ...node, children }
+    return { ...node, children, sizes: equalSizes(children.length) }
   }
   return {
     ...node,
@@ -85,9 +95,15 @@ export function removeLeaf(
 /** Append a leaf for `paneId` to the root split (or wrap a lone leaf). */
 function appendLeaf(node: TerminalLayout, paneId: string): TerminalLayout {
   if (node.type === "split") {
-    return { ...node, children: [...node.children, leaf(paneId)] }
+    const children = [...node.children, leaf(paneId)]
+    return { ...node, children, sizes: equalSizes(children.length) }
   }
-  return { type: "split", direction: "horizontal", children: [node, leaf(paneId)] }
+  return {
+    type: "split",
+    direction: "horizontal",
+    children: [node, leaf(paneId)],
+    sizes: equalSizes(2),
+  }
 }
 
 /**
@@ -151,7 +167,7 @@ function insertBeside(
     const children = before
       ? [leaf(newPaneId), leaf(targetPaneId)]
       : [leaf(targetPaneId), leaf(newPaneId)]
-    return { type: "split", direction, children }
+    return { type: "split", direction, children, sizes: equalSizes(2) }
   }
   const idx = node.children.findIndex(
     (c) => c.type === "leaf" && c.paneId === targetPaneId
@@ -159,7 +175,7 @@ function insertBeside(
   if (idx >= 0 && node.direction === direction) {
     const children = node.children.slice()
     children.splice(before ? idx : idx + 1, 0, leaf(newPaneId))
-    return { ...node, children }
+    return { ...node, children, sizes: equalSizes(children.length) }
   }
   return {
     ...node,
@@ -203,4 +219,22 @@ export function moveLeafBeside(
  */
 export function nodeKey(node: TerminalLayout): string {
   return node.type === "leaf" ? node.paneId : orderedPaneIds(node)[0]
+}
+
+/** Persist panel percentages for one split node, identified by its stable key. */
+export function updateSplitSizes(
+  node: TerminalLayout,
+  splitKey: string,
+  sizes: number[]
+): TerminalLayout {
+  if (node.type === "leaf") return node
+  const children = node.children.map((child) =>
+    updateSplitSizes(child, splitKey, sizes)
+  )
+  if (nodeKey(node) !== splitKey) return { ...node, children }
+  return {
+    ...node,
+    children,
+    sizes: sizes.slice(0, node.children.length),
+  }
 }

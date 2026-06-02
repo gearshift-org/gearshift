@@ -201,6 +201,16 @@ function rememberedAgentTerminalForProject(
   )
 }
 
+function paneHasActiveAgent(
+  pane: Project["tabs"][number]["panes"][number]
+): boolean {
+  return !!(
+    pane.agentStatus?.running ||
+    pane.agentStatus?.working ||
+    pane.agentStatus?.needsAttention
+  )
+}
+
 function findProjectAgentTerminal(
   project: Project | undefined,
   remembered: LastAgentTerminal | null
@@ -211,13 +221,21 @@ function findProjectAgentTerminal(
     (remembered.projectId === project.id ||
       remembered.projectPath === project.path)
   ) {
-    const target = lastAgentTerminalFromPane(
-      project,
-      remembered.tabId,
-      remembered.paneId,
-      remembered
+    const tab = project.tabs.find(
+      (t) => t.kind === "terminal" && t.id === remembered.tabId
     )
-    if (target) return target
+    const pane =
+      tab?.kind === "terminal"
+        ? tab.panes.find((pp) => pp.id === remembered.paneId)
+        : undefined
+    if (pane && paneHasActiveAgent(pane)) {
+      return lastAgentTerminalFromPane(
+        project,
+        remembered.tabId,
+        remembered.paneId,
+        remembered
+      )
+    }
   }
 
   const activeTab = project.tabs.find((t) => t.id === project.activeTabId)
@@ -225,16 +243,14 @@ function findProjectAgentTerminal(
     const activePane = activeTab.panes.find(
       (pane) => pane.id === activeTab.activePaneId
     )
-    if (activePane?.agentStatus?.agentName || activePane?.agentSessionId) {
+    if (activePane && paneHasActiveAgent(activePane)) {
       return lastAgentTerminalFromPane(project, activeTab.id, activePane.id)
     }
   }
 
   for (const tab of project.tabs) {
     if (tab.kind !== "terminal") continue
-    const pane = tab.panes.find(
-      (pp) => pp.agentStatus?.agentName || pp.agentSessionId
-    )
+    const pane = tab.panes.find(paneHasActiveAgent)
     if (pane) return lastAgentTerminalFromPane(project, tab.id, pane.id)
   }
   return null

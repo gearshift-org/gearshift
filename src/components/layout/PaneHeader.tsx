@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/tooltip"
 import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
-import { AgentSpinner } from "./AgentSpinner"
+// AgentSpinner kept for when the header busy spinner is restored.
+// import { AgentSpinner } from "./AgentSpinner"
 import { AgentAttention } from "./AgentAttention"
 import { AgentIcon } from "./AgentIcon"
 import type { TerminalPane } from "./types"
@@ -99,9 +100,12 @@ export function PaneHeader({
       {agentActive ? (
         <AgentIcon agent={pane.agentStatus?.agentName} className="mr-1 size-3.5" />
       ) : null}
-      {agentWorking ? (
+      {/* Busy spinner hidden for now — the scanning border above already
+          signals "agent working". Keep the code for easy restore. */}
+      {/* {agentWorking ? (
         <AgentSpinner className="mr-0.5" />
-      ) : agentNeedsAttention ? (
+      ) : agentNeedsAttention ? ( */}
+      {agentNeedsAttention ? (
         <AgentAttention className="mr-0.5" />
       ) : null}
       {editing ? (

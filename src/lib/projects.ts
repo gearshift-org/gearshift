@@ -16,6 +16,17 @@ export type StoredPane = {
   agentSessionTitle?: string
 }
 
+export type LastAgentTerminal = {
+  projectId: string
+  projectPath: string
+  tabId: string
+  paneId: string
+  sessionId?: string
+  updatedAt: number
+}
+
+export type LastAgentTerminalsByProject = Record<string, LastAgentTerminal>
+
 export type StoredTab = {
   id: string
   name: string
@@ -37,6 +48,7 @@ export type StoredProject = {
 
 const KEY = "gearshift.projects"
 const ACTIVE_KEY = "gearshift.activeProjectId"
+const LAST_AGENT_TERMINAL_KEY = "gearshift.lastAgentTerminal"
 const RECENTS_KEY = "gearshift.recentProjects"
 const PALETTE_RECENTS_KEY = "gearshift.paletteRecents"
 const PALETTE_RECENTS_MAX = 200
@@ -64,10 +76,16 @@ export type PaletteRecents = {
 }
 
 function cleanStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+  return Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === "string")
+    : []
 }
 
-function pushRecent(list: string[], value: string, max = PALETTE_RECENTS_MAX): string[] {
+function pushRecent(
+  list: string[],
+  value: string,
+  max = PALETTE_RECENTS_MAX
+): string[] {
   if (!value) return list
   return [value, ...list.filter((v) => v !== value)].slice(0, max)
 }
@@ -88,7 +106,9 @@ export function loadPaletteRecents(): PaletteRecents {
     }
     const filesByProject: Record<string, string[]> = {}
     if (parsed.filesByProject && typeof parsed.filesByProject === "object") {
-      for (const [projectPath, files] of Object.entries(parsed.filesByProject)) {
+      for (const [projectPath, files] of Object.entries(
+        parsed.filesByProject
+      )) {
         filesByProject[projectPath] = cleanStringArray(files)
       }
     }
@@ -118,14 +138,17 @@ export function pushRecentPaletteProject(projectPath: string): PaletteRecents {
 
 export function pushRecentPaletteTab(
   projectPath: string,
-  tabId: string,
+  tabId: string
 ): PaletteRecents {
   const current = loadPaletteRecents()
   const next = {
     ...current,
     tabsByProject: {
       ...current.tabsByProject,
-      [projectPath]: pushRecent(current.tabsByProject[projectPath] ?? [], tabId),
+      [projectPath]: pushRecent(
+        current.tabsByProject[projectPath] ?? [],
+        tabId
+      ),
     },
   }
   savePaletteRecents(next)
@@ -134,7 +157,7 @@ export function pushRecentPaletteTab(
 
 export function pushRecentPaletteFile(
   projectPath: string,
-  filePath: string,
+  filePath: string
 ): PaletteRecents {
   const current = loadPaletteRecents()
   const next = {
@@ -143,7 +166,7 @@ export function pushRecentPaletteFile(
       ...current.filesByProject,
       [projectPath]: pushRecent(
         current.filesByProject[projectPath] ?? [],
-        filePath,
+        filePath
       ),
     },
   }
@@ -159,7 +182,7 @@ export function loadRecentProjects(): RecentProject[] {
     if (!Array.isArray(parsed)) return []
     return parsed.filter(
       (p): p is RecentProject =>
-        !!p && typeof p.name === "string" && typeof p.path === "string",
+        !!p && typeof p.name === "string" && typeof p.path === "string"
     )
   } catch {
     return []
@@ -188,7 +211,7 @@ export function loadProjects(): StoredProject[] {
         (p): p is StoredProject =>
           typeof p?.id === "string" &&
           typeof p?.name === "string" &&
-          typeof p?.path === "string",
+          typeof p?.path === "string"
       )
       .map((p) => ({
         ...p,
@@ -198,14 +221,14 @@ export function loadProjects(): StoredProject[] {
                 (t: unknown): t is StoredTab =>
                   !!t &&
                   typeof (t as StoredTab).id === "string" &&
-                  typeof (t as StoredTab).name === "string",
+                  typeof (t as StoredTab).name === "string"
               )
               .map((t) => {
                 const panes: StoredPane[] = Array.isArray(t.panes)
                   ? t.panes
                       .filter(
                         (pp: unknown): pp is StoredPane =>
-                          !!pp && typeof (pp as StoredPane).id === "string",
+                          !!pp && typeof (pp as StoredPane).id === "string"
                       )
                       .map((pp) => ({
                         id: pp.id,
@@ -217,6 +240,12 @@ export function loadProjects(): StoredProject[] {
                           : {}),
                         ...(typeof pp.customName === "string"
                           ? { customName: pp.customName }
+                          : {}),
+                        ...(typeof pp.agentSessionId === "string"
+                          ? { agentSessionId: pp.agentSessionId }
+                          : {}),
+                        ...(typeof pp.agentSessionTitle === "string"
+                          ? { agentSessionTitle: pp.agentSessionTitle }
                           : {}),
                       }))
                   : [{ id: t.id }]
@@ -258,6 +287,60 @@ export function loadActiveProjectId(): string | null {
 export function saveActiveProjectId(id: string): void {
   if (id) store.set(ACTIVE_KEY, id)
   else store.remove(ACTIVE_KEY)
+}
+
+function parseLastAgentTerminal(value: unknown): LastAgentTerminal | null {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof (value as LastAgentTerminal).projectId !== "string" ||
+    typeof (value as LastAgentTerminal).projectPath !== "string" ||
+    typeof (value as LastAgentTerminal).tabId !== "string" ||
+    typeof (value as LastAgentTerminal).paneId !== "string"
+  ) {
+    return null
+  }
+  const parsed = value as LastAgentTerminal
+  return {
+    projectId: parsed.projectId,
+    projectPath: parsed.projectPath,
+    tabId: parsed.tabId,
+    paneId: parsed.paneId,
+    ...(typeof parsed.sessionId === "string"
+      ? { sessionId: parsed.sessionId }
+      : {}),
+    updatedAt:
+      typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
+  }
+}
+
+export function loadLastAgentTerminals(): LastAgentTerminalsByProject {
+  try {
+    const raw = store.get(LAST_AGENT_TERMINAL_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    const legacy = parseLastAgentTerminal(parsed)
+    if (legacy) return { [legacy.projectId]: legacy }
+    if (!parsed || typeof parsed !== "object") return {}
+    const out: LastAgentTerminalsByProject = {}
+    for (const [projectId, value] of Object.entries(parsed)) {
+      const target = parseLastAgentTerminal(value)
+      if (target) out[projectId] = target
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function saveLastAgentTerminals(
+  targets: LastAgentTerminalsByProject
+): void {
+  try {
+    store.set(LAST_AGENT_TERMINAL_KEY, JSON.stringify(targets))
+  } catch {
+    // ignore
+  }
 }
 
 const SIDEBAR_WIDTH_KEY = "gearshift.sidebarWidth"
@@ -397,9 +480,7 @@ const DIFF_VIEW_MODE_KEY = "gearshift.diffViewMode"
 
 export function loadDiffViewMode(): "unified" | "split" {
   try {
-    return store.get(DIFF_VIEW_MODE_KEY) === "split"
-      ? "split"
-      : "unified"
+    return store.get(DIFF_VIEW_MODE_KEY) === "split" ? "split" : "unified"
   } catch {
     return "unified"
   }

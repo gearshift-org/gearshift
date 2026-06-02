@@ -1,5 +1,5 @@
 import * as React from "react"
-import { PanelRight, PanelTop } from "lucide-react"
+import { Bot, PanelRight, PanelTop } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   loadAutoHideTitleBar,
@@ -7,8 +7,13 @@ import {
   saveAutoHideTitleBar,
   saveRightSidebarEdgeReveal,
 } from "@/lib/projects"
+import {
+  DEFAULT_AI_COMMIT_PROMPT,
+  useAiCommitPrompt,
+} from "@/lib/aiCommitPrompt"
 import { cn } from "@/lib/utils"
 import { store } from "@/lib/store"
+import { Button } from "@/components/ui/button"
 
 type SettingToggleProps = {
   icon: LucideIcon
@@ -67,6 +72,12 @@ export function GeneralPanel() {
   const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
     loadAutoHideTitleBar()
   )
+  const {
+    prompt: aiCommitPrompt,
+    setPrompt: setAiCommitPrompt,
+    resetPrompt: resetAiCommitPrompt,
+    isDefault: aiCommitPromptIsDefault,
+  } = useAiCommitPrompt()
   React.useEffect(
     () =>
       store.onReady(() => {
@@ -110,6 +121,41 @@ export function GeneralPanel() {
           checked={edgeReveal}
           onChange={updateEdgeReveal}
         />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className="flex items-start gap-3 border-b border-border px-4 py-3">
+          <Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-medium text-foreground">
+              Commit with AI prompt
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Sent to the remembered coding-agent terminal when you choose
+              Commit with AI.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={resetAiCommitPrompt}
+            disabled={aiCommitPromptIsDefault}
+          >
+            Reset
+          </Button>
+        </div>
+        <div className="flex flex-col gap-2 p-4">
+          <textarea
+            value={aiCommitPrompt}
+            onChange={(e) => setAiCommitPrompt(e.target.value)}
+            rows={5}
+            placeholder={DEFAULT_AI_COMMIT_PROMPT}
+            className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          />
+          <p className="text-xs text-muted-foreground">
+            Leave it empty or reset to use the default prompt.
+          </p>
+        </div>
       </div>
     </div>
   )

@@ -31,6 +31,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -103,6 +104,8 @@ type Props = {
   activeFilePath?: string
   onOpenDiff: (path: string, staged: boolean) => void
   onOpenFile: (path: string) => void
+  onCommitWithAi?: () => void
+  canCommitWithAi?: boolean
   topRightActions?: React.ReactNode
 }
 
@@ -115,9 +118,13 @@ export function RightSidebar({
   activeFilePath,
   onOpenDiff,
   onOpenFile,
+  onCommitWithAi,
+  canCommitWithAi = false,
   topRightActions,
 }: Props) {
-  const [internalTab, setInternalTab] = useState<"changes" | "files" | "history">("changes")
+  const [internalTab, setInternalTab] = useState<
+    "changes" | "files" | "history"
+  >("changes")
   const tab = activeTab ?? internalTab
   const [actionErrorsByCwd, setActionErrorsByCwd] = useState<
     Record<string, string>
@@ -310,11 +317,15 @@ export function RightSidebar({
     const pathSet = new Set(paths)
     optimisticMovesRef.current = optimisticMovesRef.current.flatMap((move) => {
       const remainingPaths = move.paths.filter((path) => !pathSet.has(path))
-      return remainingPaths.length > 0 ? [{ ...move, paths: remainingPaths }] : []
+      return remainingPaths.length > 0
+        ? [{ ...move, paths: remainingPaths }]
+        : []
     })
     optimisticRemovalsRef.current = optimisticRemovalsRef.current.flatMap(
       (removal) => {
-        const remainingPaths = removal.paths.filter((path) => !pathSet.has(path))
+        const remainingPaths = removal.paths.filter(
+          (path) => !pathSet.has(path)
+        )
         return remainingPaths.length > 0
           ? [{ ...removal, paths: remainingPaths }]
           : []
@@ -572,7 +583,10 @@ export function RightSidebar({
           updateCachedGitMeta({ ahead: 0 })
         }
         clearOptimisticEntriesForPaths(committedPaths)
-        queryClient.setQueryData(currentGitQueryKey, await fetchGitQueryData(cwd))
+        queryClient.setQueryData(
+          currentGitQueryKey,
+          await fetchGitQueryData(cwd)
+        )
       } finally {
         setBusy(false)
         setCommitting(null)
@@ -603,8 +617,9 @@ export function RightSidebar({
 
   // Gate on `hasData` so the button doesn't briefly enable on first project
   // open before the initial fetch resolves.
-  const canCommit =
-    hasData && stagedFiles.length > 0 && commitMessage.trim().length > 0
+  const hasCommitMessage = commitMessage.trim().length > 0
+  const canCommit = hasData && stagedFiles.length > 0 && hasCommitMessage
+  const useManualCommit = hasCommitMessage
 
   const switchBranch = useCallback(
     (branch: string) => {
@@ -665,7 +680,8 @@ export function RightSidebar({
     setCurrentActionError(null)
     try {
       const res = await window.git.openPullRequest(cwd, pullRequest.number)
-      if (!res.ok) setCurrentActionError(res.error ?? "Open pull request failed")
+      if (!res.ok)
+        setCurrentActionError(res.error ?? "Open pull request failed")
     } finally {
       setPullRequestBusy(null)
     }
@@ -828,7 +844,7 @@ export function RightSidebar({
           >
             <TabsTrigger
               value="changes"
-              className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:!text-foreground dark:hover:!bg-foreground/15 dark:data-active:!bg-foreground/15"
+              className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Changes
               {hasData && files.length > 0 && (
@@ -837,13 +853,13 @@ export function RightSidebar({
             </TabsTrigger>
             <TabsTrigger
               value="files"
-              className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:!text-foreground dark:hover:!bg-foreground/15 dark:data-active:!bg-foreground/15"
+              className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Files
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:!text-foreground dark:hover:!bg-foreground/15 dark:data-active:!bg-foreground/15"
+              className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               History
             </TabsTrigger>
@@ -911,16 +927,18 @@ export function RightSidebar({
                 className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               />
               <div className="flex flex-wrap gap-1">
-                {["wip", "updates", "fix", "docs", "refactor", "feature"].map((prefix) => (
-                  <button
-                    key={prefix}
-                    type="button"
-                    onClick={() => setCommitMessage(prefix)}
-                    className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-foreground transition-colors hover:bg-accent"
-                  >
-                    {prefix}
-                  </button>
-                ))}
+                {["wip", "updates", "fix", "docs", "refactor", "feature"].map(
+                  (prefix) => (
+                    <button
+                      key={prefix}
+                      type="button"
+                      onClick={() => setCommitMessage(prefix)}
+                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-foreground transition-colors hover:bg-accent"
+                    >
+                      {prefix}
+                    </button>
+                  )
+                )}
               </div>
               {showSync ? (
                 <Button
@@ -938,10 +956,10 @@ export function RightSidebar({
                       {committing === "publish"
                         ? "Publishing…"
                         : committing === "pull"
-                        ? "Pulling…"
-                        : committing === "push"
-                          ? "Pushing…"
-                          : "Syncing…"}
+                          ? "Pulling…"
+                          : committing === "push"
+                            ? "Pushing…"
+                            : "Syncing…"}
                     </>
                   ) : showPublishBranch ? (
                     <>
@@ -972,22 +990,32 @@ export function RightSidebar({
                   <Button
                     variant="default"
                     size="sm"
-                    disabled={!canCommit || busy}
-                    onClick={() => void commit()}
+                    disabled={
+                      useManualCommit
+                        ? !canCommit || busy
+                        : !canCommitWithAi || stagedFiles.length === 0 || busy
+                    }
+                    onClick={() =>
+                      useManualCommit ? void commit() : onCommitWithAi?.()
+                    }
                     className="flex-1 rounded-r-none"
                   >
-                    {committing === "commit" ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" />
-                        Committing…
-                      </>
-                    ) : committing === "push" ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" />
-                        Pushing…
-                      </>
+                    {useManualCommit ? (
+                      committing === "commit" ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Committing…
+                        </>
+                      ) : committing === "push" ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Pushing…
+                        </>
+                      ) : (
+                        "Commit manually"
+                      )
                     ) : (
-                      "Commit"
+                      "Commit with AI"
                     )}
                   </Button>
                   <DropdownMenu>
@@ -1005,6 +1033,22 @@ export function RightSidebar({
                       }
                     />
                     <DropdownMenuContent align="end" className="min-w-[180px]">
+                      <DropdownMenuItem
+                        disabled={
+                          !canCommitWithAi || stagedFiles.length === 0 || busy
+                        }
+                        onClick={onCommitWithAi}
+                      >
+                        Commit with AI
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={!canCommit || busy}
+                        onClick={() => void commit()}
+                      >
+                        Commit manually
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         disabled={!canCommit || busy}
                         onClick={() => void commit({ push: true })}
@@ -1150,7 +1194,9 @@ function GitHubBranchAction({
           </Button>
         }
       />
-      <TooltipContent side="bottom">Open current branch on GitHub</TooltipContent>
+      <TooltipContent side="bottom">
+        Open current branch on GitHub
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -1291,7 +1337,8 @@ function BranchPicker({
             <ComboboxItem value={CREATE_BRANCH_SENTINEL} className="text-xs">
               <PlusCircle className="size-3.5 shrink-0" />
               <span className="truncate">
-                Create branch <span className="font-medium">{trimmedQuery}</span>
+                Create branch{" "}
+                <span className="font-medium">{trimmedQuery}</span>
               </span>
             </ComboboxItem>
           )}

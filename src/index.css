@@ -828,9 +828,9 @@
 }
 
 .gs-agent-spinner {
-  color: var(--ring);
-  background: color-mix(in srgb, var(--ring) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ring) 55%, transparent);
+  color: color-mix(in srgb, var(--ring) 55%, var(--foreground));
+  background: color-mix(in srgb, var(--ring) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ring) 35%, var(--foreground));
   animation: gs-agent-spinner-aura 1.4s ease-in-out infinite;
 }
 

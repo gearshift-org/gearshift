@@ -48,7 +48,10 @@ type Props = {
   } | null
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
-  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
+  onSplitTerminal?: (
+    tabId: string,
+    direction: "horizontal" | "vertical"
+  ) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
@@ -62,6 +65,8 @@ type Props = {
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
+  onCommitWithAi?: () => void
+  canCommitWithAi?: boolean
   rightSidebarTab?: "changes" | "files" | "history"
   onRightSidebarTabChange?: (tab: "changes" | "files" | "history") => void
   activeTreeFilePath?: string
@@ -95,6 +100,8 @@ export function WorkspaceSplit({
   onExtractPaneToTab,
   onOpenDiffTab,
   onOpenFileTab,
+  onCommitWithAi,
+  canCommitWithAi = false,
   rightSidebarTab,
   onRightSidebarTabChange,
   activeTreeFilePath,
@@ -234,7 +241,10 @@ export function WorkspaceSplit({
   // toggling unmounts `WorkspacePane`/`TerminalView`, the xterm remeasures
   // before layout settles, and TUIs (Claude Code, etc.) get stuck at cols=1.
   return (
-    <div ref={containerRef} className="relative flex min-h-0 flex-1 overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative flex min-h-0 flex-1 overflow-hidden"
+    >
       <div className="min-w-0 flex-1">{workspaceSection}</div>
       <div
         onMouseDown={sidebarOpen ? startDrag : undefined}
@@ -285,6 +295,8 @@ export function WorkspaceSplit({
             activeFilePath={activeTreeFilePath}
             onOpenDiff={onOpenDiffTab}
             onOpenFile={onOpenFileTab}
+            onCommitWithAi={onCommitWithAi}
+            canCommitWithAi={canCommitWithAi}
             topRightActions={sidebarTopActions}
           />
         </div>

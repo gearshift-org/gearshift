@@ -44,6 +44,7 @@ import type {
 import {
   loadActiveProjectId,
   loadAutoHideTitleBar,
+  loadLastAgentTerminals,
   loadPaletteRecents,
   loadProjects,
   loadProjectSidebarOpen,
@@ -57,6 +58,7 @@ import {
   pushRecentProject,
   saveActiveProjectId,
   saveAutoHideTitleBar,
+  saveLastAgentTerminals,
   saveProjectSidebarOpen,
   saveProjects,
   saveRecentProjects,
@@ -64,12 +66,15 @@ import {
   saveSidebarOpen,
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
+  type LastAgentTerminal,
+  type LastAgentTerminalsByProject,
   type PaletteRecents,
   RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
   type RecentProject,
   type RightSidebarTab,
   type StoredProject,
 } from "@/lib/projects"
+import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
 import { store } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -161,6 +166,80 @@ const AGENT_TERMINAL_LABELS: Record<TerminalAgentName, string> = {
   gemini: "Gemini",
 }
 
+function lastAgentTerminalFromPane(
+  project: Project,
+  tabId: string,
+  paneId: string,
+  remembered?: LastAgentTerminal | null
+): LastAgentTerminal | null {
+  const tab = project.tabs.find((t) => t.kind === "terminal" && t.id === tabId)
+  if (!tab || tab.kind !== "terminal") return null
+  const pane = tab.panes.find((pp) => pp.id === paneId)
+  if (!pane) return null
+  const sessionId = pane.sessionId ?? pane.pendingSessionId
+  return {
+    projectId: project.id,
+    projectPath: project.path,
+    tabId,
+    paneId,
+    ...((sessionId ?? remembered?.sessionId)
+      ? { sessionId: sessionId ?? remembered?.sessionId }
+      : {}),
+    updatedAt: remembered?.updatedAt ?? Date.now(),
+  }
+}
+
+function rememberedAgentTerminalForProject(
+  map: LastAgentTerminalsByProject,
+  project: Project | undefined
+): LastAgentTerminal | null {
+  if (!project) return null
+  return (
+    map[project.id] ??
+    Object.values(map).find((target) => target.projectPath === project.path) ??
+    null
+  )
+}
+
+function findProjectAgentTerminal(
+  project: Project | undefined,
+  remembered: LastAgentTerminal | null
+): LastAgentTerminal | null {
+  if (!project) return null
+  if (
+    remembered &&
+    (remembered.projectId === project.id ||
+      remembered.projectPath === project.path)
+  ) {
+    const target = lastAgentTerminalFromPane(
+      project,
+      remembered.tabId,
+      remembered.paneId,
+      remembered
+    )
+    if (target) return target
+  }
+
+  const activeTab = project.tabs.find((t) => t.id === project.activeTabId)
+  if (activeTab?.kind === "terminal") {
+    const activePane = activeTab.panes.find(
+      (pane) => pane.id === activeTab.activePaneId
+    )
+    if (activePane?.agentStatus?.agentName || activePane?.agentSessionId) {
+      return lastAgentTerminalFromPane(project, activeTab.id, activePane.id)
+    }
+  }
+
+  for (const tab of project.tabs) {
+    if (tab.kind !== "terminal") continue
+    const pane = tab.panes.find(
+      (pp) => pp.agentStatus?.agentName || pp.agentSessionId
+    )
+    if (pane) return lastAgentTerminalFromPane(project, tab.id, pane.id)
+  }
+  return null
+}
+
 function isModifierKey(key: string): boolean {
   return ["Alt", "Control", "Meta", "Shift"].includes(key)
 }
@@ -227,9 +306,7 @@ function serializeProjects(projects: Project[]) {
             ...(sid ? { sessionId: sid } : {}),
             ...(pp.autoTitle ? { autoTitle: pp.autoTitle } : {}),
             ...(pp.customName ? { customName: pp.customName } : {}),
-            ...(pp.agentSessionId
-              ? { agentSessionId: pp.agentSessionId }
-              : {}),
+            ...(pp.agentSessionId ? { agentSessionId: pp.agentSessionId } : {}),
             ...(pp.agentSessionTitle
               ? { agentSessionTitle: pp.agentSessionTitle }
               : {}),
@@ -326,8 +403,8 @@ export function AppShell() {
   const routeTabId = params.tabId ?? null
   const initialProjectSnapshot = useMemo(() => hydrateProjectSnapshot(), [])
 
-  const [projects, setProjects] = useState<Project[]>(() =>
-    initialProjectSnapshot.projects
+  const [projects, setProjects] = useState<Project[]>(
+    () => initialProjectSnapshot.projects
   )
   const [recents, setRecents] = useState<RecentProject[]>(() =>
     loadRecentProjects()
@@ -354,6 +431,8 @@ export function AppShell() {
     paneId: string
     nonce: number
   } | null>(null)
+  const [lastAgentTerminals, setLastAgentTerminals] =
+    useState<LastAgentTerminalsByProject>(() => loadLastAgentTerminals())
   const [stateRestored, setStateRestored] = useState(() => store.isReady())
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
     string | null
@@ -364,13 +443,15 @@ export function AppShell() {
       initialProjectSnapshot.migrations
     )
   })
-  const [openingTerminalTabId, setOpeningTerminalTabId] = useState<string | null>(
-    null,
-  )
+  const [openingTerminalTabId, setOpeningTerminalTabId] = useState<
+    string | null
+  >(null)
 
   useEffect(() => {
     if (initialProjectSnapshot.migrations.length === 0) return
-    void window.term.history.migrateProjectIds(initialProjectSnapshot.migrations)
+    void window.term.history.migrateProjectIds(
+      initialProjectSnapshot.migrations
+    )
   }, [initialProjectSnapshot.migrations])
 
   // Disk snapshot arrives async — re-sync once it lands so the UI can paint
@@ -393,6 +474,7 @@ export function AppShell() {
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         setRightSidebarTab(loadRightSidebarTab())
+        setLastAgentTerminals(loadLastAgentTerminals())
         const storedActiveId = resolveMigratedProjectId(
           loadActiveProjectId(),
           hydrated,
@@ -429,7 +511,9 @@ export function AppShell() {
   const closeTabRef = useRef<(id: string) => void>(() => undefined)
   const projectsRef = useRef(projects)
   const lastTerminalByProjectRef = useRef<Record<string, string>>({})
-  const agentDoneToastsByProjectRef = useRef<Map<string, Set<string>>>(new Map())
+  const agentDoneToastsByProjectRef = useRef<Map<string, Set<string>>>(
+    new Map()
+  )
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
   const terminalFocusRequestNonceRef = useRef(0)
   const windowFocusedRef = useRef(
@@ -778,6 +862,80 @@ export function AppShell() {
     if (terminal) navigateToTab(terminal.id)
   }, [activeProject, navigateToTab])
 
+  const rememberAgentTerminal = useCallback(
+    (projectId: string, tabId: string, paneId: string) => {
+      const project = projectsRef.current.find((p) => p.id === projectId)
+      if (!project) return
+      const target = lastAgentTerminalFromPane(project, tabId, paneId)
+      if (!target) return
+      setLastAgentTerminals((prev) => {
+        const next = { ...prev, [project.id]: target }
+        saveLastAgentTerminals(next)
+        return next
+      })
+    },
+    []
+  )
+
+  const resolvedLastAgentTerminal = useMemo(
+    () =>
+      findProjectAgentTerminal(
+        activeProject,
+        rememberedAgentTerminalForProject(lastAgentTerminals, activeProject)
+      ),
+    [activeProject, lastAgentTerminals]
+  )
+
+  const commitWithAi = useCallback(() => {
+    const project = projectsRef.current.find((p) => p.id === activeProjectId)
+    const target = findProjectAgentTerminal(
+      project,
+      rememberedAgentTerminalForProject(lastAgentTerminals, project)
+    )
+    if (!project || !target) {
+      toast.error("No coding agent terminal found for this project")
+      return
+    }
+
+    window.focus()
+    void window.appWindow?.focus?.()
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === target.projectId
+          ? {
+              ...p,
+              activeTabId: target.tabId,
+              tabs: p.tabs.map((t) =>
+                t.id === target.tabId && t.kind === "terminal"
+                  ? { ...t, activePaneId: target.paneId }
+                  : t
+              ),
+            }
+          : p
+      )
+    )
+    navigateToProject(target.projectId, target.tabId)
+    terminalFocusRequestNonceRef.current += 1
+    setTerminalFocusRequest({
+      tabId: target.tabId,
+      paneId: target.paneId,
+      nonce: terminalFocusRequestNonceRef.current,
+    })
+
+    window.setTimeout(() => {
+      const latestProject = projectsRef.current.find(
+        (p) => p.id === target.projectId
+      )
+      const latest = findProjectAgentTerminal(latestProject, target)
+      const sessionId = latest?.sessionId ?? target.sessionId
+      if (!sessionId) {
+        toast.error("Agent terminal is not running")
+        return
+      }
+      window.term.write(sessionId, `${loadAiCommitPrompt()}\r`)
+    }, 120)
+  }, [activeProjectId, lastAgentTerminals, navigateToProject])
+
   useEffect(() => {
     if (!stateRestored) return
     saveActiveProjectId(activeProjectId)
@@ -797,7 +955,8 @@ export function AppShell() {
           toast.dismiss(id)
           set.delete(id)
         }
-        if (set.size === 0) agentDoneToastsByProjectRef.current.delete(projectId)
+        if (set.size === 0)
+          agentDoneToastsByProjectRef.current.delete(projectId)
       }
 
       const hasRemainingProjectNotifications =
@@ -921,7 +1080,13 @@ export function AppShell() {
     const activeTab = activeProject.tabs.find((t) => t.id === activeTabId)
     if (activeTab?.kind !== "terminal") return
     lastTerminalByProjectRef.current[activeProject.id] = activeTab.id
-  }, [activeProject, activeTabId])
+    const activePane = activeTab.panes.find(
+      (pp) => pp.id === activeTab.activePaneId
+    )
+    if (activePane?.agentStatus?.agentName || activePane?.agentSessionId) {
+      rememberAgentTerminal(activeProject.id, activeTab.id, activePane.id)
+    }
+  }, [activeProject, activeTabId, rememberAgentTerminal])
 
   useEffect(() => {
     if (routeProjectId && !projects.some((p) => p.id === routeProjectId)) {
@@ -1040,7 +1205,9 @@ export function AppShell() {
     const target = projects.find((p) => p.id === id)
     if (
       target &&
-      !(await confirmCloseWorkingTerminals(countWorkingTerminalPanes(target.tabs)))
+      !(await confirmCloseWorkingTerminals(
+        countWorkingTerminalPanes(target.tabs)
+      ))
     ) {
       return
     }
@@ -1064,7 +1231,8 @@ export function AppShell() {
 
   const closeAllProjectTerminals = async (id: string) => {
     const project = projects.find((p) => p.id === id)
-    const terminalTabs = project?.tabs.filter((t) => t.kind === "terminal") ?? []
+    const terminalTabs =
+      project?.tabs.filter((t) => t.kind === "terminal") ?? []
     if (
       !(await confirmCloseWorkingTerminals(
         countWorkingTerminalPanes(terminalTabs)
@@ -1082,7 +1250,13 @@ export function AppShell() {
         const activeTabId = tabs.some((t) => t.id === p.activeTabId)
           ? p.activeTabId
           : (tabs[0]?.id ?? "")
-        return { ...p, tabs, activeTabId, agentDone: false, agentNeedsAttention: false }
+        return {
+          ...p,
+          tabs,
+          activeTabId,
+          agentDone: false,
+          agentNeedsAttention: false,
+        }
       })
     )
     if (id === activeProjectId) {
@@ -1237,7 +1411,8 @@ export function AppShell() {
   const extractPaneToTab = (tabId: string, paneId: string) => {
     if (!activeProjectId) return
     const source = activeProject?.tabs.find((t) => t.id === tabId)
-    if (!source || source.kind !== "terminal" || source.panes.length <= 1) return
+    if (!source || source.kind !== "terminal" || source.panes.length <= 1)
+      return
     if (!source.panes.some((pane) => pane.id === paneId)) return
     const newTabId = makeId()
     setOpeningTerminalTabId(newTabId)
@@ -1248,11 +1423,15 @@ export function AppShell() {
         const sourceTab = p.tabs.find((t) => t.id === tabId)
         if (!sourceTab || sourceTab.kind !== "terminal") return p
         if (sourceTab.panes.length <= 1) return p
-        const paneIndex = sourceTab.panes.findIndex((pane) => pane.id === paneId)
+        const paneIndex = sourceTab.panes.findIndex(
+          (pane) => pane.id === paneId
+        )
         const pane = sourceTab.panes[paneIndex]
         if (!pane) return p
 
-        const remainingPanes = sourceTab.panes.filter((pane) => pane.id !== paneId)
+        const remainingPanes = sourceTab.panes.filter(
+          (pane) => pane.id !== paneId
+        )
         const sourceLayout = ensureLayout(
           sourceTab.layout,
           sourceTab.panes.map((pane) => pane.id)
@@ -1260,9 +1439,10 @@ export function AppShell() {
         const nextSourceLayout = removeLeaf(sourceLayout, paneId)
         const nextActivePaneId =
           sourceTab.activePaneId === paneId
-            ? (remainingPanes[paneIndex] ?? remainingPanes[paneIndex - 1])?.id ??
+            ? ((remainingPanes[paneIndex] ?? remainingPanes[paneIndex - 1])
+                ?.id ??
               remainingPanes[0]?.id ??
-              ""
+              "")
             : sourceTab.activePaneId
         const terminalCount = p.tabs.filter((t) => t.kind === "terminal").length
         return {
@@ -1453,6 +1633,17 @@ export function AppShell() {
 
   const setActivePane = useCallback(
     (tabId: string, paneId: string) => {
+      const project = projectsRef.current.find((p) => p.id === activeProjectId)
+      const tab = project?.tabs.find(
+        (t) => t.kind === "terminal" && t.id === tabId
+      )
+      const pane =
+        tab?.kind === "terminal"
+          ? tab.panes.find((pp) => pp.id === paneId)
+          : undefined
+      if (project && (pane?.agentStatus?.agentName || pane?.agentSessionId)) {
+        rememberAgentTerminal(project.id, tabId, paneId)
+      }
       setProjects((prev) =>
         prev.map((p) =>
           p.id === activeProjectId
@@ -1468,7 +1659,7 @@ export function AppShell() {
         )
       )
     },
-    [activeProjectId]
+    [activeProjectId, rememberAgentTerminal]
   )
 
   const setTerminalLayout = useCallback(
@@ -1910,6 +2101,10 @@ export function AppShell() {
     const needsAttentionAway =
       becameNeedsAttention && !!targetProject && !targetTerminalIsActive
 
+    if (status.agentName && targetProject) {
+      rememberAgentTerminal(targetProject.id, tabId, paneId)
+    }
+
     setProjects((prev) =>
       prev.map((p) => {
         if (!p.tabs.some((t) => t.id === tabId)) return p
@@ -1969,7 +2164,10 @@ export function AppShell() {
       const toastsForProject =
         agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
       toastsForProject.add(toastId)
-      agentDoneToastsByProjectRef.current.set(targetProject.id, toastsForProject)
+      agentDoneToastsByProjectRef.current.set(
+        targetProject.id,
+        toastsForProject
+      )
       const showCompletionNotification = (latestPrompt: string | null) => {
         console.info("Agent complete: showing in-app toast")
         toast.custom(
@@ -2023,14 +2221,18 @@ export function AppShell() {
             id: toastId,
             duration: Infinity,
             onDismiss: () => {
-              const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
+              const set = agentDoneToastsByProjectRef.current.get(
+                targetProject.id
+              )
               set?.delete(toastId)
               if (set && set.size === 0) {
                 agentDoneToastsByProjectRef.current.delete(targetProject.id)
               }
             },
             onAutoClose: () => {
-              const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
+              const set = agentDoneToastsByProjectRef.current.get(
+                targetProject.id
+              )
               set?.delete(toastId)
               if (set && set.size === 0) {
                 agentDoneToastsByProjectRef.current.delete(targetProject.id)
@@ -2071,11 +2273,7 @@ export function AppShell() {
         .then(showCompletionNotification)
     }
 
-    if (
-      needsAttentionAway &&
-      targetProject &&
-      targetTab?.kind === "terminal"
-    ) {
+    if (needsAttentionAway && targetProject && targetTab?.kind === "terminal") {
       playAgentCompleteSound()
 
       const terminalName = tabDisplayName(targetTab)
@@ -2083,7 +2281,10 @@ export function AppShell() {
       const toastsForProject =
         agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
       toastsForProject.add(toastId)
-      agentDoneToastsByProjectRef.current.set(targetProject.id, toastsForProject)
+      agentDoneToastsByProjectRef.current.set(
+        targetProject.id,
+        toastsForProject
+      )
       console.info("Agent needs attention: showing in-app toast")
       const cleanupToast = () => {
         const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
@@ -2405,9 +2606,7 @@ export function AppShell() {
   ])
 
   return (
-    <div
-      className="relative flex h-svh flex-row bg-background text-foreground"
-    >
+    <div className="relative flex h-svh flex-row bg-background text-foreground">
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -2453,217 +2652,219 @@ export function AppShell() {
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {(() => {
-        const toggleSidebar = () => {
-          toggleRightSidebar()
-        }
-        const openChanges = () => {
-          setRightSidebarTab("changes")
-          openRightSidebar()
-        }
-        // Vertical layout with the project sidebar collapsed: show an expand
-        // control (and reclaim the traffic-light gap) in the top bar.
-        const projectSidebarCollapsed = !projectSidebarOpen
-        const expandProjectSidebarButton = projectSidebarCollapsed ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={() => setProjectSidebarOpen(true)}
-                  aria-label="Expand sidebar"
-                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground [-webkit-app-region:no-drag]"
-                >
-                  <PanelLeft className="size-3.5" />
-                </button>
-              }
-            />
-            <TooltipContent>Expand sidebar</TooltipContent>
-          </Tooltip>
-        ) : null
-        const titleBar = (
-          <AutoHideTitleBar enabled={autoHideTitleBar && !!activeProject}>
-            <TitleBar
+          const toggleSidebar = () => {
+            toggleRightSidebar()
+          }
+          const openChanges = () => {
+            setRightSidebarTab("changes")
+            openRightSidebar()
+          }
+          // Vertical layout with the project sidebar collapsed: show an expand
+          // control (and reclaim the traffic-light gap) in the top bar.
+          const projectSidebarCollapsed = !projectSidebarOpen
+          const expandProjectSidebarButton = projectSidebarCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={() => setProjectSidebarOpen(true)}
+                    aria-label="Expand sidebar"
+                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:bg-foreground/15 hover:text-foreground"
+                  >
+                    <PanelLeft className="size-3.5" />
+                  </button>
+                }
+              />
+              <TooltipContent>Expand sidebar</TooltipContent>
+            </Tooltip>
+          ) : null
+          const titleBar = (
+            <AutoHideTitleBar enabled={autoHideTitleBar && !!activeProject}>
+              <TitleBar
+                projects={projects}
+                activeProjectId={activeProjectId}
+                sidebarOpen={sidebarOpen}
+                onToggleSidebar={toggleSidebar}
+                onOpenChanges={openChanges}
+                showRightControls={!sidebarOpen || !activeProject}
+                showTrafficLightSpacer={projectSidebarCollapsed}
+                leading={
+                  expandProjectSidebarButton ? (
+                    <div className="flex items-center pr-2 [-webkit-app-region:no-drag]">
+                      {expandProjectSidebarButton}
+                    </div>
+                  ) : undefined
+                }
+              />
+            </AutoHideTitleBar>
+          )
+          const sidebarTopActions = (
+            <div className="flex items-center pr-1">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={toggleSidebar}
+                      aria-pressed={sidebarOpen}
+                      aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                      className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                    >
+                      <PanelRight className="size-3.5" />
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )
+          // In the vertical project layout the workspace tab bar doubles as the
+          // top bar, so the window controls (changes badge + sidebar toggle) live
+          // inline at its right edge. Mirror the title bar's gate: hide them when
+          // the right sidebar is open (it carries its own controls then).
+          const showTopBarControls = !sidebarOpen || !activeProject
+          const topBarTrailing = showTopBarControls ? (
+            <div className="flex items-center pr-4 [-webkit-app-region:no-drag]">
+              <ProjectGitStatusBadge
+                cwd={activeProject?.path ?? null}
+                onOpenChanges={openChanges}
+              />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={toggleSidebar}
+                      aria-pressed={sidebarOpen}
+                      aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                      className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                    >
+                      <PanelRight className="size-3.5" />
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          ) : null
+          // When the project sidebar is collapsed the workspace meets the window's
+          // left edge, so the top bar reclaims the traffic-light gap and hosts the
+          // expand control.
+          const topBarLeading = expandProjectSidebarButton ? (
+            <>
+              <div className="w-[84px] shrink-0 self-stretch" />
+              {expandProjectSidebarButton}
+              <UpdateButton />
+              {activeProject && (
+                // Project switcher standing in for the hidden sidebar — lets the
+                // user switch projects (or add one) without expanding it.
+                <div className="flex min-w-0 items-center pr-2 pl-1.5">
+                  <ProjectSwitcher
+                    projects={switcherProjects}
+                    activeProjectId={activeProjectId}
+                    onSelect={selectProject}
+                    onAdd={addProject}
+                  />
+                </div>
+              )}
+            </>
+          ) : undefined
+          if (!activeProject) {
+            return (
+              <>
+                {titleBar}
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+                  <img
+                    src={logoGrayUrl}
+                    alt=""
+                    aria-hidden="true"
+                    className="mb-1 h-20 w-auto opacity-80"
+                  />
+                  <p>No project selected</p>
+                  <button
+                    type="button"
+                    onClick={addProject}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                  >
+                    Select a Project
+                  </button>
+                </div>
+              </>
+            )
+          }
+          return (
+            <WorkspaceSplit
               projects={projects}
               activeProjectId={activeProjectId}
+              activeTabId={activeTabId}
               sidebarOpen={sidebarOpen}
-              onToggleSidebar={toggleSidebar}
-              onOpenChanges={openChanges}
-              showRightControls={!sidebarOpen || !activeProject}
-              showTrafficLightSpacer={projectSidebarCollapsed}
-              leading={
-                expandProjectSidebarButton ? (
-                  <div className="flex items-center pr-2 [-webkit-app-region:no-drag]">
-                    {expandProjectSidebarButton}
-                  </div>
-                ) : undefined
+              sidebarOverlayMode={
+                rightSidebarEdgeReveal && !sidebarOpen && !!activeProject
+              }
+              sidebarOverlayVisible={
+                rightSidebarEdgeReveal &&
+                !sidebarOpen &&
+                !!activeProject &&
+                rightSidebarOverlayOpen
+              }
+              titleBar={titleBar}
+              hideTitleBar={true}
+              sidebarTopActions={sidebarTopActions}
+              onTerminalTitleChange={setTerminalTitle}
+              onTerminalAgentStatusChange={setTerminalAgentStatus}
+              terminalFocusRequest={terminalFocusRequest}
+              onStartTerminal={(tabId, paneId) => {
+                void startTerminalPane(activeProject.id, tabId, paneId)
+              }}
+              onAddTerminal={() => void addTerminal()}
+              onSplitTerminal={(tabId, direction) =>
+                void splitTerminalPane(tabId, direction)
+              }
+              onClosePane={closePane}
+              onFocusPane={setActivePane}
+              onRenamePane={renamePane}
+              onDropPane={dropPane}
+              onTerminalLayoutChange={setTerminalLayout}
+              onExtractPaneToTab={extractPaneToTab}
+              onOpenDiffTab={openDiffTab}
+              onOpenFileTab={openFileTab}
+              onCommitWithAi={commitWithAi}
+              canCommitWithAi={!!resolvedLastAgentTerminal}
+              rightSidebarTab={rightSidebarTab}
+              onRightSidebarTabChange={setRightSidebarTab}
+              activeTreeFilePath={activeTreeFilePath}
+              fileReveal={fileReveal}
+              workspaceTabs={
+                <WorkspaceTabBar
+                  tabs={activeProject.tabs}
+                  activeId={activeTabId}
+                  animationScopeKey={activeProject.id}
+                  openingTabId={openingTerminalTabId}
+                  onSelect={selectTab}
+                  onAdd={addTerminal}
+                  onClose={closeTab}
+                  onCloseAll={closeAllTabs}
+                  onCloseOthers={closeOtherTabs}
+                  onCloseToRight={closeTabsToRight}
+                  onRename={renameTab}
+                  onReorder={reorderTabs}
+                  onPin={pinTab}
+                  onOpenInVSCode={() =>
+                    void window.shellApi.openInVSCode(activeProject.path)
+                  }
+                  trailing={topBarTrailing}
+                  leading={topBarLeading ?? <UpdateButton />}
+                  draggable={true}
+                />
               }
             />
-          </AutoHideTitleBar>
-        )
-        const sidebarTopActions = (
-          <div className="flex items-center pr-1">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={toggleSidebar}
-                    aria-pressed={sidebarOpen}
-                    aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                    className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-                  >
-                    <PanelRight className="size-3.5" />
-                  </button>
-                }
-              />
-              <TooltipContent>
-                {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        )
-        // In the vertical project layout the workspace tab bar doubles as the
-        // top bar, so the window controls (changes badge + sidebar toggle) live
-        // inline at its right edge. Mirror the title bar's gate: hide them when
-        // the right sidebar is open (it carries its own controls then).
-        const showTopBarControls = !sidebarOpen || !activeProject
-        const topBarTrailing = showTopBarControls ? (
-          <div className="flex items-center pr-4 [-webkit-app-region:no-drag]">
-            <ProjectGitStatusBadge
-              cwd={activeProject?.path ?? null}
-              onOpenChanges={openChanges}
-            />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={toggleSidebar}
-                    aria-pressed={sidebarOpen}
-                    aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                    className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-                  >
-                    <PanelRight className="size-3.5" />
-                  </button>
-                }
-              />
-              <TooltipContent>
-                {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        ) : null
-        // When the project sidebar is collapsed the workspace meets the window's
-        // left edge, so the top bar reclaims the traffic-light gap and hosts the
-        // expand control.
-        const topBarLeading = expandProjectSidebarButton ? (
-          <>
-            <div className="w-[84px] shrink-0 self-stretch" />
-            {expandProjectSidebarButton}
-            <UpdateButton />
-            {activeProject && (
-              // Project switcher standing in for the hidden sidebar — lets the
-              // user switch projects (or add one) without expanding it.
-              <div className="flex min-w-0 items-center pr-2 pl-1.5">
-                <ProjectSwitcher
-                  projects={switcherProjects}
-                  activeProjectId={activeProjectId}
-                  onSelect={selectProject}
-                  onAdd={addProject}
-                />
-              </div>
-            )}
-          </>
-        ) : undefined
-        if (!activeProject) {
-          return (
-            <>
-              {titleBar}
-              <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-                <img
-                  src={logoGrayUrl}
-                  alt=""
-                  aria-hidden="true"
-                  className="mb-1 h-20 w-auto opacity-80"
-                />
-                <p>No project selected</p>
-                <button
-                  type="button"
-                  onClick={addProject}
-                  className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
-                >
-                  Select a Project
-                </button>
-              </div>
-            </>
           )
-        }
-        return (
-          <WorkspaceSplit
-            projects={projects}
-            activeProjectId={activeProjectId}
-            activeTabId={activeTabId}
-            sidebarOpen={sidebarOpen}
-            sidebarOverlayMode={
-              rightSidebarEdgeReveal && !sidebarOpen && !!activeProject
-            }
-            sidebarOverlayVisible={
-              rightSidebarEdgeReveal &&
-              !sidebarOpen &&
-              !!activeProject &&
-              rightSidebarOverlayOpen
-            }
-            titleBar={titleBar}
-            hideTitleBar={true}
-            sidebarTopActions={sidebarTopActions}
-            onTerminalTitleChange={setTerminalTitle}
-            onTerminalAgentStatusChange={setTerminalAgentStatus}
-            terminalFocusRequest={terminalFocusRequest}
-            onStartTerminal={(tabId, paneId) => {
-              void startTerminalPane(activeProject.id, tabId, paneId)
-            }}
-            onAddTerminal={() => void addTerminal()}
-            onSplitTerminal={(tabId, direction) =>
-              void splitTerminalPane(tabId, direction)
-            }
-            onClosePane={closePane}
-            onFocusPane={setActivePane}
-            onRenamePane={renamePane}
-            onDropPane={dropPane}
-            onTerminalLayoutChange={setTerminalLayout}
-            onExtractPaneToTab={extractPaneToTab}
-            onOpenDiffTab={openDiffTab}
-            onOpenFileTab={openFileTab}
-            rightSidebarTab={rightSidebarTab}
-            onRightSidebarTabChange={setRightSidebarTab}
-            activeTreeFilePath={activeTreeFilePath}
-            fileReveal={fileReveal}
-            workspaceTabs={
-              <WorkspaceTabBar
-                tabs={activeProject.tabs}
-                activeId={activeTabId}
-                animationScopeKey={activeProject.id}
-                openingTabId={openingTerminalTabId}
-                onSelect={selectTab}
-                onAdd={addTerminal}
-                onClose={closeTab}
-                onCloseAll={closeAllTabs}
-                onCloseOthers={closeOtherTabs}
-                onCloseToRight={closeTabsToRight}
-                onRename={renameTab}
-                onReorder={reorderTabs}
-                onPin={pinTab}
-                onOpenInVSCode={() =>
-                  void window.shellApi.openInVSCode(activeProject.path)
-                }
-                trailing={topBarTrailing}
-                leading={topBarLeading ?? <UpdateButton />}
-                draggable={true}
-              />
-            }
-          />
-        )
-      })()}
+        })()}
       </div>
     </div>
   )

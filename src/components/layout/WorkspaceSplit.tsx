@@ -124,7 +124,11 @@ export function WorkspaceSplit({
     []
   )
   const containerRef = useRef<HTMLDivElement>(null)
+  const sidebarPanelRef = useRef<HTMLDivElement>(null)
+  const sidebarContentRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const dragWidthRef = useRef(sidebarWidth)
+  const dragFrameRef = useRef<number | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
   // Persist whenever width settles (debounced via effect-cleanup style).
@@ -144,15 +148,42 @@ export function WorkspaceSplit({
   }, [activeProjectId, projects, queryClient])
 
   useEffect(() => {
+    dragWidthRef.current = sidebarWidth
+  }, [sidebarWidth])
+
+  useEffect(() => {
+    const applyDragWidth = () => {
+      dragFrameRef.current = null
+      const width = `${dragWidthRef.current}px`
+      if (sidebarPanelRef.current) sidebarPanelRef.current.style.width = width
+      if (sidebarContentRef.current) sidebarContentRef.current.style.width = width
+    }
+
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current
       if (!d) return
+      e.preventDefault()
       const dx = d.startX - e.clientX
-      setSidebarWidth(clampWidth(d.startWidth + dx))
+      dragWidthRef.current = clampWidth(d.startWidth + dx)
+      if (dragFrameRef.current === null) {
+        dragFrameRef.current = window.requestAnimationFrame(applyDragWidth)
+      }
     }
     const onUp = () => {
       if (!dragRef.current) return
       dragRef.current = null
+      if (dragFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragFrameRef.current)
+        dragFrameRef.current = null
+      }
+      const width = dragWidthRef.current
+      const widthPx = `${width}px`
+      if (sidebarPanelRef.current) {
+        sidebarPanelRef.current.style.width = widthPx
+        sidebarPanelRef.current.style.transition = ""
+      }
+      if (sidebarContentRef.current) sidebarContentRef.current.style.width = widthPx
+      setSidebarWidth(width)
       setIsDragging(false)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
@@ -162,11 +193,20 @@ export function WorkspaceSplit({
     return () => {
       window.removeEventListener("mousemove", onMove)
       window.removeEventListener("mouseup", onUp)
+      if (dragFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragFrameRef.current)
+      }
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
     }
   }, [])
 
   const startDrag = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
     dragRef.current = { startX: e.clientX, startWidth: sidebarWidth }
+    dragWidthRef.current = sidebarWidth
+    if (sidebarPanelRef.current) sidebarPanelRef.current.style.transition = "none"
     setIsDragging(true)
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
@@ -255,14 +295,15 @@ export function WorkspaceSplit({
         aria-orientation="vertical"
         aria-hidden={!sidebarOpen}
         className={cn(
-          "group relative shrink-0 cursor-col-resize",
-          sidebarOpen ? "-mx-[3px] w-[7px]" : "pointer-events-none w-0",
+          "group relative z-20 shrink-0 cursor-col-resize touch-none",
+          sidebarOpen ? "-mx-2 w-4" : "pointer-events-none w-0",
           !isDragging && "transition-[width] duration-150 ease-out"
         )}
       >
         <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
       </div>
       <div
+        ref={sidebarPanelRef}
         style={{
           width: showSidebar ? sidebarWidth : 0,
           transform: sidebarIsOverlay
@@ -285,7 +326,11 @@ export function WorkspaceSplit({
         )}
         aria-hidden={sidebarIsOverlay ? !sidebarOverlayVisible : !showSidebar}
       >
-        <div className="absolute inset-0" style={{ width: sidebarWidth }}>
+        <div
+          ref={sidebarContentRef}
+          className="absolute inset-0"
+          style={{ width: sidebarWidth }}
+        >
           <RightSidebar
             cwd={activeProject?.path ?? null}
             projectId={activeProject?.id ?? null}

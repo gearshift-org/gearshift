@@ -147,6 +147,7 @@ export function RightSidebar({
   const pendingBranchRef = useRef<{ branch: string; expiresAt: number } | null>(
     null
   )
+  const lastOptimisticCacheWriteAtRef = useRef(0)
   // While > 0, an action is in flight or just completed — watcher refreshes
   // are deferred so half-applied git state can't flash into the UI.
   const inflightActionsRef = useRef(0)
@@ -180,9 +181,11 @@ export function RightSidebar({
   })
 
   // After every refetch, drop optimistic overlays that the fresh data already
-  // confirms — single source of truth for "this action landed". Prevents the
-  // overlay from flickering off on TTL expiry while reality is still stale.
+  // confirms — single source of truth for "this action landed". Ignore local
+  // optimistic cache writes; those are the desired UI, not git confirmation.
   useEffect(() => {
+    const state = queryClient.getQueryState(currentGitQueryKey)
+    if (state?.dataUpdatedAt === lastOptimisticCacheWriteAtRef.current) return
     const raw = queryClient.getQueryData<GitQueryData>(currentGitQueryKey)
     if (!raw) return
     const now = Date.now()
@@ -269,6 +272,8 @@ export function RightSidebar({
       queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
         moveCachedGitFiles(data, paths, staged)
       )
+      lastOptimisticCacheWriteAtRef.current =
+        queryClient.getQueryState(currentGitQueryKey)?.dataUpdatedAt ?? 0
     },
     [currentGitQueryKey, queryClient]
   )
@@ -291,6 +296,8 @@ export function RightSidebar({
       queryClient.setQueryData<GitQueryData>(currentGitQueryKey, (data) =>
         removeCachedGitFiles(data, paths, staged)
       )
+      lastOptimisticCacheWriteAtRef.current =
+        queryClient.getQueryState(currentGitQueryKey)?.dataUpdatedAt ?? 0
       return () => {
         const pathSet = new Set(paths)
         optimisticRemovalsRef.current = optimisticRemovalsRef.current.filter(

@@ -22,6 +22,8 @@ The watcher is intentionally noisy at the OS level but quiet at the IPC level:
 
 All refresh requests funnel through one serialized callback so concurrent refreshes do not stack. Inactive projects skip watcher subscriptions and polling to keep background work low.
 
+Stage, unstage, and discard actions optimistically patch the visible changes list immediately. Watcher and polling refreshes are held during the action, and the optimistic overlay is only removed after a real `git status` refresh confirms the new state, so stale in-flight refreshes cannot flash a file back to the old section.
+
 ## CLI Agent Activity
 
 Terminal panes detect supported coding agents by asking the Electron main process to inspect the PTY shell's child process tree. GearShift passes each terminal a `GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET` so supported lifecycle hooks can report status back over a local Unix socket. Agent-specific hooks and plugins are normalized into three GearShift lifecycle events: `start`, `stop`, and `needs_attention`.

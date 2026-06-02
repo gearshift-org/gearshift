@@ -926,20 +926,6 @@ export function RightSidebar({
                 }}
                 className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               />
-              <div className="flex flex-wrap gap-1">
-                {["wip", "updates", "fix", "docs", "refactor", "feature"].map(
-                  (prefix) => (
-                    <button
-                      key={prefix}
-                      type="button"
-                      onClick={() => setCommitMessage(prefix)}
-                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-foreground transition-colors hover:bg-accent"
-                    >
-                      {prefix}
-                    </button>
-                  )
-                )}
-              </div>
               {showSync ? (
                 <Button
                   variant="default"

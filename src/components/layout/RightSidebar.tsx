@@ -73,6 +73,7 @@ const REFRESH_DEBOUNCE_MS = 350
 const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
+const CHANGE_LIST_BATCH_SIZE = 150
 // Optimistic overlays are confirm-cleared once a refetch reflects the action,
 // so these TTLs are only a safety net for the rare case where reality never
 // catches up (e.g. external git tampering). Keep them generous.
@@ -142,6 +143,12 @@ export function RightSidebar({
     null | "create" | "open"
   >(null)
   const [githubBranchBusy, setGithubBranchBusy] = useState(false)
+  const [stagedListLimit, setStagedListLimit] = useState(
+    CHANGE_LIST_BATCH_SIZE
+  )
+  const [unstagedListLimit, setUnstagedListLimit] = useState(
+    CHANGE_LIST_BATCH_SIZE
+  )
   const optimisticMovesRef = useRef<OptimisticGitFileMove[]>([])
   const optimisticRemovalsRef = useRef<OptimisticGitFileRemoval[]>([])
   const pendingBranchRef = useRef<{ branch: string; expiresAt: number } | null>(
@@ -257,6 +264,16 @@ export function RightSidebar({
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
+  const visibleStagedFiles = useMemo(
+    () => stagedFiles.slice(0, stagedListLimit),
+    [stagedFiles, stagedListLimit]
+  )
+  const visibleUnstagedFiles = useMemo(
+    () => unstagedFiles.slice(0, unstagedListLimit),
+    [unstagedFiles, unstagedListLimit]
+  )
+  const hiddenStagedCount = stagedFiles.length - visibleStagedFiles.length
+  const hiddenUnstagedCount = unstagedFiles.length - visibleUnstagedFiles.length
 
   const updateCachedFiles = useCallback(
     (paths: string[], staged: boolean) => {
@@ -1080,8 +1097,20 @@ export function RightSidebar({
                 onActionAll={unstageAll}
                 actionAllLabel="Unstage all"
                 actionAllIcon={<Minus className="size-3.5" />}
+                footer={
+                  hiddenStagedCount > 0 ? (
+                    <ShowMoreChangesButton
+                      hiddenCount={hiddenStagedCount}
+                      onClick={() =>
+                        setStagedListLimit((limit) =>
+                          limit + CHANGE_LIST_BATCH_SIZE
+                        )
+                      }
+                    />
+                  ) : null
+                }
               >
-                {stagedFiles.map((c) => (
+                {visibleStagedFiles.map((c) => (
                   <FileRow
                     key={`staged-${c.path}`}
                     cwd={cwd}
@@ -1106,8 +1135,20 @@ export function RightSidebar({
                 secondaryActionAll={discardAllUnstaged}
                 secondaryActionAllLabel="Discard all"
                 secondaryActionAllIcon={<Undo2 className="size-3.5" />}
+                footer={
+                  hiddenUnstagedCount > 0 ? (
+                    <ShowMoreChangesButton
+                      hiddenCount={hiddenUnstagedCount}
+                      onClick={() =>
+                        setUnstagedListLimit((limit) =>
+                          limit + CHANGE_LIST_BATCH_SIZE
+                        )
+                      }
+                    />
+                  ) : null
+                }
               >
-                {unstagedFiles.map((c) => (
+                {visibleUnstagedFiles.map((c) => (
                   <FileRow
                     key={`unstaged-${c.path}`}
                     cwd={cwd}
@@ -1355,6 +1396,7 @@ function FileGroup({
   secondaryActionAll,
   secondaryActionAllLabel,
   secondaryActionAllIcon,
+  footer,
   children,
 }: {
   label: string
@@ -1365,6 +1407,7 @@ function FileGroup({
   secondaryActionAll?: () => void
   secondaryActionAllLabel?: string
   secondaryActionAllIcon?: React.ReactNode
+  footer?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
@@ -1410,6 +1453,27 @@ function FileGroup({
         </div>
       </div>
       <ul>{children}</ul>
+      {footer}
+    </div>
+  )
+}
+
+function ShowMoreChangesButton({
+  hiddenCount,
+  onClick,
+}: {
+  hiddenCount: number
+  onClick: () => void
+}) {
+  return (
+    <div className="border-t border-border/60 px-3 py-2">
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+      >
+        Show {Math.min(hiddenCount, CHANGE_LIST_BATCH_SIZE)} more of {hiddenCount}
+      </button>
     </div>
   )
 }

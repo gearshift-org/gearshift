@@ -9,6 +9,7 @@ import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
 import { UpdateButton } from "./UpdateButton"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
+import { HistoryNavButtons } from "./HistoryNavButtons"
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
 import { useTheme } from "@/components/theme-provider"
@@ -2717,8 +2718,9 @@ export function AppShell() {
                 showTrafficLightSpacer={projectSidebarCollapsed}
                 leading={
                   expandProjectSidebarButton ? (
-                    <div className="flex items-center pr-2 [-webkit-app-region:no-drag]">
+                    <div className="flex items-center gap-0.5 pr-2 [-webkit-app-region:no-drag]">
                       {expandProjectSidebarButton}
+                      <HistoryNavButtons />
                     </div>
                   ) : undefined
                 }
@@ -2785,6 +2787,7 @@ export function AppShell() {
             <>
               <div className="w-[84px] shrink-0 self-stretch" />
               {expandProjectSidebarButton}
+              <HistoryNavButtons className="pl-0.5" />
               <UpdateButton />
               {activeProject && (
                 // Project switcher standing in for the hidden sidebar — lets the

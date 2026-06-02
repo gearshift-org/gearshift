@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { HistoryNavButtons } from "./HistoryNavButtons"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -324,7 +325,8 @@ export function ProjectSidebar({
     >
       {/* Reserve the top-left area for the macOS traffic lights, with the
           collapse control pinned to the right edge. */}
-      <div className="flex h-[40px] shrink-0 items-center justify-end pr-3 [-webkit-app-region:drag]">
+      <div className="flex h-[40px] shrink-0 items-center justify-end gap-0.5 pr-3 [-webkit-app-region:drag]">
+        <HistoryNavButtons />
         {onCollapse && (
           <Tooltip>
             <TooltipTrigger

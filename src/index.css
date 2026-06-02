@@ -816,21 +816,25 @@
   0%,
   100% {
     box-shadow:
-      0 0 0 0 color-mix(in srgb, var(--ring) 24%, transparent),
-      inset 0 0 0 1px color-mix(in srgb, var(--ring) 18%, transparent);
+      0 0 0 0 color-mix(in srgb, var(--agent-spinner) 45%, transparent),
+      0 0 8px color-mix(in srgb, var(--agent-spinner) 32%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--agent-spinner) 55%, transparent);
   }
 
   50% {
     box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--ring) 8%, transparent),
-      inset 0 0 0 1px color-mix(in srgb, var(--ring) 36%, transparent);
+      0 0 0 3px color-mix(in srgb, var(--agent-spinner) 18%, transparent),
+      0 0 12px color-mix(in srgb, var(--agent-spinner) 45%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--agent-spinner) 85%, transparent);
   }
 }
 
 .gs-agent-spinner {
-  color: color-mix(in srgb, var(--ring) 55%, var(--foreground));
-  background: color-mix(in srgb, var(--ring) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ring) 35%, var(--foreground));
+  --agent-spinner: #ffb224;
+  color: var(--agent-spinner);
+  background: color-mix(in srgb, var(--agent-spinner) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--agent-spinner) 78%, transparent);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--agent-spinner) 65%, transparent);
   animation: gs-agent-spinner-aura 1.4s ease-in-out infinite;
 }
 

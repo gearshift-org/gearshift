@@ -39,6 +39,7 @@ import type {
   TerminalAgentName,
   TerminalAgentStatus,
   TerminalLayout,
+  TerminalPane,
   WorkspaceTab,
 } from "./types"
 import {
@@ -201,9 +202,7 @@ function rememberedAgentTerminalForProject(
   )
 }
 
-function paneHasActiveAgent(
-  pane: Project["tabs"][number]["panes"][number]
-): boolean {
+function paneHasActiveAgent(pane: TerminalPane): boolean {
   return !!(
     pane.agentStatus?.running ||
     pane.agentStatus?.working ||

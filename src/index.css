@@ -838,8 +838,34 @@
   animation: gs-agent-spinner-aura 1.4s ease-in-out infinite;
 }
 
+@keyframes gs-agent-header-scan {
+  0% {
+    transform: translateX(-115%);
+  }
+
+  100% {
+    transform: translateX(230%);
+  }
+}
+
+.gs-agent-header-scan {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--agent-spinner, #ffb224) 70%, transparent) 20%,
+    #ffd36a 50%,
+    color-mix(in srgb, var(--agent-spinner, #ffb224) 70%, transparent) 80%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 10px color-mix(in srgb, var(--agent-spinner, #ffb224) 85%, transparent),
+    0 0 18px color-mix(in srgb, var(--agent-spinner, #ffb224) 55%, transparent);
+  animation: gs-agent-header-scan 0.9s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .gs-agent-spinner {
+  .gs-agent-spinner,
+  .gs-agent-header-scan {
     animation: none;
   }
 }

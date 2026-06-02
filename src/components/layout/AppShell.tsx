@@ -1569,17 +1569,17 @@ export function AppShell() {
   /** Add a new terminal pane to an existing terminal tab (Cmd+D / split). */
   const splitTerminalPane = useCallback(
     async (tabId: string, direction: SplitDirection = "horizontal") => {
-      if (!activeProject) return
-      const tab = activeProject.tabs.find((t) => t.id === tabId)
-      if (!tab || tab.kind !== "terminal") return
+      const project = projectsRef.current.find((p) => p.id === activeProjectId)
+      const tab = project?.tabs.find((t) => t.id === tabId)
+      if (!project || !tab || tab.kind !== "terminal") return
       const { id: paneId } = await window.term.create({
-        cwd: activeProject.path,
+        cwd: project.path,
         theme: resolvedTheme,
-        projectId: activeProject.id,
+        projectId: project.id,
       })
       setProjects((prev) =>
         prev.map((p) =>
-          p.id === activeProject.id
+          p.id === project.id
             ? {
                 ...p,
                 tabs: p.tabs.map((t) => {
@@ -1602,7 +1602,7 @@ export function AppShell() {
         )
       )
     },
-    [activeProject, resolvedTheme]
+    [activeProjectId, resolvedTheme]
   )
 
   /** Close a single pane within a terminal tab. Closes the tab if it was the last. */

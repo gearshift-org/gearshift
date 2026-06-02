@@ -148,6 +148,7 @@ function TerminalPaneView({
         focusRequest={focusRequest}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
         onFocusChange={(focused) => onTerminalFocusChange?.(pane.id, focused)}
+        initialAgentStatus={pane.agentStatus}
         onAgentStatusChange={(status) =>
           onAgentStatusChange?.(tab.id, pane.id, status)
         }

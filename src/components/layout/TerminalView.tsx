@@ -37,6 +37,7 @@ type Props = {
   focusRequest?: number
   onTitleChange?: (title: string) => void
   onFocusChange?: (focused: boolean) => void
+  initialAgentStatus?: TerminalAgentStatus
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
   onClose?: () => void
 }
@@ -524,6 +525,7 @@ export function TerminalView({
   focusRequest,
   onTitleChange,
   onFocusChange,
+  initialAgentStatus,
   onAgentStatusChange,
   onClose,
 }: Props) {
@@ -547,24 +549,30 @@ export function TerminalView({
   const onTitleChangeRef = useRef(onTitleChange)
   const onFocusChangeRef = useRef(onFocusChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
-  const agentStatusRef = useRef<TerminalAgentStatus>({
-    running: false,
-    working: false,
-  })
+  const agentStatusRef = useRef<TerminalAgentStatus>(
+    initialAgentStatus ?? {
+      running: false,
+      working: false,
+    }
+  )
   // Last agent-native session id reported by a lifecycle hook. Sticky: kept
   // across status churn so every emitted status carries it once known.
-  const agentSessionIdRef = useRef<string | undefined>(undefined)
+  const agentSessionIdRef = useRef<string | undefined>(
+    initialAgentStatus?.agentSessionId
+  )
   // Last resolved agent session title (AI title / first prompt). Sticky too.
-  const agentSessionTitleRef = useRef<string | undefined>(undefined)
+  const agentSessionTitleRef = useRef<string | undefined>(
+    initialAgentStatus?.agentSessionTitle
+  )
   const agentWorkingTimerRef = useRef<number | undefined>(undefined)
   const lastAgentActivityAtRef = useRef(0)
   const lastUserInputAtRef = useRef(0)
   const lastAgentSubmitAtRef = useRef(0)
   const lastTitleSignalRef = useRef<string | undefined>(undefined)
-  const hasSubmittedToAgentRef = useRef(false)
+  const hasSubmittedToAgentRef = useRef(!!initialAgentStatus?.working)
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
-  const activeHookWorkRef = useRef(false)
+  const activeHookWorkRef = useRef(!!initialAgentStatus?.working)
   const recapTimerRef = useRef<number | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
@@ -1316,7 +1324,12 @@ export function TerminalView({
       fitRef.current = null
       fitTerminalRef.current = null
       searchRef.current = null
-      emitAgentStatus({ running: false, working: false, completed: false })
+      // Do NOT reset agent status here. This cleanup also runs when the pane
+      // merely remounts (e.g. a split re-nests the surviving pane under a new
+      // ResizablePanelGroup). Emitting a reset would clobber a live "working"
+      // status — the spinner would vanish while the agent is still running. On
+      // a genuine close, AppShell removes the pane from state, so there is
+      // nothing to reset anyway.
     }
   }, [
     sessionId,

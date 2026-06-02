@@ -89,10 +89,13 @@ export function PaneHeader({
         startEdit()
       }}
       className={cn(
-        "flex h-[34px] shrink-0 cursor-default items-center gap-0.5 border-b border-border bg-background px-3 text-xs text-foreground/80 select-none",
+        "relative flex h-[34px] shrink-0 cursor-default items-center gap-0.5 overflow-hidden border-b border-border bg-background px-3 text-xs text-foreground/80 select-none",
         isActive && "bg-muted/60 text-foreground",
       )}
     >
+      {agentWorking ? (
+        <span className="gs-agent-header-scan pointer-events-none absolute top-0 left-0 h-0.5 w-1/2" />
+      ) : null}
       {agentActive ? (
         <AgentIcon agent={pane.agentStatus?.agentName} className="mr-1 size-3.5" />
       ) : null}

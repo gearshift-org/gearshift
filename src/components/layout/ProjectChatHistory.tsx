@@ -60,6 +60,9 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
     const offClear = window.term.history.onProjectCleared(projectId, () => {
       setMessages([])
     })
+    const offDelete = window.term.history.onProjectDeleted(projectId, (id) => {
+      setMessages((prev) => prev.filter((msg) => msg.id !== id))
+    })
     const offSessionClear = window.term.history.onProjectSessionCleared(
       projectId,
       (sessionId) => {
@@ -70,6 +73,7 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
       cancelled = true
       offAppend()
       offClear()
+      offDelete()
       offSessionClear()
     }
   }, [projectId, reloadKey])
@@ -83,6 +87,11 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
     )
       return
     await window.term.history.clearProject(projectId)
+  }
+
+  const deleteMessage = async (id: string) => {
+    setMessages((prev) => prev.filter((msg) => msg.id !== id))
+    await window.term.history.delete(id)
   }
 
   if (!projectId) {
@@ -126,10 +135,27 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
         ) : (
           <ul className="divide-y divide-border/60">
             {messages.map((m) => (
-              <li key={m.id} className="px-3 py-2">
+              <li key={m.id} className="group px-3 py-2">
                 <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
                   <span>{m.agent ?? "user"}</span>
-                  <span>{formatTime(m.createdAt)}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span>{formatTime(m.createdAt)}</span>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            onClick={() => void deleteMessage(m.id)}
+                            aria-label="Delete history item"
+                            className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        }
+                      />
+                      <TooltipContent>Delete history item</TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
                 <pre className="mt-1 whitespace-pre-wrap break-words font-sans text-xs leading-snug text-foreground/90">
                   {m.body}

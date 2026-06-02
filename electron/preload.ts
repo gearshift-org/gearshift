@@ -115,6 +115,10 @@ const termApi = {
         projectId,
         limit
       ) as Promise<ChatHistoryMessage[]>,
+    delete: (id: string) =>
+      ipcRenderer.invoke("term:history:delete", id) as Promise<{
+        ok: boolean
+      }>,
     clear: (sessionId: string) =>
       ipcRenderer.invoke("term:history:clear", sessionId) as Promise<{
         ok: boolean
@@ -151,9 +155,21 @@ const termApi = {
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },
+    onProjectDeleted: (projectId: string, cb: (id: string) => void) => {
+      const channel = `term:history:projectDeleted:${projectId}`
+      const listener = (_e: unknown, id: string) => cb(id)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
     onAppended: (sessionId: string, cb: (msg: ChatHistoryMessage) => void) => {
       const channel = `term:history:appended:${sessionId}`
       const listener = (_e: unknown, msg: ChatHistoryMessage) => cb(msg)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onDeleted: (sessionId: string, cb: (id: string) => void) => {
+      const channel = `term:history:deleted:${sessionId}`
+      const listener = (_e: unknown, id: string) => cb(id)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },

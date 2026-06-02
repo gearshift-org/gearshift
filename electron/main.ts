@@ -2524,6 +2524,19 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle("term:history:delete", async (event, id: string) => {
+    const msg = await chatDb.deleteMessage(id)
+    if (!msg) return { ok: false }
+    const sender = event.sender
+    if (sender && !sender.isDestroyed()) {
+      sender.send(`term:history:deleted:${msg.sessionId}`, msg.id)
+      if (msg.projectId) {
+        sender.send(`term:history:projectDeleted:${msg.projectId}`, msg.id)
+      }
+    }
+    return { ok: true }
+  })
+
   ipcMain.handle(
     "term:history:clearProject",
     async (event, projectId: string) => {

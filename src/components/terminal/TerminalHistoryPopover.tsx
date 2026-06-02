@@ -80,9 +80,13 @@ export function TerminalHistoryPopover({
     const unsubscribe = window.term.history.onAppended(sessionId, (msg) => {
       setMessages((prev) => [...prev, msg])
     })
+    const unsubscribeDelete = window.term.history.onDeleted(sessionId, (id) => {
+      setMessages((prev) => prev.filter((msg) => msg.id !== id))
+    })
     return () => {
       cancelled = true
       unsubscribe()
+      unsubscribeDelete()
     }
   }, [open, sessionId])
 
@@ -96,6 +100,11 @@ export function TerminalHistoryPopover({
     if (!sessionId) return
     await window.term.history.clear(sessionId)
     setMessages([])
+  }
+
+  const handleDelete = async (id: string) => {
+    setMessages((prev) => prev.filter((msg) => msg.id !== id))
+    await window.term.history.delete(id)
   }
 
   return (
@@ -130,14 +139,31 @@ export function TerminalHistoryPopover({
               ) : (
                 <ul className="divide-y divide-border">
                   {messages.map((m) => (
-                    <li key={m.id} className="px-3 py-2">
-                      <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        <span>{formatRelative(m.createdAt)}</span>
-                        {m.agent ? (
-                          <span className="rounded-sm bg-foreground/10 px-1.5 py-px text-[10px] font-medium text-foreground">
-                            {m.agent}
-                          </span>
-                        ) : null}
+                    <li key={m.id} className="group px-3 py-2">
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <span>{formatRelative(m.createdAt)}</span>
+                          {m.agent ? (
+                            <span className="rounded-sm bg-foreground/10 px-1.5 py-px text-[10px] font-medium text-foreground">
+                              {m.agent}
+                            </span>
+                          ) : null}
+                        </div>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                onClick={() => void handleDelete(m.id)}
+                                aria-label="Delete history item"
+                                className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            }
+                          />
+                          <TooltipContent>Delete history item</TooltipContent>
+                        </Tooltip>
                       </div>
                       <pre className="font-mono text-xs whitespace-pre-wrap break-words text-foreground">
                         {m.body}

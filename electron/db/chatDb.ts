@@ -5,6 +5,7 @@ import { createClient, type Client } from "@libsql/client"
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql"
 import { desc, eq } from "drizzle-orm"
 import { chatMessages } from "./schema"
+import { sanitizeChatHistoryBody } from "../redactSecrets"
 
 export type ChatHistoryMessage = {
   id: string
@@ -18,6 +19,10 @@ export type ChatHistoryMessage = {
 let client: Client | null = null
 let db: LibSQLDatabase | null = null
 let ready: Promise<void> | null = null
+
+function sanitizeMessage(msg: ChatHistoryMessage): ChatHistoryMessage {
+  return { ...msg, body: sanitizeChatHistoryBody(msg.body) }
+}
 
 async function ensureDb(): Promise<LibSQLDatabase> {
   if (db) return db
@@ -59,7 +64,7 @@ export async function appendMessage(
     id: randomUUID(),
     sessionId,
     projectId,
-    body,
+    body: sanitizeChatHistoryBody(body),
     agent,
     createdAt: Date.now(),
   }
@@ -78,7 +83,7 @@ export async function listForProject(
     .where(eq(chatMessages.projectId, projectId))
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit)
-  return rows
+  return rows.map(sanitizeMessage)
 }
 
 export async function listForSession(
@@ -90,7 +95,7 @@ export async function listForSession(
     .from(chatMessages)
     .where(eq(chatMessages.sessionId, sessionId))
     .orderBy(desc(chatMessages.createdAt))
-  return rows
+  return rows.map(sanitizeMessage)
 }
 
 export async function projectIdForSession(
@@ -103,6 +108,21 @@ export async function projectIdForSession(
     .where(eq(chatMessages.sessionId, sessionId))
     .limit(1)
   return rows[0]?.projectId ?? null
+}
+
+export async function deleteMessage(
+  id: string
+): Promise<ChatHistoryMessage | null> {
+  const handle = await ensureDb()
+  const rows = await handle
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.id, id))
+    .limit(1)
+  const msg = rows[0]
+  if (!msg) return null
+  await handle.delete(chatMessages).where(eq(chatMessages.id, id))
+  return sanitizeMessage(msg)
 }
 
 export async function clearForSession(sessionId: string): Promise<void> {

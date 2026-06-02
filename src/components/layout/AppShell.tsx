@@ -368,6 +368,17 @@ function promptPreview(body: string | null): string | null {
   return collapsed.length > 120 ? `${collapsed.slice(0, 119)}…` : collapsed
 }
 
+const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
+
+function writeAgentPrompt(sessionId: string, prompt: string): void {
+  const body = prompt.trim()
+  if (!body) return
+  window.term.write(sessionId, body)
+  window.setTimeout(() => {
+    window.term.write(sessionId, "\r")
+  }, AGENT_PROMPT_SUBMIT_DELAY_MS)
+}
+
 function playAgentCompleteSound() {
   const audio = new Audio(agentCompleteSoundUrl)
   audio.volume = 0.5
@@ -932,7 +943,7 @@ export function AppShell() {
         toast.error("Agent terminal is not running")
         return
       }
-      window.term.write(sessionId, `${loadAiCommitPrompt()}\r`)
+      writeAgentPrompt(sessionId, loadAiCommitPrompt())
     }, 120)
   }, [activeProjectId, lastAgentTerminals, navigateToProject])
 

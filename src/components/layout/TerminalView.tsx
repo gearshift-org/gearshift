@@ -34,6 +34,10 @@ import type { ChatHistoryMessage } from "../../../electron/preload"
 type Props = {
   sessionId: string
   isActive?: boolean
+  // Number of panes in this terminal tab. Changes when a split opens/closes;
+  // used to force an authoritative refit since the pane resizes without
+  // remounting. See the paneCount effect below.
+  paneCount?: number
   focusRequest?: number
   onTitleChange?: (title: string) => void
   onFocusChange?: (focused: boolean) => void
@@ -527,6 +531,7 @@ async function pasteClipboard(
 export function TerminalView({
   sessionId,
   isActive = true,
+  paneCount = 1,
   focusRequest,
   onTitleChange,
   onFocusChange,
@@ -538,6 +543,7 @@ export function TerminalView({
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const fitTerminalRef = useRef<(() => boolean) | null>(null)
+  const didInitialLayoutRef = useRef(false)
   const webglRef = useRef<WebglAddon | null>(null)
   const searchRef = useRef<SearchAddon | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -1425,6 +1431,26 @@ export function TerminalView({
       recoverTerminalRenderer(term)
     })
   }, [appearance.fontFamily, appearance.fontSize])
+
+  // Opening/closing a split resizes this pane WITHOUT remounting it (the split
+  // tree keeps the surviving terminal's React identity). The ResizeObserver
+  // live-fit defers the column reflow for alternate-screen TUIs and long
+  // scrollback, and its settle fit can land on an intermediate layout size, so
+  // the terminal can stay wrapped at the old width until the next manual
+  // resize. Force an authoritative full refit (columns + PTY sync) once the new
+  // layout settles. Retries cover react-resizable-panels' post-render reflow.
+  useEffect(() => {
+    if (!didInitialLayoutRef.current) {
+      didInitialLayoutRef.current = true
+      return
+    }
+    const timers = [0, 60, 180].map((delay) =>
+      window.setTimeout(() => {
+        requestAnimationFrame(() => fitTerminalRef.current?.())
+      }, delay)
+    )
+    return () => timers.forEach((t) => window.clearTimeout(t))
+  }, [paneCount])
 
   useEffect(() => {
     let cancelled = false

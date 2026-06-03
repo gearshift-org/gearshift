@@ -145,6 +145,7 @@ function TerminalPaneView({
       <TerminalView
         sessionId={pane.sessionId ?? pane.id}
         isActive={isTabActive && tab.activePaneId === pane.id}
+        paneCount={tab.panes.length}
         focusRequest={focusRequest}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
         onFocusChange={(focused) => onTerminalFocusChange?.(pane.id, focused)}

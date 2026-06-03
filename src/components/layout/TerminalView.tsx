@@ -1152,13 +1152,15 @@ export function TerminalView({
             term.resize(dims.cols, dims.rows)
           }
         }
+        const ptyCols = term.cols
+        const ptyRows = term.rows
         if (syncPty) {
-          sendPtyResize(dims.cols, dims.rows)
+          sendPtyResize(ptyCols, ptyRows)
         } else if (
           Date.now() - lastPtyResizeAt >=
           TERMINAL_PTY_RESIZE_THROTTLE_MS
         ) {
-          sendPtyResize(dims.cols, dims.rows)
+          sendPtyResize(ptyCols, ptyRows)
         } else {
           if (pendingPtyResizeTimer) window.clearTimeout(pendingPtyResizeTimer)
           pendingPtyResizeTimer = window.setTimeout(() => {

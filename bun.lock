@@ -1,5 +1,5 @@
 {
-  "lockfileVersion": 1,
+  "lockfileVersion": 2,
   "configVersion": 1,
   "workspaces": {
     "": {
@@ -47,7 +47,7 @@
         "@xterm/addon-fit": "0.12.0-beta.220",
         "@xterm/addon-search": "0.17.0-beta.220",
         "@xterm/addon-webgl": "0.20.0-beta.219",
-        "@xterm/xterm": "6.1.0-beta.220",
+        "@xterm/xterm": "6.1.0-beta.276",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cmdk": "^1.1.1",
@@ -728,7 +728,7 @@
 
     "@xterm/addon-webgl": ["@xterm/addon-webgl@0.20.0-beta.219", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.220" } }, "sha512-IaAcDDP0lhHIdYJuTFKZIMsRqlN8iR5U8lW9MiTK4mUAjettqZN2z/tkSsl4yV3GZ9/siOZofDl+GO1TK7y7ww=="],
 
-    "@xterm/xterm": ["@xterm/xterm@6.1.0-beta.220", "", {}, "sha512-rwEKE75wfwfNWeGnjl0iQRA1W50HigKoGcGMeF3o5CqDSdI9IjmwzpV9xHXqLH6CYj6s9N1g6bbKFVDou9dJ/A=="],
+    "@xterm/xterm": ["@xterm/xterm@6.1.0-beta.276", "", {}, "sha512-H+0HOgbtOnNZ8fO4L5V6U3Q8rNpBD40KhwiSM++BiD+ssOWzP/Q3iLZeczByoEU/6MbwPM6lk4e81hS7jfVWzA=="],
 
     "abbrev": ["abbrev@4.0.0", "", {}, "sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA=="],
 

@@ -18,6 +18,8 @@ const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
 const SIDEBAR_OVERLAY_TRANSITION_MS = 200
+const SIDEBAR_WIDTH_TRANSITION_MS = 200
+const TERMINAL_RESIZE_SETTLE_MS = 120
 
 function clampWidth(n: number): number {
   return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, n))
@@ -146,6 +148,17 @@ export function WorkspaceSplit({
       })
     }
   }, [activeProjectId, projects, queryClient])
+
+  // Treat open/close width animations like a sidebar resize drag. Terminals then
+  // ignore intermediate widths and send one PTY resize after the layout settles,
+  // which prevents full-screen agents from repainting at a transient skinny size.
+  useEffect(() => {
+    document.body.classList.add("gs-sidebar-resizing")
+    const id = window.setTimeout(() => {
+      if (!dragRef.current) document.body.classList.remove("gs-sidebar-resizing")
+    }, SIDEBAR_WIDTH_TRANSITION_MS + TERMINAL_RESIZE_SETTLE_MS + 50)
+    return () => window.clearTimeout(id)
+  }, [sidebarOpen])
 
   useEffect(() => {
     dragWidthRef.current = sidebarWidth

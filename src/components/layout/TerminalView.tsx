@@ -365,9 +365,12 @@ const HOOK_AUTHORITATIVE_WINDOW_MS = 30000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
-const TERMINAL_RESIZE_SETTLE_MS = 80
-const TERMINAL_RESIZE_DRAG_SETTLE_MS = 120
-const TERMINAL_OUTPUT_DRAG_SETTLE_MS = 80
+const TERMINAL_RESIZE_SETTLE_MS = 120
+const TERMINAL_PTY_RESIZE_THROTTLE_MS = 120
+// Scrollback line count past which a live (per-frame) column resize is deferred
+// to the settle fit, since reflowing a large buffer every frame is what makes
+// dragging janky. Matches VS Code's StartDebouncingThreshold.
+const COLUMN_REFLOW_DEBOUNCE_LINES = 200
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
 const RECAP_IDLE_DELAY_MS = 30000
@@ -1099,7 +1102,18 @@ export function TerminalView({
     // we avoid FitAddon's render clear, which can visibly blink during live
     // resize. Also ignore transient tiny widths from split-pane layout because
     // resizing xterm to 2 columns reflows the buffer into a vertical line.
-    const fitTerminal = () => {
+    let pendingPtyResizeTimer: number | undefined
+    let lastPtyResizeAt = 0
+    let lastPtyResizeCols = 0
+    let lastPtyResizeRows = 0
+    const sendPtyResize = (cols: number, rows: number) => {
+      if (lastPtyResizeCols === cols && lastPtyResizeRows === rows) return
+      lastPtyResizeAt = Date.now()
+      lastPtyResizeCols = cols
+      lastPtyResizeRows = rows
+      window.term.resize(sessionId, cols, rows)
+    }
+    const fitTerminal = (syncPty = true) => {
       try {
         const dims = fit.proposeDimensions()
         if (
@@ -1113,9 +1127,38 @@ export function TerminalView({
         }
         if (term.cols !== dims.cols || term.rows !== dims.rows) {
           if (!ensureTerminalRenderer(term)) return false
-          term.resize(dims.cols, dims.rows)
-          window.term.resize(sessionId, dims.cols, dims.rows)
-          refreshTerminalViewport(term)
+          // A column change reflows the entire scrollback buffer and is far more
+          // expensive than a row change. During a live drag (syncPty=false) with
+          // a large buffer, apply only the cheap row change now and defer the
+          // column reflow to the settle fit, so dragging the sidebar/split stays
+          // smooth instead of reflowing thousands of lines every frame. Mirrors
+          // VS Code's TerminalResizeDebouncer. Small buffers reflow immediately.
+          // A running full-screen TUI (Claude Code, Codex, …) uses the alternate
+          // screen buffer, where the normal-buffer length stays small but every
+          // resize forces the agent to repaint its whole screen — just as costly
+          // to do per frame as a large-buffer reflow. Treat both as "deferrable".
+          const deferColumn =
+            term.buffer.active.type === "alternate" ||
+            term.buffer.normal.length >= COLUMN_REFLOW_DEBOUNCE_LINES
+          if (!syncPty && deferColumn && term.cols !== dims.cols) {
+            if (term.rows !== dims.rows) term.resize(term.cols, dims.rows)
+          } else {
+            term.resize(dims.cols, dims.rows)
+          }
+        }
+        if (syncPty) {
+          sendPtyResize(dims.cols, dims.rows)
+        } else if (
+          Date.now() - lastPtyResizeAt >=
+          TERMINAL_PTY_RESIZE_THROTTLE_MS
+        ) {
+          sendPtyResize(dims.cols, dims.rows)
+        } else {
+          if (pendingPtyResizeTimer) window.clearTimeout(pendingPtyResizeTimer)
+          pendingPtyResizeTimer = window.setTimeout(() => {
+            pendingPtyResizeTimer = undefined
+            sendPtyResize(term.cols, term.rows)
+          }, TERMINAL_PTY_RESIZE_THROTTLE_MS)
         }
         return true
       } catch {
@@ -1151,18 +1194,9 @@ export function TerminalView({
     let offData: (() => void) | null = null
     let pendingLiveData = ""
     let liveDataRaf: number | undefined
-    let liveDataTimer: number | undefined
     const flushLiveData = () => {
       liveDataRaf = undefined
       if (!pendingLiveData) return
-      if (document.body.classList.contains("gs-sidebar-resizing")) {
-        if (liveDataTimer) window.clearTimeout(liveDataTimer)
-        liveDataTimer = window.setTimeout(
-          flushLiveData,
-          TERMINAL_OUTPUT_DRAG_SETTLE_MS
-        )
-        return
-      }
       const chunk = pendingLiveData
       pendingLiveData = ""
       term.write(chunk)
@@ -1251,31 +1285,38 @@ export function TerminalView({
       markAgentWorking()
     })
 
-    // Debounce + rAF: ResizeObserver can fire many times per frame while a
-    // window or split-pane handle is dragged. Wait briefly for layout to settle
-    // so adding a split does not reflow the existing terminal through several
-    // intermediate widths.
+    // ResizeObserver can fire many times per frame while a window, split-pane,
+    // or sidebar handle is dragged. Fit the visible xterm once per frame so the
+    // terminal stays live, then send PTY resize messages at a lower rate.
     let resizeTimer: number | undefined
     let rafId: number | undefined
-    const scheduleFit = () => {
-      if (document.body.classList.contains("gs-sidebar-resizing")) {
-        if (resizeTimer) window.clearTimeout(resizeTimer)
-        resizeTimer = window.setTimeout(
-          scheduleFit,
-          TERMINAL_RESIZE_DRAG_SETTLE_MS
-        )
-        return
-      }
-      if (rafId) cancelAnimationFrame(rafId)
+    let pendingSyncPty = false
+    const scheduleFit = (syncPty = false) => {
+      pendingSyncPty ||= syncPty
+      if (rafId) return
       rafId = requestAnimationFrame(() => {
+        const shouldSyncPty = pendingSyncPty
+        rafId = undefined
+        pendingSyncPty = false
         suppressAgentActivityUntilRef.current =
           Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
-        fitTerminal()
+        fitTerminal(shouldSyncPty)
       })
     }
     const ro = new ResizeObserver(() => {
+      // During an active sidebar drag, skip the per-frame fit. proposeDimensions
+      // forces a synchronous layout read every frame right after the drag
+      // mutates the sidebar width — that thrash, on top of a busy agent's
+      // rendering, is what makes dragging janky. The settle fit below runs once
+      // the drag pauses. Other resizes (window, splits) keep the live fit.
+      if (!document.body.classList.contains("gs-sidebar-resizing")) {
+        scheduleFit(false)
+      }
       if (resizeTimer) window.clearTimeout(resizeTimer)
-      resizeTimer = window.setTimeout(scheduleFit, TERMINAL_RESIZE_SETTLE_MS)
+      resizeTimer = window.setTimeout(
+        () => scheduleFit(true),
+        TERMINAL_RESIZE_SETTLE_MS
+      )
     })
     ro.observe(container)
 
@@ -1322,8 +1363,8 @@ export function TerminalView({
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
       if (resizeTimer) window.clearTimeout(resizeTimer)
+      if (pendingPtyResizeTimer) window.clearTimeout(pendingPtyResizeTimer)
       if (liveDataRaf !== undefined) cancelAnimationFrame(liveDataRaf)
-      if (liveDataTimer !== undefined) window.clearTimeout(liveDataTimer)
       for (const timer of startupFitTimers) window.clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
       if (agentWorkingTimerRef.current) {

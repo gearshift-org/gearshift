@@ -208,6 +208,23 @@ function paneHasActiveAgent(pane: TerminalPane): boolean {
   )
 }
 
+function agentStatusesEqual(
+  a: TerminalAgentStatus | undefined,
+  b: TerminalAgentStatus | undefined
+): boolean {
+  return (
+    a?.running === b?.running &&
+    a?.working === b?.working &&
+    a?.agentName === b?.agentName &&
+    a?.workStartedAt === b?.workStartedAt &&
+    a?.completedAt === b?.completedAt &&
+    a?.completed === b?.completed &&
+    a?.needsAttention === b?.needsAttention &&
+    a?.agentSessionId === b?.agentSessionId &&
+    a?.agentSessionTitle === b?.agentSessionTitle
+  )
+}
+
 function findProjectAgentTerminal(
   project: Project | undefined,
   remembered: LastAgentTerminal | null
@@ -2095,7 +2112,6 @@ export function AppShell() {
   ) => {
     const key = `${tabId}:${paneId}`
     const previousStatus = terminalAgentStatusRef.current.get(key)
-    terminalAgentStatusRef.current.set(key, status)
 
     const targetProject = projects.find((p) =>
       p.tabs.some((t) => t.id === tabId)
@@ -2105,14 +2121,16 @@ export function AppShell() {
       targetTab?.kind === "terminal"
         ? targetTab.panes.find((pp) => pp.id === paneId)
         : undefined
+    const currentStatus = previousStatus ?? fallbackPane?.agentStatus
+    if (agentStatusesEqual(currentStatus, status)) return
+
+    terminalAgentStatusRef.current.set(key, status)
     const wasWorking =
-      previousStatus?.working ?? fallbackPane?.agentStatus?.working ?? false
+      currentStatus?.working ?? false
     const finishedWork =
       wasWorking && !status.working && status.completed === true
     const wasNeedsAttention =
-      previousStatus?.needsAttention ??
-      fallbackPane?.agentStatus?.needsAttention ??
-      false
+      currentStatus?.needsAttention ?? false
     const becameNeedsAttention =
       !wasNeedsAttention && status.needsAttention === true
     const appVisibleAndFocused = isAppVisibleAndFocused()

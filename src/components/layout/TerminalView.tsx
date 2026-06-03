@@ -366,6 +366,8 @@ const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
 const TERMINAL_RESIZE_SETTLE_MS = 80
+const TERMINAL_RESIZE_DRAG_SETTLE_MS = 120
+const TERMINAL_OUTPUT_DRAG_SETTLE_MS = 80
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
 const RECAP_IDLE_DELAY_MS = 30000
@@ -584,6 +586,7 @@ export function TerminalView({
     resultCount: 0,
   })
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const showScrollToBottomRef = useRef(false)
   const [recap, setRecap] = useState<{
     message: ChatHistoryMessage | null
     kind: "completed" | "needs_attention"
@@ -814,7 +817,11 @@ export function TerminalView({
 
     const scrollSub = term.onScroll(() => {
       const buf = term.buffer.active
-      setShowScrollToBottom(buf.viewportY < buf.baseY)
+      const next = buf.viewportY < buf.baseY
+      if (showScrollToBottomRef.current !== next) {
+        showScrollToBottomRef.current = next
+        setShowScrollToBottom(next)
+      }
     })
 
     const onTerminalFocusIn = () => onFocusChangeRef.current?.(true)
@@ -1142,7 +1149,22 @@ export function TerminalView({
     // snapshot() drops its pendingData buffer so the post-snapshot subscribe
     // only receives bytes that arrived after the snapshot was taken.
     let offData: (() => void) | null = null
-    const onDataChunk = (chunk: string) => {
+    let pendingLiveData = ""
+    let liveDataRaf: number | undefined
+    let liveDataTimer: number | undefined
+    const flushLiveData = () => {
+      liveDataRaf = undefined
+      if (!pendingLiveData) return
+      if (document.body.classList.contains("gs-sidebar-resizing")) {
+        if (liveDataTimer) window.clearTimeout(liveDataTimer)
+        liveDataTimer = window.setTimeout(
+          flushLiveData,
+          TERMINAL_OUTPUT_DRAG_SETTLE_MS
+        )
+        return
+      }
+      const chunk = pendingLiveData
+      pendingLiveData = ""
       term.write(chunk)
       const current = agentStatusRef.current
       if (
@@ -1151,6 +1173,12 @@ export function TerminalView({
         OUTPUT_ACTIVITY_AGENTS.has(current.agentName)
       ) {
         markAgentWorking()
+      }
+    }
+    const onDataChunk = (chunk: string) => {
+      pendingLiveData += chunk
+      if (liveDataRaf === undefined) {
+        liveDataRaf = requestAnimationFrame(flushLiveData)
       }
     }
     void window.term.snapshot(sessionId).then((snap) => {
@@ -1230,15 +1258,19 @@ export function TerminalView({
     let resizeTimer: number | undefined
     let rafId: number | undefined
     const scheduleFit = () => {
+      if (document.body.classList.contains("gs-sidebar-resizing")) {
+        if (resizeTimer) window.clearTimeout(resizeTimer)
+        resizeTimer = window.setTimeout(
+          scheduleFit,
+          TERMINAL_RESIZE_DRAG_SETTLE_MS
+        )
+        return
+      }
       if (rafId) cancelAnimationFrame(rafId)
       rafId = requestAnimationFrame(() => {
         suppressAgentActivityUntilRef.current =
           Date.now() + RESIZE_ACTIVITY_SUPPRESS_MS
         fitTerminal()
-        // A resize keeps glyph metrics valid, so just repaint in place; the
-        // WebGL renderer handles its own atlas across resizes and DPR changes.
-        const term = termRef.current
-        if (term) refreshTerminalViewport(term)
       })
     }
     const ro = new ResizeObserver(() => {
@@ -1290,6 +1322,8 @@ export function TerminalView({
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
       if (resizeTimer) window.clearTimeout(resizeTimer)
+      if (liveDataRaf !== undefined) cancelAnimationFrame(liveDataRaf)
+      if (liveDataTimer !== undefined) window.clearTimeout(liveDataTimer)
       for (const timer of startupFitTimers) window.clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
       if (agentWorkingTimerRef.current) {

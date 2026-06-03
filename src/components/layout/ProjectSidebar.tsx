@@ -151,6 +151,7 @@ function ProjectSidebarRow({
           isActive
             ? "bg-sidebar-accent text-foreground"
             : "text-foreground hover:bg-sidebar-accent/70",
+          hasWorkingAgent && "gs-agent-project-scan",
           isDragging && "opacity-80 shadow-lg"
         )}
         {...attributes}

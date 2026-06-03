@@ -187,6 +187,7 @@ export function WorkspaceSplit({
       setIsDragging(false)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+      document.body.classList.remove("gs-sidebar-resizing")
     }
     window.addEventListener("mousemove", onMove)
     window.addEventListener("mouseup", onUp)
@@ -198,6 +199,7 @@ export function WorkspaceSplit({
       }
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+      document.body.classList.remove("gs-sidebar-resizing")
     }
   }, [])
 
@@ -210,6 +212,7 @@ export function WorkspaceSplit({
     setIsDragging(true)
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
+    document.body.classList.add("gs-sidebar-resizing")
   }
 
   const activeProjectHasTabs = !!activeProject?.tabs.length

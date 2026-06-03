@@ -27,7 +27,7 @@ export function AgentSpinner({
       aria-label={label}
       title={label}
       className={cn(
-        "gs-agent-spinner inline-grid size-4 shrink-0 place-items-center rounded-[5px] font-mono text-[13px] leading-none",
+        "gs-agent-spinner inline-grid size-[18px] shrink-0 place-items-center rounded-[5px] font-mono text-sm leading-none",
         className,
       )}
     >

@@ -830,9 +830,9 @@
 }
 
 .gs-agent-spinner {
-  --agent-spinner: #ffb224;
+  --agent-spinner: var(--ring);
   color: var(--agent-spinner);
-  text-shadow: 0 0 6px color-mix(in srgb, var(--agent-spinner) 65%, transparent);
+  filter: brightness(1.35) saturate(1.2);
 }
 
 @keyframes gs-agent-header-scan {
@@ -842,6 +842,18 @@
 
   100% {
     transform: translateX(230%);
+  }
+}
+
+@property --gs-agent-project-scan-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes gs-agent-project-scan {
+  100% {
+    --gs-agent-project-scan-angle: 360deg;
   }
 }
 
@@ -861,9 +873,44 @@
   animation: gs-agent-header-scan 0.9s linear infinite;
 }
 
+.gs-agent-project-scan::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--gs-agent-project-scan-angle),
+    transparent 0deg,
+    transparent 245deg,
+    color-mix(in srgb, var(--ring) 45%, transparent) 285deg,
+    var(--ring) 310deg,
+    color-mix(in srgb, var(--ring) 65%, transparent) 335deg,
+    transparent 360deg
+  );
+  box-shadow: 0 0 14px color-mix(in srgb, var(--ring) 45%, transparent);
+  filter: brightness(1.25) saturate(1.15);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: gs-agent-project-scan 1.1s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gs-agent-spinner,
-  .gs-agent-header-scan {
+  .gs-agent-header-scan,
+  .gs-agent-project-scan::before {
     animation: none;
   }
+}
+
+body.gs-sidebar-resizing .gs-agent-header-scan,
+body.gs-sidebar-resizing .gs-agent-project-scan::before {
+  animation-play-state: paused;
 }

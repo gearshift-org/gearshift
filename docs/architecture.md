@@ -74,3 +74,13 @@ Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering
 ## GitHub Pull Requests
 
 The changes panel shows pull request status beside the branch picker when the GitHub CLI is installed and available. GearShift checks the current branch with `gh pr list`; if an open pull request exists, it opens that PR. If no PR exists and the branch is pushed upstream, GearShift opens GitHub's pull request creation page.
+
+## PTY daemon & terminating sessions
+
+Terminals are owned by a detached `pty-daemon` (`electron/pty-daemon/server.ts`) that outlives the app window so sessions survive reloads. Each session is a `node-pty` PTY whose master fd is only released when node-pty fires `onExit`, which only happens once the **slave side hits EOF** — i.e. once every process holding the PTY open has died.
+
+**Why sessions must be killed by process group:** node-pty's `pty.kill()` only signals the shell (`this.pid`). But coding agents spawn long-lived children (MCP servers, etc.) in the same process group. Signalling the shell alone leaves those children alive, the slave never EOFs, `onExit` never fires, and **the master fd leaks**. Enough leaked fds exhaust the system PTY table (`kern.tty.ptmx_max`, 511 on macOS) and every app — not just GearShift — then fails to allocate a PTY ("cannot allocate pty device").
+
+`terminateSession` is the single teardown path used by tab-close, the 24h idle sweep, and daemon shutdown. node-pty calls `setsid`, so the shell's pid is the process-group leader; we signal the whole group with `process.kill(-pid, "SIGHUP")`, then `SIGKILL` as a fallback after a short grace if the session hasn't exited. **Never replace this with a bare `pty.kill()`** — that reintroduces the fd leak.
+
+To diagnose a suspected leak: `lsof | grep -c ptmx` (count held PTY master fds) vs. the number of live shells. A large gap means fds are leaking; restarting the daemon frees them immediately.

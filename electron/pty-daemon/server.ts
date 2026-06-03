@@ -19,6 +19,9 @@ const DEFAULT_BUFFER_CAP = 256 * 1024
 const SESSION_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000
 const IDLE_SWEEP_INTERVAL_MS = 5 * 60 * 1000
 
+// Grace between SIGHUP and the SIGKILL fallback when terminating a session.
+const KILL_GRACE_MS = 2_000
+
 interface Session {
   id: string
   pty: IPty
@@ -96,11 +99,7 @@ export class Server {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
     for (const session of this.sessions.values()) {
-      try {
-        session.pty.kill()
-      } catch {
-        // already dead
-      }
+      this.terminateSession(session)
     }
     this.sessions.clear()
     try {
@@ -139,11 +138,7 @@ export class Server {
           process.stderr.write(
             `[pty-daemon] session ${session.id} idle >24h, killing\n`,
           )
-          try {
-            session.pty.kill()
-          } catch {
-            // exit event will follow if it was alive; otherwise nothing to do.
-          }
+          this.terminateSession(session)
         }
       }
     }
@@ -348,11 +343,38 @@ export class Server {
   private handleClose(msg: Extract<ClientMessage, { type: "close" }>): void {
     const session = this.sessions.get(msg.sessionId)
     if (!session) return
+    this.terminateSession(session)
+  }
+
+  // Tear a session down so its PTY master fd is actually released. The shell
+  // is a session/process-group leader (node-pty calls setsid), so we signal
+  // the whole group — otherwise lingering grandchildren (e.g. MCP servers
+  // spawned by the shell) keep the slave open, the master never EOFs, node-pty
+  // never fires onExit, and the master fd leaks until the daemon dies. Past
+  // leaks like this exhausted the system PTY table (kern.tty.ptmx_max).
+  private terminateSession(session: Session): void {
+    const pid = session.pty.pid
+    const signalGroup = (signal: NodeJS.Signals) => {
+      try {
+        process.kill(-pid, signal) // negative pid → whole process group
+      } catch {
+        // group already gone
+      }
+    }
+    signalGroup("SIGHUP")
     try {
-      session.pty.kill()
+      session.pty.kill() // let node-pty tear down its own socket/streams too
     } catch {
       // already dead
     }
+    // Fallback: if the group ignored SIGHUP and onExit hasn't removed the
+    // session yet, force it. Unref so a pending timer can't hold the daemon.
+    const timer = setTimeout(() => {
+      if (this.sessions.has(session.id)) {
+        signalGroup("SIGKILL")
+      }
+    }, KILL_GRACE_MS)
+    timer.unref()
   }
 
   private appendToRing(session: Session, chunk: string): void {

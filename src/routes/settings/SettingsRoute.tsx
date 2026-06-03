@@ -1,25 +1,33 @@
 import * as React from "react"
-import { X, Keyboard, Palette, SlidersHorizontal } from "lucide-react"
+import { useRouterState } from "@tanstack/react-router"
+import { X, Bot, Keyboard, Palette, SlidersHorizontal } from "lucide-react"
 import { router } from "@/router"
 import { cn } from "@/lib/utils"
 import { KeybindingsPanel } from "./KeybindingsPanel"
 import { AppearancePanel } from "./AppearancePanel"
 import { GeneralPanel } from "./GeneralPanel"
-
-type Section = "general" | "keybindings" | "appearance"
+import { AgentsPanel } from "./AgentsPanel"
+import {
+  parseSettingsSection,
+  type SettingsSection,
+} from "./settingsSections"
 
 const SECTIONS: {
-  id: Section
+  id: SettingsSection
   label: string
   icon: React.ComponentType<{ className?: string }>
 }[] = [
   { id: "general", label: "General", icon: SlidersHorizontal },
+  { id: "agents", label: "Agents", icon: Bot },
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
   { id: "appearance", label: "Appearance", icon: Palette },
 ]
 
 export function SettingsRoute() {
-  const [section, setSection] = React.useState<Section>("general")
+  const searchSection = useRouterState({
+    select: (state) => parseSettingsSection(state.location.search.section),
+  })
+  const [section, setSection] = React.useState<SettingsSection>(searchSection)
 
   const close = React.useCallback(() => {
     const idx = router.history.length
@@ -81,6 +89,7 @@ export function SettingsRoute() {
         <main className="min-w-0 flex-1 overflow-auto p-6">
           <div className="mx-auto max-w-3xl">
             {section === "general" ? <GeneralPanel /> : null}
+            {section === "agents" ? <AgentsPanel /> : null}
             {section === "keybindings" ? <KeybindingsPanel /> : null}
             {section === "appearance" ? <AppearancePanel /> : null}
           </div>

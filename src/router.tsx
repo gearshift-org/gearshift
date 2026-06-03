@@ -7,6 +7,10 @@ import {
 } from "@tanstack/react-router"
 import { AppShell } from "./components/layout/AppShell"
 import { SettingsRoute } from "./routes/settings/SettingsRoute"
+import {
+  parseSettingsSection,
+  type SettingsSection,
+} from "./routes/settings/settingsSections"
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -44,6 +48,9 @@ const tabRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
+  validateSearch: (search): { section?: SettingsSection } => ({
+    section: parseSettingsSection(search.section),
+  }),
   component: SettingsRoute,
 })
 

@@ -77,6 +77,10 @@ import {
   type StoredProject,
 } from "@/lib/projects"
 import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
+import {
+  AGENT_TERMINAL_LABELS,
+  getAgentTerminalOptions,
+} from "@/lib/agentTerminalOptions"
 import { store } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -160,13 +164,6 @@ const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   gemini: "gemini",
 }
 const APP_TITLE = "GearShift"
-const AGENT_TERMINAL_LABELS: Record<TerminalAgentName, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  opencode: "OpenCode",
-  pi: "Pi",
-  gemini: "Gemini",
-}
 
 function lastAgentTerminalFromPane(
   project: Project,
@@ -1562,7 +1559,10 @@ export function AppShell() {
       sessionId: paneId,
     })
     if (agentName) {
-      window.term.write(paneId, `${AGENT_TERMINAL_COMMANDS[agentName]}\r`)
+      const baseCommand = AGENT_TERMINAL_COMMANDS[agentName]
+      const options = getAgentTerminalOptions(agentName)
+      const command = options ? `${baseCommand} ${options}` : baseCommand
+      window.term.write(paneId, `${command}\r`)
     }
   }
 
@@ -2876,6 +2876,12 @@ export function AppShell() {
                   openingTabId={openingTerminalTabId}
                   onSelect={selectTab}
                   onAdd={addTerminal}
+                  onConfigureAgents={() =>
+                    void navigate({
+                      to: "/settings",
+                      search: { section: "agents" },
+                    })
+                  }
                   onClose={closeTab}
                   onCloseAll={closeAllTabs}
                   onCloseOthers={closeOtherTabs}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { FileDiff, Plus, TerminalSquare, X } from "lucide-react"
+import { FileDiff, Plus, Settings, TerminalSquare, X } from "lucide-react"
 import { FileIcon } from "@/components/icons/FileIcon"
 import {
   DndContext,
@@ -28,6 +28,10 @@ import {
   useTabOpenAnimation,
 } from "./tabSizing"
 import { displayName, tabDisplayName } from "./terminalName"
+import {
+  AGENT_TERMINAL_LABELS,
+  AGENT_TERMINAL_NAMES,
+} from "@/lib/agentTerminalOptions"
 import type {
   TerminalAgentName,
   TerminalPane,
@@ -61,6 +65,7 @@ type Props = {
   openingTabId?: string | null
   onSelect: (id: string) => void
   onAdd: (agentName?: TerminalAgentName) => void
+  onConfigureAgents?: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
   onCloseOthers?: (id: string) => void
@@ -79,16 +84,10 @@ type Props = {
   draggable?: boolean
 }
 
-const AGENT_TERMINAL_OPTIONS: Array<{
-  value: TerminalAgentName
-  label: string
-}> = [
-  { value: "claude", label: "Claude" },
-  { value: "codex", label: "Codex" },
-  { value: "opencode", label: "OpenCode" },
-  { value: "pi", label: "Pi" },
-  { value: "gemini", label: "Gemini" },
-]
+const AGENT_TERMINAL_OPTIONS = AGENT_TERMINAL_NAMES.map((agentName) => ({
+  value: agentName,
+  label: AGENT_TERMINAL_LABELS[agentName],
+}))
 
 type TabItemProps = {
   tab: WorkspaceTab
@@ -343,6 +342,7 @@ export function WorkspaceTabBar({
   openingTabId = null,
   onSelect,
   onAdd,
+  onConfigureAgents,
   onClose,
   onCloseAll,
   onCloseOthers,
@@ -484,6 +484,18 @@ export function WorkspaceTabBar({
                 {agent.label}
               </DropdownMenuItem>
             ))}
+            {onConfigureAgents ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="gap-2"
+                  onClick={onConfigureAgents}
+                >
+                  <Settings className="size-3.5" />
+                  Configure agents…
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

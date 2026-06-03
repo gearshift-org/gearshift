@@ -453,38 +453,54 @@ function TerminalTabContent({
   // Walk the split tree into nested ResizablePanelGroups. Each split node maps
   // to one group; leaves render the pane. react-resizable-panels keeps each
   // panel's drag size while mounted, keyed by its stable nodeKey.
+  const renderGroup = (
+    children: TerminalLayout[],
+    orientation: "horizontal" | "vertical",
+    splitKey: string,
+    sizes: number[] | undefined
+  ): ReactNode => (
+    <ResizablePanelGroup
+      orientation={orientation}
+      className="min-h-0 flex-1"
+      onLayoutChanged={(sizesById) => {
+        const next = children.map(
+          (child, idx) =>
+            sizesById[nodeKey(child)] ?? sizes?.[idx] ?? 100 / children.length
+        )
+        onLayoutChange?.(tab.id, updateSplitSizes(layout, splitKey, next))
+      }}
+    >
+      {children.map((child, idx) => (
+        <Fragment key={nodeKey(child)}>
+          {idx > 0 && <ResizableHandle />}
+          <ResizablePanel
+            id={nodeKey(child)}
+            minSize={10}
+            defaultSize={sizes?.[idx] ?? 100 / children.length}
+          >
+            {renderNode(child)}
+          </ResizablePanel>
+        </Fragment>
+      ))}
+    </ResizablePanelGroup>
+  )
+
   const renderNode = (node: TerminalLayout): ReactNode => {
     if (node.type === "leaf") return renderLeaf(node.paneId)
-    const splitKey = nodeKey(node)
-    return (
-      <ResizablePanelGroup
-        orientation={node.direction}
-        className="min-h-0 flex-1"
-        onLayoutChanged={(sizesById) => {
-          const sizes = node.children.map(
-            (child, idx) =>
-              sizesById[nodeKey(child)] ??
-              node.sizes?.[idx] ??
-              100 / node.children.length
-          )
-          onLayoutChange?.(tab.id, updateSplitSizes(layout, splitKey, sizes))
-        }}
-      >
-        {node.children.map((child, idx) => (
-          <Fragment key={nodeKey(child)}>
-            {idx > 0 && <ResizableHandle />}
-            <ResizablePanel
-              id={nodeKey(child)}
-              minSize={10}
-              defaultSize={node.sizes?.[idx] ?? 100 / node.children.length}
-            >
-              {renderNode(child)}
-            </ResizablePanel>
-          </Fragment>
-        ))}
-      </ResizablePanelGroup>
-    )
+    return renderGroup(node.children, node.direction, nodeKey(node), node.sizes)
   }
+
+  // Always render the root through a ResizablePanelGroup, even for a single
+  // pane (a one-panel group with no handle). Splitting the only pane then just
+  // ADDS a panel to the existing group instead of swapping a bare leaf for a
+  // brand-new group — so the surviving terminal keeps its React identity and
+  // simply resizes, rather than unmounting + recreating + replaying its
+  // scrollback into a fresh, briefly mis-sized xterm (the "compress, then
+  // settle" glitch). See TerminalView's remount note.
+  const renderRoot = (node: TerminalLayout): ReactNode =>
+    node.type === "leaf"
+      ? renderGroup([node], "horizontal", nodeKey(node), undefined)
+      : renderNode(node)
 
   return (
     <DndContext
@@ -500,7 +516,7 @@ function TerminalTabContent({
     >
       {/* Drag a pane's header onto any other pane to swap their positions
           (handled in AppShell.reorderPanes via swapLeaves). */}
-      <div className="flex h-full flex-col">{renderNode(layout)}</div>
+      <div className="flex h-full flex-col">{renderRoot(layout)}</div>
       {tabBarDropRect ? (
         <div
           className="pointer-events-none fixed z-[250] bg-foreground/10 ring-2 ring-foreground/40 ring-inset"

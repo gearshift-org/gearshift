@@ -832,10 +832,7 @@
 .gs-agent-spinner {
   --agent-spinner: #ffb224;
   color: var(--agent-spinner);
-  background: color-mix(in srgb, var(--agent-spinner) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--agent-spinner) 78%, transparent);
   text-shadow: 0 0 6px color-mix(in srgb, var(--agent-spinner) 65%, transparent);
-  animation: gs-agent-spinner-aura 1.4s ease-in-out infinite;
 }
 
 @keyframes gs-agent-header-scan {

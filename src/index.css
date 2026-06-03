@@ -849,14 +849,15 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    color-mix(in srgb, var(--agent-spinner, #ffb224) 70%, transparent) 20%,
-    #ffd36a 50%,
-    color-mix(in srgb, var(--agent-spinner, #ffb224) 70%, transparent) 80%,
+    color-mix(in srgb, var(--ring) 70%, transparent) 20%,
+    var(--ring) 50%,
+    color-mix(in srgb, var(--ring) 70%, transparent) 80%,
     transparent 100%
   );
   box-shadow:
-    0 0 10px color-mix(in srgb, var(--agent-spinner, #ffb224) 85%, transparent),
-    0 0 18px color-mix(in srgb, var(--agent-spinner, #ffb224) 55%, transparent);
+    0 0 12px color-mix(in srgb, var(--ring) 95%, transparent),
+    0 0 22px color-mix(in srgb, var(--ring) 70%, transparent);
+  filter: brightness(1.25) saturate(1.15);
   animation: gs-agent-header-scan 0.9s linear infinite;
 }
 

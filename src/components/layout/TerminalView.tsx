@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react"
 import { ChevronDown, ChevronUp, GitCommitVertical, X } from "lucide-react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { SearchAddon } from "@xterm/addon-search"
@@ -399,6 +399,7 @@ const OUTPUT_ACTIVITY_AGENTS = new Set(["gemini"])
 // Delay between writing a prompt and the Enter that submits it, so the agent's
 // input box registers the full text first. Mirrors AppShell's writeAgentPrompt.
 const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
+const COMMIT_STATUS_CHECK_DELAY_MS = 200
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
 const KITTY_IMAGE_MIME_BY_FORMAT: Record<string, string> = {
@@ -604,6 +605,7 @@ export function TerminalView({
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(!!initialAgentStatus?.working)
   const recapTimerRef = useRef<number | undefined>(undefined)
+  const commitCheckTimerRef = useRef<number | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
 
@@ -626,7 +628,13 @@ export function TerminalView({
     "hidden"
   )
   const [committing, setCommitting] = useState(false)
+  const commitDismissedRef = useRef(false)
   const queryClient = useQueryClient()
+  const { data: gitData } = useQuery({
+    queryKey: gitQueryKey(cwd ?? null),
+    queryFn: () => fetchGitQueryData(cwd!),
+    enabled: !!cwd,
+  })
   const cwdRef = useRef(cwd)
   useEffect(() => {
     cwdRef.current = cwd
@@ -738,6 +746,7 @@ export function TerminalView({
 
   // Animate out, then unmount once the exit animation finishes (onAnimationEnd).
   const dismissCommit = useCallback(() => {
+    commitDismissedRef.current = true
     setCommitUi((s) => (s === "open" ? "closing" : s))
   }, [])
 
@@ -748,22 +757,40 @@ export function TerminalView({
   const maybeShowCommit = useCallback(() => {
     const dir = cwdRef.current
     if (!dir) return
-    void queryClient
-      .fetchQuery({
-        queryKey: gitQueryKey(dir),
-        queryFn: () => fetchGitQueryData(dir),
-      })
-      .then((data) => {
-        if (cwdRef.current !== dir) return
-        if (data.files.length > 0) setCommitUi("open")
-      })
-      .catch(() => {
-        // Not a repo / git error — just don't offer the affordance.
-      })
+    if (commitCheckTimerRef.current) {
+      window.clearTimeout(commitCheckTimerRef.current)
+    }
+    commitCheckTimerRef.current = window.setTimeout(() => {
+      commitCheckTimerRef.current = undefined
+      void queryClient
+        .fetchQuery({
+          queryKey: gitQueryKey(dir),
+          queryFn: () => fetchGitQueryData(dir),
+        })
+        .then((data) => {
+          if (cwdRef.current !== dir) return
+          if (data.files.length > 0) {
+            commitDismissedRef.current = false
+            setCommitUi("open")
+          }
+        })
+        .catch(() => {
+          // Not a repo / git error — just don't offer the affordance.
+        })
+    }, COMMIT_STATUS_CHECK_DELAY_MS)
   }, [queryClient])
 
   // Same action as the sidebar's "Commit with AI": send the configured commit
   // prompt to this pane's agent and let it commit. Submitting clears the button.
+  useEffect(() => {
+    if (!gitData) return
+    if (gitData.files.length === 0) {
+      setCommitUi((s) => (s === "open" ? "closing" : s))
+      return
+    }
+    if (!commitDismissedRef.current) setCommitUi("open")
+  }, [gitData])
+
   const commitChanges = useCallback(() => {
     const prompt = loadAiCommitPrompt().trim()
     if (!prompt) return
@@ -1465,6 +1492,10 @@ export function TerminalView({
       if (recapTimerRef.current) {
         window.clearTimeout(recapTimerRef.current)
         recapTimerRef.current = undefined
+      }
+      if (commitCheckTimerRef.current) {
+        window.clearTimeout(commitCheckTimerRef.current)
+        commitCheckTimerRef.current = undefined
       }
       offData?.()
       offExit()

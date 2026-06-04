@@ -380,7 +380,15 @@ const COLUMN_REFLOW_DEBOUNCE_LINES = 200
 const RECAP_IDLE_DELAY_MS = 30000
 // Recap box temporarily disabled; keep the code path intact for easy restore.
 const TERMINAL_RECAP_BOX_ENABLED = false
-const OUTPUT_ACTIVITY_AGENTS = new Set(["opencode", "pi", "gemini"])
+// Agents with authoritative lifecycle hooks (start/stop via the agent socket).
+// Their busy state is driven entirely by those hook events, so the title- and
+// output-activity heuristics must NOT mark them working — otherwise plain UI
+// interactions that repaint the TUI (opening the model picker, selecting a
+// model) get misread as work and stick a false busy dot on the pane.
+const HOOK_BACKED_AGENTS = new Set(["claude", "codex", "opencode", "pi"])
+// Hookless agents fall back to "terminal produced output while running" as a
+// busy signal. Keep this to agents that have no hooks (Gemini, plain shells).
+const OUTPUT_ACTIVITY_AGENTS = new Set(["gemini"])
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
 const KITTY_IMAGE_MIME_BY_FORMAT: Record<string, string> = {
@@ -1289,6 +1297,14 @@ export function TerminalView({
         }
         return
       }
+
+      // Hook-backed agents (OpenCode, Codex, pi) get authoritative start/stop
+      // events from their lifecycle hooks, so busy state is already covered.
+      // Their TUI title carries a static leading glyph that repaints on every
+      // UI interaction (opening the model picker, selecting a model), which
+      // would otherwise be misread as work. Only hookless agents (Gemini, plain
+      // shells) need the title-presence fallback.
+      if (HOOK_BACKED_AGENTS.has(current.agentName)) return
 
       markAgentWorking()
     })

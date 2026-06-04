@@ -428,6 +428,7 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
   let currentState = "idle"   // "idle" | "busy"
   let rootSessionID = null    // first busy session id
   let stopSent = false
+  let skipNextIdle = false
   const cancelledSessions = new Set()
   const childSessionCache = new Map() // sessionID -> boolean isChild
 
@@ -465,6 +466,28 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
     }
   }
 
+  const isSlashCommand = async (sessionID) => {
+    try {
+      const result = await client.session.messages({
+        path: { id: sessionID },
+        query: { limit: 1 },
+      })
+      const messages = result.data || []
+      const lastUser = [...messages]
+        .reverse()
+        .find((m) => m.info.role === "user")
+      if (lastUser) {
+        const text = (lastUser.parts || [])
+          .filter((p) => p.type === "text")
+          .map((p) => p.text || "")
+          .join("")
+          .trim()
+        return text.startsWith("/")
+      }
+    } catch {}
+    return false
+  }
+
   const handleBusy = async (sessionID) => {
     if (!rootSessionID) {
       rootSessionID = sessionID
@@ -477,6 +500,12 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
     if (currentState === "busy") return
     currentState = "busy"
     stopSent = false
+    if (await isSlashCommand(sessionID)) {
+      log("slash command detected, revert busy", sessionID)
+      currentState = "idle"
+      skipNextIdle = true
+      return
+    }
     await send("start", "", rootSessionID)
   }
 
@@ -504,6 +533,12 @@ export const GearShiftNotificationPlugin = async ({ client }) => {
   const handleIdle = async (sessionID, reason) => {
     if (rootSessionID && sessionID !== rootSessionID) {
       log("ignoring idle from non-root", sessionID, reason)
+      return
+    }
+    if (skipNextIdle) {
+      log("skip idle after slash command", sessionID)
+      skipNextIdle = false
+      rootSessionID = null
       return
     }
     if (currentState !== "busy" || stopSent) {

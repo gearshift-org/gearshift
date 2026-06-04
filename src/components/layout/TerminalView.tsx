@@ -757,6 +757,9 @@ export function TerminalView({
   const maybeShowCommit = useCallback(() => {
     const dir = cwdRef.current
     if (!dir) return
+    // Only offer to commit in terminals that actually have an agent. A plain
+    // shell with no agent never triggers the commit affordance.
+    if (!agentStatusRef.current.agentName) return
     if (commitCheckTimerRef.current) {
       window.clearTimeout(commitCheckTimerRef.current)
     }
@@ -780,15 +783,15 @@ export function TerminalView({
     }, COMMIT_STATUS_CHECK_DELAY_MS)
   }, [queryClient])
 
-  // Same action as the sidebar's "Commit with AI": send the configured commit
-  // prompt to this pane's agent and let it commit. Submitting clears the button.
+  // Keep the affordance honest while it's open: if the changes disappear (e.g.
+  // the agent committed them), close it. Never auto-opens — the affordance is
+  // only surfaced by maybeShowCommit() after an agent finishes a turn, so it
+  // can't linger when no agent ran.
   useEffect(() => {
     if (!gitData) return
     if (gitData.files.length === 0) {
       setCommitUi((s) => (s === "open" ? "closing" : s))
-      return
     }
-    if (!commitDismissedRef.current) setCommitUi("open")
   }, [gitData])
 
   const commitChanges = useCallback(() => {

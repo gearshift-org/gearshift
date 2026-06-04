@@ -1874,16 +1874,15 @@ export function TerminalView({
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
             className={cn(
-              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full shadow-md fade-in slide-in-from-bottom-2 hover:bg-primary/85",
-              // Lift above the commit affordance when both are visible.
-              commitUi !== "hidden" ? "bottom-16" : "bottom-4"
+              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full bg-primary text-primary-foreground shadow-md fade-in slide-in-from-bottom-2 hover:bg-primary",
+              "bottom-4"
             )}
           >
             <ChevronDown data-icon="inline-start" />
             Scroll to bottom
           </Button>
         )}
-        {commitUi !== "hidden" && (
+        {commitUi !== "hidden" && !showScrollToBottom && (
           // Outer element owns the centering transform; the inner element owns
           // the slide animation. Keeping them separate stops the exit keyframes
           // from clobbering -translate-x-1/2 (which made the pill jump/flicker).
@@ -1913,18 +1912,17 @@ export function TerminalView({
                 disabled={committing}
                 onClick={commitChanges}
                 aria-label="Commit changes with AI"
-                className="rounded-full shadow-md hover:bg-primary/85"
+                className="rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary"
               >
                 <GitCommitVertical data-icon="inline-start" />
                 {committing ? "Committing…" : "Commit changes"}
               </Button>
               <Button
                 type="button"
-                variant="outline"
                 size="icon"
                 onClick={dismissCommit}
                 aria-label="Dismiss"
-                className="rounded-full shadow-md"
+                className="rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary"
               >
                 <X />
               </Button>

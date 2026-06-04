@@ -4,7 +4,7 @@ import { store } from "@/lib/store"
 const STORAGE_KEY = "gearshift.aiCommitPrompt"
 
 export const DEFAULT_AI_COMMIT_PROMPT =
-  "Review the staged changes, choose the correct Conventional Commit prefix, and commit only the staged changes. Do not push. Format the commit message with the actual commit subject on the first line, a blank line, then concise bullet points that clearly summarize what changed for a human reader."
+  "Review only the changes made by this agent turn, choose the correct Conventional Commit prefix, and commit only those agent-made changes. Leave any unrelated user or pre-existing changes unstaged and uncommitted. Do not push. Format the commit message with the actual commit subject on the first line, a blank line, then concise bullet points that clearly summarize what changed for a human reader."
 
 export function loadAiCommitPrompt(): string {
   try {

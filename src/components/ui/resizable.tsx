@@ -33,13 +33,14 @@ function ResizableHandle({
     <ResizablePrimitive.Separator
       data-slot="resizable-handle"
       className={cn(
-        // Visual line stays 1px; hit area is expanded via negative margins +
-        // a wider after pseudo-element. Active/drag/hover states tint the line.
-        "relative z-10 flex w-px shrink-0 touch-none items-center justify-center bg-border ring-offset-background transition-colors",
-        "after:absolute after:inset-y-0 after:left-1/2 after:z-10 after:w-[7px] after:-translate-x-1/2 after:content-['']",
-        "hover:bg-foreground/30 data-[resize-handle-state=drag]:bg-foreground/40 data-[resize-handle-state=hover]:bg-foreground/30",
+        // Keep the visible divider 1px, but make the actual hit box wider and
+        // overlap adjacent panes. This lets split dragging win over xterm's
+        // edge scrollbar, which otherwise scrolls the terminal before resizing.
+        "relative z-40 -mx-[3px] flex w-[7px] shrink-0 touch-none items-center justify-center bg-transparent ring-offset-background",
+        "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:transition-colors before:content-['']",
+        "hover:before:bg-foreground/30 data-[resize-handle-state=drag]:before:bg-foreground/40 data-[resize-handle-state=hover]:before:bg-foreground/30",
         "focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden",
-        "aria-[orientation=horizontal]:h-px aria-[orientation=horizontal]:w-full aria-[orientation=horizontal]:after:left-0 aria-[orientation=horizontal]:after:h-[7px] aria-[orientation=horizontal]:after:w-full aria-[orientation=horizontal]:after:translate-x-0 aria-[orientation=horizontal]:after:-translate-y-1/2 [&[aria-orientation=horizontal]>div]:rotate-90",
+        "aria-[orientation=horizontal]:-my-[3px] aria-[orientation=horizontal]:mx-0 aria-[orientation=horizontal]:h-[7px] aria-[orientation=horizontal]:w-full aria-[orientation=horizontal]:before:inset-x-0 aria-[orientation=horizontal]:before:top-1/2 aria-[orientation=horizontal]:before:left-0 aria-[orientation=horizontal]:before:h-px aria-[orientation=horizontal]:before:w-full aria-[orientation=horizontal]:before:translate-x-0 aria-[orientation=horizontal]:before:-translate-y-1/2 [&[aria-orientation=horizontal]>div]:rotate-90",
         className
       )}
       {...props}

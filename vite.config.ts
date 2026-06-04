@@ -6,8 +6,7 @@ import electron from "vite-plugin-electron"
 
 export default defineConfig({
   server: {
-    port: 5011,
-    strictPort: true,
+    port: 5111,
     watch: {
       ignored: ["**/release/**"],
     },

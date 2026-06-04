@@ -2283,7 +2283,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("git:pull", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {
-      await runGitWithProjectEnv(cwd, ["pull", "--ff-only"])
+      // Rebase (not --ff-only) so diverging branches reconcile: local commits
+      // replay on top of the remote instead of aborting with "not possible to
+      // fast-forward". --autostash tolerates a dirty working tree.
+      await runGitWithProjectEnv(cwd, ["pull", "--rebase", "--autostash"])
       return { ok: true }
     } catch (err) {
       const e = err as { stderr?: string; message?: string }

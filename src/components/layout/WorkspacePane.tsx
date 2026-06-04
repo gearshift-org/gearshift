@@ -101,6 +101,7 @@ type Props = {
 function TerminalPaneView({
   tab,
   pane,
+  cwd,
   isTabActive,
   focusRequest,
   onTitleChange,
@@ -112,6 +113,7 @@ function TerminalPaneView({
 }: {
   tab: TerminalTab
   pane: TerminalPaneType
+  cwd?: string
   isTabActive: boolean
   focusRequest?: number
   onTitleChange?: (tabId: string, paneId: string, title: string) => void
@@ -144,6 +146,7 @@ function TerminalPaneView({
     <div onMouseDown={onFocus} className="h-full">
       <TerminalView
         sessionId={pane.sessionId ?? pane.id}
+        cwd={cwd}
         isActive={isTabActive && tab.activePaneId === pane.id}
         paneCount={tab.panes.length}
         focusRequest={focusRequest}
@@ -274,6 +277,7 @@ function PaneDropZone({
 
 function TerminalTabContent({
   tab,
+  cwd,
   isActive,
   focusRequest,
   onTitleChange,
@@ -288,6 +292,7 @@ function TerminalTabContent({
   onExtractPaneToTab,
 }: {
   tab: TerminalTab
+  cwd?: string
   isActive: boolean
   focusRequest?: {
     tabId: string
@@ -389,6 +394,7 @@ function TerminalTabContent({
       <TerminalPaneView
         tab={tab}
         pane={pane}
+        cwd={cwd}
         isTabActive={isActive}
         focusRequest={
           focusRequest?.tabId === tab.id && focusRequest.paneId === pane.id
@@ -609,6 +615,7 @@ function PaneContent({
     return (
       <TerminalTabContent
         tab={tab}
+        cwd={project.path}
         isActive={isActive}
         focusRequest={terminalFocusRequest}
         onTitleChange={onTitleChange}

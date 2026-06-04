@@ -6,7 +6,8 @@ import {
   useState,
   type CSSProperties,
 } from "react"
-import { ChevronDown, ChevronUp, X } from "lucide-react"
+import { ChevronDown, ChevronUp, GitCommitVertical, X } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { SearchAddon } from "@xterm/addon-search"
@@ -18,6 +19,8 @@ import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
 import { agentActivityTitleSignal } from "./terminalName"
+import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
+import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type { TerminalAgentStatus } from "./types"
 import {
   ContextMenu,
@@ -33,6 +36,10 @@ import type { ChatHistoryMessage } from "../../../electron/preload"
 
 type Props = {
   sessionId: string
+  // Project working directory for this pane. Used to read the shared git-status
+  // query (the same data behind the sidebar change counter) so the post-task
+  // "Commit changes" affordance only appears when there are changes.
+  cwd?: string
   isActive?: boolean
   // Number of panes in this terminal tab. Changes when a split opens/closes;
   // used to force an authoritative refit since the pane resizes without
@@ -389,6 +396,9 @@ const HOOK_BACKED_AGENTS = new Set(["claude", "codex", "opencode", "pi"])
 // Hookless agents fall back to "terminal produced output while running" as a
 // busy signal. Keep this to agents that have no hooks (Gemini, plain shells).
 const OUTPUT_ACTIVITY_AGENTS = new Set(["gemini"])
+// Delay between writing a prompt and the Enter that submits it, so the agent's
+// input box registers the full text first. Mirrors AppShell's writeAgentPrompt.
+const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
 const KITTY_IMAGE_MIME_BY_FORMAT: Record<string, string> = {
@@ -538,6 +548,7 @@ async function pasteClipboard(
 
 export function TerminalView({
   sessionId,
+  cwd,
   isActive = true,
   paneCount = 1,
   focusRequest,
@@ -608,6 +619,18 @@ export function TerminalView({
     message: ChatHistoryMessage | null
     kind: "completed" | "needs_attention"
   } | null>(null)
+  // Floating "Commit changes" affordance shown after an agent turn finishes with
+  // uncommitted changes. Same action as the sidebar's "Commit with AI".
+  // "closing" keeps it mounted long enough to play the exit animation.
+  const [commitUi, setCommitUi] = useState<"hidden" | "open" | "closing">(
+    "hidden"
+  )
+  const [committing, setCommitting] = useState(false)
+  const queryClient = useQueryClient()
+  const cwdRef = useRef(cwd)
+  useEffect(() => {
+    cwdRef.current = cwd
+  }, [cwd])
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
@@ -712,6 +735,48 @@ export function TerminalView({
     },
     [sessionId],
   )
+
+  // Animate out, then unmount once the exit animation finishes (onAnimationEnd).
+  const dismissCommit = useCallback(() => {
+    setCommitUi((s) => (s === "open" ? "closing" : s))
+  }, [])
+
+  // After an agent turn finishes, surface the commit affordance only when the
+  // project actually has changes. Reads the same git-status query that backs the
+  // sidebar change counter (shared React Query cache, keyed by cwd) and refetches
+  // so the count reflects whatever the agent just wrote.
+  const maybeShowCommit = useCallback(() => {
+    const dir = cwdRef.current
+    if (!dir) return
+    void queryClient
+      .fetchQuery({
+        queryKey: gitQueryKey(dir),
+        queryFn: () => fetchGitQueryData(dir),
+      })
+      .then((data) => {
+        if (cwdRef.current !== dir) return
+        if (data.files.length > 0) setCommitUi("open")
+      })
+      .catch(() => {
+        // Not a repo / git error — just don't offer the affordance.
+      })
+  }, [queryClient])
+
+  // Same action as the sidebar's "Commit with AI": send the configured commit
+  // prompt to this pane's agent and let it commit. Submitting clears the button.
+  const commitChanges = useCallback(() => {
+    const prompt = loadAiCommitPrompt().trim()
+    if (!prompt) return
+    setCommitting(true)
+    window.term.write(sessionId, prompt)
+    window.setTimeout(() => {
+      window.term.write(sessionId, "\r")
+      setCommitting(false)
+      setCommitUi((s) => (s === "open" ? "closing" : s))
+    }, AGENT_PROMPT_SUBMIT_DELAY_MS)
+    const term = termRef.current
+    if (term) safeTerminalFocus(term)
+  }, [sessionId])
 
   const clearAgentWorking = useCallback(() => {
     if (agentWorkingTimerRef.current) {
@@ -1274,6 +1339,8 @@ export function TerminalView({
           // previous turn. (Plain typing leaves the recap up so it survives
           // until the user actually sends something.)
           dismissRecap()
+          // A new prompt supersedes the post-task commit affordance.
+          setCommitUi((s) => (s === "open" ? "closing" : s))
         } else {
           suppressAgentActivityUntilRef.current =
             now + USER_INPUT_ECHO_SUPPRESS_MS
@@ -1572,6 +1639,8 @@ export function TerminalView({
         lastAgentActivityAtRef.current = now
         // A new turn began — clear any stale recap or pending recap timer.
         dismissRecap()
+        // ...and the commit affordance from the previous turn.
+        setCommitUi((s) => (s === "open" ? "closing" : s))
         emitAgentStatus({
           running: true,
           working: true,
@@ -1640,8 +1709,17 @@ export function TerminalView({
       // Turn finished — AI titles (Claude/OpenCode) are finalized by now.
       void refreshAgentSessionTitle()
       scheduleRecap("completed")
+      // Offer to commit if the finished turn left uncommitted changes.
+      maybeShowCommit()
     })
-  }, [sessionId, emitAgentStatus, scheduleRecap, dismissRecap, refreshAgentSessionTitle])
+  }, [
+    sessionId,
+    emitAgentStatus,
+    scheduleRecap,
+    dismissRecap,
+    refreshAgentSessionTitle,
+    maybeShowCommit,
+  ])
 
   // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens
   // (deferred to a rAF) so xterm has stable cell metrics and we don't race its
@@ -1795,11 +1873,63 @@ export function TerminalView({
             }}
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
-            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 animate-in rounded-full shadow-md fade-in slide-in-from-bottom-2"
+            className={cn(
+              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full shadow-md fade-in slide-in-from-bottom-2 hover:bg-primary/85",
+              // Lift above the commit affordance when both are visible.
+              commitUi !== "hidden" ? "bottom-16" : "bottom-4"
+            )}
           >
             <ChevronDown data-icon="inline-start" />
             Scroll to bottom
           </Button>
+        )}
+        {commitUi !== "hidden" && (
+          // Outer element owns the centering transform; the inner element owns
+          // the slide animation. Keeping them separate stops the exit keyframes
+          // from clobbering -translate-x-1/2 (which made the pill jump/flicker).
+          <div
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.stopPropagation()}
+          >
+            <div
+              onAnimationEnd={(e) => {
+                if (e.target === e.currentTarget && commitUi === "closing") {
+                  setCommitUi("hidden")
+                }
+              }}
+              className={cn(
+                "flex items-center gap-2",
+                commitUi === "closing"
+                  ? // fill-mode-forwards holds the final (opacity 0) frame until
+                    // unmount; without it the element snaps back to opaque for a
+                    // frame at animation end — the exit "flicker".
+                    "animate-out fade-out slide-out-to-bottom-2 fill-mode-forwards"
+                  : "animate-in fade-in slide-in-from-bottom-2"
+              )}
+            >
+              <Button
+                type="button"
+                disabled={committing}
+                onClick={commitChanges}
+                aria-label="Commit changes with AI"
+                className="rounded-full shadow-md hover:bg-primary/85"
+              >
+                <GitCommitVertical data-icon="inline-start" />
+                {committing ? "Committing…" : "Commit changes"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={dismissCommit}
+                aria-label="Dismiss"
+                className="rounded-full shadow-md"
+              >
+                <X />
+              </Button>
+            </div>
+          </div>
         )}
         {searchOpen && (
           <div

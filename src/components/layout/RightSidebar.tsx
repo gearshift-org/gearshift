@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Combobox,
@@ -1412,9 +1413,11 @@ function FileGroup({
 }) {
   return (
     <div className="group/section">
-      <div className="flex h-7 items-center gap-2 border-y border-border bg-muted/40 px-3 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+      <div className="flex h-7 items-center gap-2 border-y border-border bg-card/80 px-3 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
         <span>{label}</span>
-        <span className="text-muted-foreground/70">{count}</span>
+        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+          {count}
+        </Badge>
         <div className="ml-auto flex items-center gap-0.5">
           {secondaryActionAll && secondaryActionAllLabel && (
             <Tooltip>
@@ -1478,6 +1481,23 @@ function ShowMoreChangesButton({
   )
 }
 
+function DiffStats({
+  additions,
+  deletions,
+}: {
+  additions?: number
+  deletions?: number
+}) {
+  if (additions === undefined && deletions === undefined) return null
+
+  return (
+    <div className="ml-2 flex shrink-0 items-center gap-2 font-mono text-xs font-bold tabular-nums">
+      <span className="text-lime-400">+{additions ?? 0}</span>
+      <span className="text-rose-400">-{deletions ?? 0}</span>
+    </div>
+  )
+}
+
 function FileRow({
   cwd,
   file,
@@ -1513,8 +1533,16 @@ function FileRow({
             draggable
             onDragStart={(e) => setPathDragData(e.dataTransfer, [fileAbsPath])}
             onClick={onOpen}
-            className="group/row flex cursor-pointer items-center gap-3 px-4 py-1.5 text-xs hover:bg-accent/40"
+            className="group/row flex cursor-pointer items-center gap-3 border-b border-border/70 px-4 py-1.5 text-xs hover:bg-accent/40"
           >
+            <span
+              className={cn(
+                "w-4 shrink-0 text-center font-mono font-medium",
+                STATUS_STYLES[file.status] ?? "text-muted-foreground"
+              )}
+            >
+              {file.status}
+            </span>
             <FileIcon
               name={file.path.split("/").pop() ?? file.path}
               className="size-4 shrink-0"
@@ -1522,6 +1550,7 @@ function FileRow({
             <span className="min-w-0 flex-1 truncate font-mono">
               {file.path}
             </span>
+            <DiffStats additions={file.additions} deletions={file.deletions} />
             <div className="flex items-center gap-0.5">
               {onSecondaryAction && secondaryActionLabel && (
                 <Tooltip>
@@ -1566,14 +1595,6 @@ function FileRow({
                 <TooltipContent>{actionLabel}</TooltipContent>
               </Tooltip>
             </div>
-            <span
-              className={cn(
-                "w-4 text-center font-mono font-medium",
-                STATUS_STYLES[file.status] ?? "text-muted-foreground"
-              )}
-            >
-              {file.status}
-            </span>
           </li>
         }
       />

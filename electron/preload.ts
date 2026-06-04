@@ -346,6 +346,8 @@ const fsApi = {
 type GitFileRaw = {
   path: string
   status: string
+  additions?: number
+  deletions?: number
 }
 
 type PullRequestInfo = {

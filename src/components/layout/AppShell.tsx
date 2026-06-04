@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { matchesAccelerator } from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
@@ -79,6 +80,7 @@ import {
   type StoredProject,
 } from "@/lib/projects"
 import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
+import { gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   AGENT_TERMINAL_LABELS,
   getAgentTerminalOptions,
@@ -437,6 +439,7 @@ function buildDocumentTitle(activeProject: Project | undefined): string {
 
 export function AppShell() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { resolvedTheme } = useTheme()
   const params = useParams({ strict: false }) as {
     projectId?: string
@@ -2209,6 +2212,9 @@ export function AppShell() {
     )
 
     if (finishedWork && targetProject && targetTab?.kind === "terminal") {
+      void queryClient.refetchQueries({
+        queryKey: gitQueryKey(targetProject.path),
+      })
       playAgentCompleteSound()
     }
 

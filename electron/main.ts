@@ -1020,9 +1020,55 @@ function queueProjectWatchEvent(
   entry.timer = setTimeout(() => flushProjectWatch(watchId), 150)
 }
 
-function parseGitStatus(raw: string) {
-  const staged: Array<{ path: string; status: string }> = []
-  const unstaged: Array<{ path: string; status: string }> = []
+function parseNumstat(raw: string) {
+  const stats = new Map<string, { additions: number; deletions: number }>()
+  const tokens = raw.split("\0").filter(Boolean)
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    const parts = token.split("\t")
+    if (parts.length >= 3) {
+      const [addRaw, delRaw, filePath] = parts
+      stats.set(filePath, {
+        additions: addRaw === "-" ? 0 : Number(addRaw) || 0,
+        deletions: delRaw === "-" ? 0 : Number(delRaw) || 0,
+      })
+      continue
+    }
+
+    if (parts.length === 2 && tokens[i + 1]) {
+      const [addRaw, delRaw] = parts
+      const filePath = tokens[i + 2] ?? tokens[i + 1]
+      stats.set(filePath, {
+        additions: addRaw === "-" ? 0 : Number(addRaw) || 0,
+        deletions: delRaw === "-" ? 0 : Number(delRaw) || 0,
+      })
+      i += tokens[i + 2] ? 2 : 1
+    }
+  }
+
+  return stats
+}
+
+function parseGitStatus(
+  raw: string,
+  statMaps: {
+    staged?: Map<string, { additions: number; deletions: number }>
+    unstaged?: Map<string, { additions: number; deletions: number }>
+  } = {}
+) {
+  const staged: Array<{
+    path: string
+    status: string
+    additions?: number
+    deletions?: number
+  }> = []
+  const unstaged: Array<{
+    path: string
+    status: string
+    additions?: number
+    deletions?: number
+  }> = []
   // -z output is NUL-separated. Rename/copy entries take TWO tokens
   // (newpath\0oldpath) and we need to advance the cursor past the second one.
   const tokens = raw.split("\0")
@@ -1034,12 +1080,19 @@ function parseGitStatus(raw: string) {
     const y = entry[1]
     const filePath = entry.slice(3)
 
+    const stagedStats = statMaps.staged?.get(filePath)
+    const unstagedStats = statMaps.unstaged?.get(filePath)
+
     if (x === "?" && y === "?") {
       unstaged.push({ path: filePath, status: "A" })
       continue
     }
-    if (x !== " " && x !== "?") staged.push({ path: filePath, status: x })
-    if (y !== " " && y !== "?") unstaged.push({ path: filePath, status: y })
+    if (x !== " " && x !== "?") {
+      staged.push({ path: filePath, status: x, ...stagedStats })
+    }
+    if (y !== " " && y !== "?") {
+      unstaged.push({ path: filePath, status: y, ...unstagedStats })
+    }
     // Rename/copy: consume the oldpath token that follows.
     if (x === "R" || x === "C" || y === "R" || y === "C") i++
   }
@@ -1483,13 +1536,23 @@ app.whenReady().then(async () => {
   ipcMain.handle("git:status", async (_event, cwd: string) => {
     if (!cwd) return { ok: false, error: "no-cwd", staged: [], unstaged: [] }
     try {
-      const raw = await runGit(cwd, [
-        "status",
-        "--porcelain=v1",
-        "-z",
-        "--untracked-files=all",
+      const [raw, stagedStatsRaw, unstagedStatsRaw] = await Promise.all([
+        runGit(cwd, [
+          "status",
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+        ]),
+        runGit(cwd, ["diff", "--cached", "--numstat", "-z"]),
+        runGit(cwd, ["diff", "--numstat", "-z"]),
       ])
-      return { ok: true, ...parseGitStatus(raw) }
+      return {
+        ok: true,
+        ...parseGitStatus(raw, {
+          staged: parseNumstat(stagedStatsRaw),
+          unstaged: parseNumstat(unstagedStatsRaw),
+        }),
+      }
     } catch (err) {
       return {
         ok: false,

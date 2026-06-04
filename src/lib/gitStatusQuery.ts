@@ -1,5 +1,11 @@
 export type GitStatus = "M" | "A" | "D" | "R" | "C" | "U" | string
-export type GitFile = { path: string; status: GitStatus; staged: boolean }
+export type GitFile = {
+  path: string
+  status: GitStatus
+  staged: boolean
+  additions?: number
+  deletions?: number
+}
 export type PullRequestInfo = {
   number: number
   id: string

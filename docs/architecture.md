@@ -14,11 +14,12 @@ The watcher is intentionally noisy at the OS level but quiet at the IPC level:
 
 ## Changes Panel Refresh
 
-`src/components/layout/RightSidebar.tsx` keeps `git status` and diffs in sync with disk using three paths:
+`src/components/layout/RightSidebar.tsx` keeps `git status` and diffs in sync with disk using four paths:
 
 1. Initial load on mount, `cwd` change, and active project change.
 2. Watcher-driven refresh after `fs:changed` IPC events.
 3. Polling backstop for file changes missed by the watcher.
+4. Immediate React Query refetch when a terminal agent transitions from working to completed.
 
 All refresh requests funnel through one serialized callback so concurrent refreshes do not stack. Inactive projects skip watcher subscriptions and polling to keep background work low.
 

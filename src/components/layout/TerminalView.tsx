@@ -1304,7 +1304,7 @@ export function TerminalView({
       // UI interaction (opening the model picker, selecting a model), which
       // would otherwise be misread as work. Only hookless agents (Gemini, plain
       // shells) need the title-presence fallback.
-      if (HOOK_BACKED_AGENTS.has(current.agentName)) return
+      if (current.agentName && HOOK_BACKED_AGENTS.has(current.agentName)) return
 
       markAgentWorking()
     })

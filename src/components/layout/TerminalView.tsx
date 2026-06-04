@@ -627,7 +627,6 @@ export function TerminalView({
   const [commitUi, setCommitUi] = useState<"hidden" | "open" | "closing">(
     "hidden"
   )
-  const [committing, setCommitting] = useState(false)
   const commitDismissedRef = useRef(false)
   const queryClient = useQueryClient()
   const { data: gitData } = useQuery({
@@ -797,12 +796,13 @@ export function TerminalView({
   const commitChanges = useCallback(() => {
     const prompt = loadAiCommitPrompt().trim()
     if (!prompt) return
-    setCommitting(true)
+    // Start the exit animation right away so the pill slides out smoothly on
+    // click. The prompt + Enter are still written on the submit delay in the
+    // background, so the agent receives them just as before.
+    setCommitUi((s) => (s === "open" ? "closing" : s))
     window.term.write(sessionId, prompt)
     window.setTimeout(() => {
       window.term.write(sessionId, "\r")
-      setCommitting(false)
-      setCommitUi((s) => (s === "open" ? "closing" : s))
     }, AGENT_PROMPT_SUBMIT_DELAY_MS)
     const term = termRef.current
     if (term) safeTerminalFocus(term)
@@ -1943,13 +1943,12 @@ export function TerminalView({
             >
               <Button
                 type="button"
-                disabled={committing}
                 onClick={commitChanges}
                 aria-label="Commit changes with AI"
                 className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
               >
                 <GitCommitVertical data-icon="inline-start" />
-                {committing ? "Committing…" : "Commit changes"}
+                Commit changes
               </Button>
               <Button
                 type="button"

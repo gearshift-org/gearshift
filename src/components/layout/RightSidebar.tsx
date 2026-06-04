@@ -1491,8 +1491,8 @@ function DiffStats({
   if (additions === undefined && deletions === undefined) return null
 
   return (
-    <div className="ml-2 flex shrink-0 items-center gap-2 font-mono text-xs font-bold tabular-nums">
-      <span className="text-lime-400">+{additions ?? 0}</span>
+    <div className="flex shrink-0 items-center gap-2 font-mono text-xs font-bold tabular-nums">
+      <span className="text-[#00c896]">+{additions ?? 0}</span>
       <span className="text-rose-400">-{deletions ?? 0}</span>
     </div>
   )
@@ -1533,7 +1533,7 @@ function FileRow({
             draggable
             onDragStart={(e) => setPathDragData(e.dataTransfer, [fileAbsPath])}
             onClick={onOpen}
-            className="group/row flex cursor-pointer items-center gap-3 border-b border-border/70 px-4 py-1.5 text-xs hover:bg-accent/40"
+            className="group/row flex cursor-pointer items-center border-b border-border/70 px-4 py-1.5 text-xs hover:bg-accent/40"
           >
             <span
               className={cn(
@@ -1545,14 +1545,41 @@ function FileRow({
             </span>
             <FileIcon
               name={file.path.split("/").pop() ?? file.path}
-              className="size-4 shrink-0"
+              className="mx-2 size-4 shrink-0"
             />
             <span className="min-w-0 flex-1 truncate font-mono">
               {file.path}
             </span>
-            <DiffStats additions={file.additions} deletions={file.deletions} />
-            <div className="flex items-center gap-0.5">
-              {onSecondaryAction && secondaryActionLabel && (
+            <div className="relative flex h-5 min-w-14 shrink-0 items-center justify-end">
+              <div className="transition-opacity group-hover/row:opacity-0">
+                <DiffStats
+                  additions={file.additions}
+                  deletions={file.deletions}
+                />
+              </div>
+              <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100">
+                {onSecondaryAction && secondaryActionLabel && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSecondaryAction()
+                          }}
+                          aria-label={secondaryActionLabel}
+                          className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
+                        >
+                          {secondaryActionIcon}
+                        </button>
+                      }
+                    />
+                    <TooltipContent>{secondaryActionLabel}</TooltipContent>
+                  </Tooltip>
+                )}
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -1562,38 +1589,18 @@ function FileRow({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onSecondaryAction()
+                          onAction()
                         }}
-                        aria-label={secondaryActionLabel}
-                        className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-colors group-hover/row:opacity-100 hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
+                        aria-label={actionLabel}
+                        className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
                       >
-                        {secondaryActionIcon}
+                        {actionIcon}
                       </button>
                     }
                   />
-                  <TooltipContent>{secondaryActionLabel}</TooltipContent>
+                  <TooltipContent>{actionLabel}</TooltipContent>
                 </Tooltip>
-              )}
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onAction()
-                      }}
-                      aria-label={actionLabel}
-                      className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-colors group-hover/row:opacity-100 hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
-                    >
-                      {actionIcon}
-                    </button>
-                  }
-                />
-                <TooltipContent>{actionLabel}</TooltipContent>
-              </Tooltip>
+              </div>
             </div>
           </li>
         }

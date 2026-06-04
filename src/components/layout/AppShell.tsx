@@ -48,6 +48,7 @@ import {
   loadAutoHideTitleBar,
   loadLastAgentTerminals,
   loadPaletteRecents,
+  loadFocusedProjectIds,
   loadProjects,
   loadProjectSidebarOpen,
   loadRecentProjects,
@@ -61,6 +62,7 @@ import {
   saveActiveProjectId,
   saveAutoHideTitleBar,
   saveLastAgentTerminals,
+  saveFocusedProjectIds,
   saveProjectSidebarOpen,
   saveProjects,
   saveRecentProjects,
@@ -463,6 +465,9 @@ export function AppShell() {
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
+  const [focusedProjectIds, setFocusedProjectIds] = useState<string[]>(() =>
+    loadFocusedProjectIds()
+  )
   const [rightSidebarOverlayOpen, setRightSidebarOverlayOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
     loadRightSidebarTab()
@@ -514,6 +519,7 @@ export function AppShell() {
         setRightSidebarEdgeReveal(loadRightSidebarEdgeReveal())
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setProjectSidebarOpen(loadProjectSidebarOpen())
+        setFocusedProjectIds(loadFocusedProjectIds())
         setRightSidebarTab(loadRightSidebarTab())
         setLastAgentTerminals(loadLastAgentTerminals())
         const storedActiveId = resolveMigratedProjectId(
@@ -600,6 +606,11 @@ export function AppShell() {
   useEffect(() => {
     saveProjectSidebarOpen(projectSidebarOpen)
   }, [projectSidebarOpen])
+  const focusedProjectIdsRef = useRef(focusedProjectIds)
+  useEffect(() => {
+    focusedProjectIdsRef.current = focusedProjectIds
+    saveFocusedProjectIds(focusedProjectIds)
+  }, [focusedProjectIds])
   useEffect(() => {
     const onEdgeRevealChange = (event: Event) => {
       const enabled = (event as CustomEvent<boolean>).detail
@@ -1154,6 +1165,10 @@ export function AppShell() {
     async (path: string, name?: string) => {
       const existing = projectsRef.current.find((p) => p.path === path)
       if (existing) {
+        if (focusedProjectIdsRef.current.length > 0)
+          setFocusedProjectIds((ids) =>
+            ids.includes(existing.id) ? ids : [...ids, existing.id]
+          )
         navigateToProject(existing.id, existing.activeTabId || undefined)
         return
       }
@@ -1179,6 +1194,8 @@ export function AppShell() {
           activeTabId: tabId,
         },
       ])
+      if (focusedProjectIdsRef.current.length > 0)
+        setFocusedProjectIds((ids) => [...ids, id])
       navigateToProject(id, tabId)
       setRecents(pushRecentProject({ name: resolvedName, path }))
 
@@ -2693,6 +2710,15 @@ export function AppShell() {
           onReorder={reorderProjects}
           onCollapse={() => setProjectSidebarOpen(false)}
           onOpenSettings={() => void navigate({ to: "/settings" })}
+          focusedProjectIds={focusedProjectIds}
+          onFocusProject={(id) => {
+            setFocusedProjectIds([id])
+            selectProject(id)
+          }}
+          onRemoveFromFocus={(id) =>
+            setFocusedProjectIds((ids) => ids.filter((x) => x !== id))
+          }
+          onExitFocus={() => setFocusedProjectIds([])}
         />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

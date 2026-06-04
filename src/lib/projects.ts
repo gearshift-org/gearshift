@@ -402,6 +402,28 @@ export function saveProjectSidebarOpen(open: boolean): void {
   }
 }
 
+const FOCUSED_PROJECT_IDS_KEY = "gearshift.focusedProjectIds"
+
+export function loadFocusedProjectIds(): string[] {
+  try {
+    const raw = store.get(FOCUSED_PROJECT_IDS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : []
+  } catch {
+    return []
+  }
+}
+
+export function saveFocusedProjectIds(ids: string[]): void {
+  try {
+    if (ids.length > 0) store.set(FOCUSED_PROJECT_IDS_KEY, JSON.stringify(ids))
+    else store.remove(FOCUSED_PROJECT_IDS_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const RIGHT_SIDEBAR_EDGE_REVEAL_KEY = "gearshift.rightSidebarEdgeReveal"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"

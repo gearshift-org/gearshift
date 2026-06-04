@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   DndContext,
@@ -13,7 +13,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { PanelLeft, Settings, X } from "lucide-react"
+import { Focus, PanelLeft, Settings, X } from "lucide-react"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -65,6 +65,10 @@ type Props = {
   onReorder?: (fromId: string, toId: string) => void
   onCollapse?: () => void
   onOpenSettings?: () => void
+  focusedProjectIds?: string[]
+  onFocusProject?: (id: string) => void
+  onRemoveFromFocus?: (id: string) => void
+  onExitFocus?: () => void
 }
 
 type RowProps = {
@@ -80,6 +84,11 @@ type RowProps = {
   onCloseToRight?: (id: string) => void
   onOpenInVSCode?: (id: string) => void
   onRevealInFinder?: (id: string) => void
+  isFocusMode: boolean
+  index: number
+  animate: boolean
+  onFocusProject?: (id: string) => void
+  onRemoveFromFocus?: (id: string) => void
 }
 
 function ProjectSidebarRow({
@@ -95,6 +104,11 @@ function ProjectSidebarRow({
   onCloseToRight,
   onOpenInVSCode,
   onRevealInFinder,
+  isFocusMode,
+  index,
+  animate,
+  onFocusProject,
+  onRemoveFromFocus,
 }: RowProps) {
   const [, setColorVersion] = useState(0)
   const {
@@ -110,6 +124,7 @@ function ProjectSidebarRow({
     transform: CSS.Translate.toString(transform),
     transition,
     zIndex: isDragging ? 30 : undefined,
+    animationDelay: animate ? `${index * 35}ms` : undefined,
   }
 
   const { data } = useQuery({
@@ -148,6 +163,8 @@ function ProjectSidebarRow({
         onClick={() => onSelect(p.id)}
         className={cn(
           "group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left outline-none transition-colors focus:outline-none focus-visible:ring-0",
+          animate &&
+            "duration-200 fill-mode-both animate-in fade-in slide-in-from-left-2",
           isActive
             ? "bg-sidebar-accent text-foreground"
             : "text-foreground hover:bg-sidebar-accent/70",
@@ -221,6 +238,15 @@ function ProjectSidebarRow({
           Remove Other Projects
         </ContextMenuItem>
         <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() =>
+            isFocusMode ? onRemoveFromFocus?.(p.id) : onFocusProject?.(p.id)
+          }
+        >
+          <Focus className="size-3.5" />
+          {isFocusMode ? "Remove from Focus" : "Focus Mode"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onClick={chooseAvatarImage}>
           Choose Avatar Image…
         </ContextMenuItem>
@@ -269,8 +295,27 @@ export function ProjectSidebar({
   onReorder,
   onCollapse,
   onOpenSettings,
+  focusedProjectIds = [],
+  onFocusProject,
+  onRemoveFromFocus,
+  onExitFocus,
 }: Props) {
   const [isFileDragOver, setIsFileDragOver] = useState(false)
+  const focusedSet = new Set(focusedProjectIds)
+  const isFocusMode = projects.some((p) => focusedSet.has(p.id))
+  const visibleProjects = isFocusMode
+    ? projects.filter((p) => focusedSet.has(p.id))
+    : projects
+
+  // Only animate rows when focus mode is toggled — not on initial page load.
+  const prevFocusModeRef = useRef(isFocusMode)
+  const [animateFocus, setAnimateFocus] = useState(false)
+  useEffect(() => {
+    if (prevFocusModeRef.current !== isFocusMode) {
+      prevFocusModeRef.current = isFocusMode
+      setAnimateFocus(true)
+    }
+  }, [isFocusMode])
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
@@ -349,17 +394,18 @@ export function ProjectSidebar({
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
-            items={projects.map((p) => p.id)}
+            items={visibleProjects.map((p) => p.id)}
             strategy={verticalListSortingStrategy}
           >
-            {projects.map((p, i) => (
+            {visibleProjects.map((p, i) => (
               <ProjectSidebarRow
-                key={p.id}
+                key={`${p.id}-${isFocusMode}`}
+                index={i}
                 project={p}
                 total={projects.length}
                 isActive={p.id === activeId}
                 canClose={!!onClose}
-                hasItemsBelow={i < projects.length - 1}
+                hasItemsBelow={i < visibleProjects.length - 1}
                 onSelect={onSelect}
                 onClose={onClose}
                 onCloseAllTerminals={onCloseAllTerminals}
@@ -367,10 +413,31 @@ export function ProjectSidebar({
                 onCloseToRight={onCloseToRight}
                 onOpenInVSCode={onOpenInVSCode}
                 onRevealInFinder={onRevealInFinder}
+                isFocusMode={isFocusMode}
+                animate={animateFocus}
+                onFocusProject={onFocusProject}
+                onRemoveFromFocus={onRemoveFromFocus}
               />
             ))}
           </SortableContext>
         </DndContext>
+        {isFocusMode && (
+          <button
+            type="button"
+            onClick={onExitFocus}
+            aria-label="Exit focus mode"
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-sidebar-accent/70 focus-visible:outline-none",
+              animateFocus &&
+                "duration-200 animate-in fade-in slide-in-from-left-2"
+            )}
+          >
+            <span className="grid size-6 shrink-0 place-items-center rounded-sm bg-sidebar-accent">
+              <Focus className="size-3.5" />
+            </span>
+            <span className="truncate">Exit Focus Mode</span>
+          </button>
+        )}
         <AddProjectMenu
           variant="sidebar"
           recents={recents}

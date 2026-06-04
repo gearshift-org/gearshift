@@ -637,6 +637,16 @@ function createWindow() {
   })
 
   if (VITE_DEV_SERVER_URL) {
+    // The window can boot before the Vite dev server is listening, landing on
+    // chrome-error://chromewebdata/ — from which it can't reload itself. Retry
+    // the load until the dev server answers.
+    win.webContents.on("did-fail-load", (_event, errorCode) => {
+      // -3 is ERR_ABORTED (a superseded navigation), not a real failure.
+      if (errorCode === -3 || win.isDestroyed()) return
+      setTimeout(() => {
+        if (!win.isDestroyed()) win.loadURL(VITE_DEV_SERVER_URL)
+      }, 300)
+    })
     win.loadURL(VITE_DEV_SERVER_URL)
   } else {
     win.loadFile(path.join(__dirname, "../dist/index.html"))

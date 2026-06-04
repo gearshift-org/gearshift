@@ -1874,7 +1874,7 @@ export function TerminalView({
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
             className={cn(
-              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full bg-primary text-primary-foreground shadow-md fade-in slide-in-from-bottom-2 hover:bg-primary",
+              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full border border-border bg-background text-foreground shadow-md fade-in slide-in-from-bottom-2 hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110",
               "bottom-4"
             )}
           >
@@ -1912,7 +1912,7 @@ export function TerminalView({
                 disabled={committing}
                 onClick={commitChanges}
                 aria-label="Commit changes with AI"
-                className="rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary"
+                className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
               >
                 <GitCommitVertical data-icon="inline-start" />
                 {committing ? "Committing…" : "Commit changes"}
@@ -1922,7 +1922,7 @@ export function TerminalView({
                 size="icon"
                 onClick={dismissCommit}
                 aria-label="Dismiss"
-                className="rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary"
+                className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
               >
                 <X />
               </Button>

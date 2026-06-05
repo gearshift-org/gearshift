@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useNavigate, useParams } from "@tanstack/react-router"
+import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
 import { matchesAccelerator } from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
@@ -437,8 +437,27 @@ function buildDocumentTitle(activeProject: Project | undefined): string {
   return `${APP_TITLE} - ${activeProject.name}`
 }
 
+// True when the keystroke target is a real text field (input, textarea,
+// contenteditable) where Cmd+Shift+Arrow should keep its native
+// extend-selection behavior instead of navigating. The terminal is excluded:
+// xterm focuses a hidden textarea, but Cmd+Shift+Arrow isn't used there, so we
+// let navigation flow through.
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  if (el.closest(".xterm")) return false
+  const tag = el.tagName
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    el.isContentEditable
+  )
+}
+
 export function AppShell() {
   const navigate = useNavigate()
+  const router = useRouter()
   const queryClient = useQueryClient()
   const { resolvedTheme } = useTheme()
   const params = useParams({ strict: false }) as {
@@ -2649,6 +2668,18 @@ export function AppShell() {
           e.preventDefault()
           goToLastTerminalRef.current()
           break
+        case "nav.back":
+          // Skip in real text fields so Cmd+Shift+Arrow keeps extending the
+          // selection there; the terminal is allowed to navigate.
+          if (isTextEditingTarget(target)) return
+          e.preventDefault()
+          router.history.back()
+          break
+        case "nav.forward":
+          if (isTextEditingTarget(target)) return
+          e.preventDefault()
+          router.history.forward()
+          break
         case "settings.open":
           e.preventDefault()
           void navigate({ to: "/settings" })
@@ -2667,6 +2698,7 @@ export function AppShell() {
     bindings,
     findActionForEvent,
     navigate,
+    router,
     autoHideTitleBar,
     openRightSidebar,
     toggleRightSidebar,

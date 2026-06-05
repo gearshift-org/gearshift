@@ -7,6 +7,8 @@ export type ActionId =
   | "terminal.new"
   | "terminal.close"
   | "terminal.last"
+  | "nav.back"
+  | "nav.forward"
   | "settings.open"
   | "titlebar.togglePin"
 
@@ -69,6 +71,20 @@ export const ACTIONS: readonly ActionDef[] = [
     // Previously CmdOrCtrl+2 — now owned by sidebar.toggle, so unset by default.
     label: "Go to Last Terminal",
     defaultAccelerator: "",
+    scope: "renderer",
+  },
+  {
+    id: "nav.back",
+    label: "Navigate Back",
+    description: "Go back to the previous project/tab in history.",
+    defaultAccelerator: "CmdOrCtrl+Shift+ArrowLeft",
+    scope: "renderer",
+  },
+  {
+    id: "nav.forward",
+    label: "Navigate Forward",
+    description: "Go forward to the next project/tab in history.",
+    defaultAccelerator: "CmdOrCtrl+Shift+ArrowRight",
     scope: "renderer",
   },
   {
@@ -183,6 +199,13 @@ export function matchesAnyAccelerator(
   return accelerators.some((acc) => matchesAccelerator(acc, e))
 }
 
+const ARROW_SYMBOLS: Record<string, string> = {
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+}
+
 // Pretty-print an accelerator for UI (macOS symbols on darwin, words elsewhere).
 export function prettyAccelerator(acc: string): string[] {
   const n = parseAccelerator(acc)
@@ -194,6 +217,6 @@ export function prettyAccelerator(acc: string): string[] {
   if (n.cmdOrCtrl) out.push(isMac ? "⌘" : "Ctrl")
   if (n.alt) out.push(isMac ? "⌥" : "Alt")
   if (n.shift) out.push(isMac ? "⇧" : "Shift")
-  out.push(n.key)
+  out.push(ARROW_SYMBOLS[n.key] ?? n.key)
   return out
 }

@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   screen,
   shell,
 } from "electron"
@@ -574,6 +575,13 @@ function createWindow() {
       nodeIntegration: false,
     },
   })
+  if (VITE_DEV_SERVER_URL && process.platform === "darwin") {
+    app.dock.setIcon(
+      nativeImage.createFromPath(
+        path.join(app.getAppPath(), "build", "dev-icon.png"),
+      ),
+    )
+  }
   if (state?.isMaximized) win.maximize()
   if (state) {
     const b = win.getBounds()

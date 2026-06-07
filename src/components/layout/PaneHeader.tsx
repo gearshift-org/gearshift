@@ -12,6 +12,7 @@ import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopo
 // AgentSpinner kept for when the header busy spinner is restored.
 // import { AgentSpinner } from "./AgentSpinner"
 import { AgentAttention } from "./AgentAttention"
+import { AgentDone } from "./AgentDone"
 import { AgentIcon } from "./AgentIcon"
 import type { TerminalPane } from "./types"
 
@@ -74,11 +75,16 @@ export function PaneHeader({
 
   const agentWorking = pane.agentStatus?.working
   const agentNeedsAttention = pane.agentStatus?.needsAttention
+  const agentDone =
+    !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
   // Show the agent's brand icon while an agent is active in this pane (running,
-  // working, or waiting on the user). AgentIcon renders nothing for any agent
-  // without a registered icon.
+  // working, waiting on the user, or just completed). AgentIcon renders nothing
+  // for any agent without a registered icon.
   const agentActive =
-    !!pane.agentStatus?.running || !!agentWorking || !!agentNeedsAttention
+    !!pane.agentStatus?.running ||
+    !!agentWorking ||
+    !!agentNeedsAttention ||
+    agentDone
 
   return (
     <div
@@ -107,6 +113,8 @@ export function PaneHeader({
       ) : agentNeedsAttention ? ( */}
       {agentNeedsAttention ? (
         <AgentAttention className="mr-0.5" />
+      ) : agentDone ? (
+        <AgentDone className="mr-0.5" />
       ) : null}
       {editing ? (
         <input

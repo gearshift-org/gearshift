@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { AgentAttention } from "./AgentAttention"
+import { AgentDone } from "./AgentDone"
 import { AgentSpinner } from "./AgentSpinner"
 import { ProjectAvatar } from "./ProjectAvatar"
 import {
@@ -32,15 +33,7 @@ function ProjectAgentState({ project }: { project: Project }) {
   if (hasAttentionAgent) return <AgentAttention className="shrink-0" />
   if (!hasDoneAgent) return null
 
-  return (
-    <span
-      aria-label="Coding agent done"
-      title="Coding agent done"
-      className="grid size-3 shrink-0 place-items-center"
-    >
-      <span className="gs-status-bounce size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
-    </span>
-  )
+  return <AgentDone className="size-3" />
 }
 
 /**

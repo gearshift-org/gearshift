@@ -1020,11 +1020,13 @@ export function AppShell() {
   const dismissViewedTerminalNotifications = useCallback(
     (projectId: string, tabId: string, paneId: string) => {
       const set = agentDoneToastsByProjectRef.current.get(projectId)
+      const doneToastId = agentDoneToastId(projectId, tabId, paneId)
+      const attentionToastId = agentAttentionToastId(projectId, tabId, paneId)
+      const dismissedDoneToast = set?.has(doneToastId) ?? false
+      const dismissedAttentionToast = set?.has(attentionToastId) ?? false
+
       if (set) {
-        for (const id of [
-          agentDoneToastId(projectId, tabId, paneId),
-          agentAttentionToastId(projectId, tabId, paneId),
-        ]) {
+        for (const id of [doneToastId, attentionToastId]) {
           if (!set.has(id)) continue
           toast.dismiss(id)
           set.delete(id)
@@ -1054,15 +1056,20 @@ export function AppShell() {
             let paneChanged = false
             const panes = t.panes.map((pane) => {
               const status = pane.id === paneId ? pane.agentStatus : undefined
-              if (!status?.completed && !status?.needsAttention) return pane
+              const clearCompleted = dismissedDoneToast && status?.completed
+              const clearAttention =
+                dismissedAttentionToast && status?.needsAttention
+              if (!clearCompleted && !clearAttention) return pane
               paneChanged = true
               return {
                 ...pane,
                 agentStatus: {
                   ...status,
-                  completed: false,
-                  completedAt: undefined,
-                  needsAttention: false,
+                  completed: clearCompleted ? false : status?.completed,
+                  completedAt: clearCompleted ? undefined : status?.completedAt,
+                  needsAttention: clearAttention
+                    ? false
+                    : status?.needsAttention,
                 },
               }
             })

@@ -103,7 +103,7 @@ function disableTransitionsTemporarily() {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
+  defaultTheme = "dark-claude",
   storageKey = "theme",
   disableTransitionOnChange = true,
   ...props

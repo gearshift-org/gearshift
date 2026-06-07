@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { FileDiff, Plus, Settings, TerminalSquare, X } from "lucide-react"
+import {
+  FileDiff,
+  GitCommitVertical,
+  Plus,
+  Settings,
+  TerminalSquare,
+  X,
+} from "lucide-react"
 import { FileIcon } from "@/components/icons/FileIcon"
 import {
   DndContext,
@@ -120,6 +127,8 @@ function TabIcon({
   agentName?: TerminalAgentName
 }) {
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
+  if (tab.kind === "commit")
+    return <GitCommitVertical className="size-3.5 shrink-0" />
   if (tab.kind === "file") {
     return (
       <FileIcon
@@ -160,7 +169,8 @@ function WorkspaceTabItem({
   const isTerminal = t.kind === "terminal"
   const tabTitle = tabDisplayName(t)
   const isPreview =
-    (t.kind === "diff" || t.kind === "file") && t.preview === true
+    (t.kind === "diff" || t.kind === "file" || t.kind === "commit") &&
+    t.preview === true
   const hasWorkingAgent =
     isTerminal && t.panes.some((pane) => pane.agentStatus?.working)
   const hasAttentionAgent =

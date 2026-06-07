@@ -3,7 +3,11 @@ import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { WorkspacePane } from "./WorkspacePane"
 import { RightSidebar } from "./RightSidebar"
-import { loadSidebarWidth, saveSidebarWidth } from "@/lib/projects"
+import {
+  loadSidebarWidth,
+  saveSidebarWidth,
+  type RightSidebarTab,
+} from "@/lib/projects"
 import { store } from "@/lib/store"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type {
@@ -72,10 +76,15 @@ type Props = {
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
+  onOpenCommitTab: (commit: {
+    hash: string
+    shortHash: string
+    subject: string
+  }) => void
   onCommitWithAi?: () => void
   canCommitWithAi?: boolean
-  rightSidebarTab?: "changes" | "files" | "history"
-  onRightSidebarTabChange?: (tab: "changes" | "files" | "history") => void
+  rightSidebarTab?: RightSidebarTab
+  onRightSidebarTabChange?: (tab: RightSidebarTab) => void
   activeTreeFilePath?: string
   fileReveal?: FileReveal | null
   // In the vertical project layout the separate title bar is dropped and the
@@ -108,6 +117,7 @@ export function WorkspaceSplit({
   onExtractPaneToTab,
   onOpenDiffTab,
   onOpenFileTab,
+  onOpenCommitTab,
   onCommitWithAi,
   canCommitWithAi = false,
   rightSidebarTab,
@@ -363,6 +373,7 @@ export function WorkspaceSplit({
             activeFilePath={activeTreeFilePath}
             onOpenDiff={onOpenDiffTab}
             onOpenFile={onOpenFileTab}
+            onOpenCommit={onOpenCommitTab}
             onCommitWithAi={onCommitWithAi}
             canCommitWithAi={canCommitWithAi}
             topRightActions={sidebarTopActions}

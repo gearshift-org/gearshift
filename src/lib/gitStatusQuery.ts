@@ -11,6 +11,19 @@ export type PullRequestInfo = {
   id: string
   title: string
   url: string
+  headRefName?: string
+  baseRefName?: string
+  authorLogin?: string
+  updatedAt?: string
+}
+
+export type CommitInfo = {
+  hash: string
+  shortHash: string
+  authorName: string
+  isoDate: string
+  relativeDate: string
+  subject: string
 }
 
 export type GitQueryData = {
@@ -48,6 +61,10 @@ const EMPTY_NOT_REPO_DATA: GitQueryData = {
 export const EMPTY_GIT_FILES: GitFile[] = []
 
 export const gitQueryKey = (cwd: string | null) => ["git", cwd] as const
+export const gitPullRequestsQueryKey = (cwd: string | null) =>
+  ["git", cwd, "pullRequests"] as const
+export const gitLogQueryKey = (cwd: string | null) =>
+  ["git", cwd, "commits"] as const
 
 export async function fetchGitQueryData(cwd: string): Promise<GitQueryData> {
   const [status, ab, br] = await Promise.all([

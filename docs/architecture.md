@@ -12,9 +12,9 @@ The watcher is intentionally noisy at the OS level but quiet at the IPC level:
 - Debounced in main: events are collected into a `Set<string>` per watch and flushed after 150 ms as one `fs:changed` IPC event.
 - Native module handling: `@parcel/watcher` is marked external in `vite.config.ts` so the bundler does not inline its prebuilt binaries.
 
-## Changes Panel Refresh
+## Git Panel Refresh
 
-`src/components/layout/RightSidebar.tsx` keeps `git status` and diffs in sync with disk using four paths:
+The right sidebar's Git tab keeps `git status` and diffs in sync with disk using four paths:
 
 1. Initial load on mount, `cwd` change, and active project change.
 2. Watcher-driven refresh after `fs:changed` IPC events.
@@ -74,7 +74,13 @@ Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering
 
 ## GitHub Pull Requests
 
-The changes panel shows pull request status beside the branch picker when the GitHub CLI is installed and available. GearShift checks the current branch with `gh pr list`; if an open pull request exists, it opens that PR. If no PR exists and the branch is pushed upstream, GearShift opens GitHub's pull request creation page.
+The Git tab has subtabs for local Changes, repository PRs, and Commits. When the GitHub CLI is installed and available, GearShift lists open pull requests with `gh pr list --state open` and opens selected PRs through `gh pr view --web`.
+
+The Changes subtab also shows pull request status beside the branch picker for the current branch. If an open pull request exists, it opens that PR. If no PR exists and the branch is pushed upstream, GearShift opens GitHub's pull request creation page.
+
+## Commit history
+
+The Commits subtab lists recent commits from `git:log`, lazily paged (`useInfiniteQuery`, 50 per page) and loaded on scroll via an `IntersectionObserver` sentinel. Clicking a commit opens a `commit` workspace tab that renders its full diff (`git:show`) through the shared `DiffViewer`. Like diff and file tabs, commit tabs are ephemeral preview tabs and are not persisted across restarts.
 
 ## PTY daemon & terminating sessions
 

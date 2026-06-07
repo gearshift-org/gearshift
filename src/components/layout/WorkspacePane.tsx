@@ -25,6 +25,7 @@ import { KeyChip } from "@/components/keybindings/KeyChip"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
+import { CommitDiff } from "./CommitDiff"
 import {
   FilePreview,
   isAudioPath,
@@ -660,6 +661,11 @@ function PaneContent({
         mdMode={mdMode}
         onOpenFile={onOpenFile}
       />
+    )
+  }
+  if (tab.kind === "commit") {
+    return (
+      <CommitDiff cwd={project.path} hash={tab.hash} viewMode={diffViewMode} />
     )
   }
   return (

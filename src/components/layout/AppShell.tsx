@@ -1898,6 +1898,71 @@ export function AppShell() {
     [activeProject, navigateToTab]
   )
 
+  const openCommitTab = useCallback(
+    (commit: { hash: string; shortHash: string; subject: string }) => {
+      if (!activeProject) return
+      const exact = activeProject.tabs.find(
+        (t) => t.kind === "commit" && t.hash === commit.hash
+      )
+      if (exact) {
+        navigateToTab(exact.id)
+        return
+      }
+      // Reuse the existing preview commit tab if any.
+      const preview = activeProject.tabs.find(
+        (t) => t.kind === "commit" && t.preview
+      )
+      if (preview) {
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === activeProject.id
+              ? {
+                  ...p,
+                  tabs: p.tabs.map((t) =>
+                    t.id === preview.id && t.kind === "commit"
+                      ? {
+                          ...t,
+                          hash: commit.hash,
+                          shortHash: commit.shortHash,
+                          name: commit.subject,
+                        }
+                      : t
+                  ),
+                  activeTabId: preview.id,
+                }
+              : p
+          )
+        )
+        navigateToTab(preview.id)
+        return
+      }
+      const id = makeId()
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProject.id
+            ? {
+                ...p,
+                tabs: [
+                  ...p.tabs,
+                  {
+                    kind: "commit" as const,
+                    id,
+                    name: commit.subject,
+                    hash: commit.hash,
+                    shortHash: commit.shortHash,
+                    preview: true,
+                  },
+                ],
+                activeTabId: id,
+              }
+            : p
+        )
+      )
+      navigateToTab(id)
+    },
+    [activeProject, navigateToTab]
+  )
+
   /** Pin a preview tab so subsequent file clicks don't replace it. */
   const pinTab = (id: string) => {
     setProjects((prev) =>
@@ -1906,7 +1971,8 @@ export function AppShell() {
           ? {
               ...p,
               tabs: p.tabs.map((t) =>
-                t.id === id && (t.kind === "diff" || t.kind === "file")
+                t.id === id &&
+                (t.kind === "diff" || t.kind === "file" || t.kind === "commit")
                   ? { ...t, preview: false }
                   : t
               ),
@@ -2737,7 +2803,7 @@ export function AppShell() {
             toggleRightSidebar()
           }
           const openChanges = () => {
-            setRightSidebarTab("changes")
+            setRightSidebarTab("git")
             openRightSidebar()
           }
           // Vertical layout with the project sidebar collapsed: show an expand
@@ -2917,6 +2983,7 @@ export function AppShell() {
               onExtractPaneToTab={extractPaneToTab}
               onOpenDiffTab={openDiffTab}
               onOpenFileTab={openFileTab}
+              onOpenCommitTab={openCommitTab}
               onCommitWithAi={commitWithAi}
               canCommitWithAi={!!resolvedLastAgentTerminal}
               rightSidebarTab={rightSidebarTab}

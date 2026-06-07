@@ -114,7 +114,19 @@ export type FileTab = {
   preview?: boolean
 }
 
-export type WorkspaceTab = TerminalTab | DiffTab | FileTab
+export type CommitTab = {
+  kind: "commit"
+  id: string
+  name: string
+  /** Full commit hash, passed to `git show`. */
+  hash: string
+  /** Abbreviated hash, shown in the header. */
+  shortHash: string
+  /** True when opened as a "preview" — gets replaced by the next preview open. */
+  preview?: boolean
+}
+
+export type WorkspaceTab = TerminalTab | DiffTab | FileTab | CommitTab
 
 /**
  * A request to reveal (scroll to + select) a specific line of a file, e.g. from

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import {
   ArrowDown,
   ArrowUp,
@@ -7,6 +11,7 @@ import {
   CloudUpload,
   ExternalLink,
   GitBranch,
+  GitCommitVertical,
   GitPullRequest,
   Loader2,
   Minus,
@@ -54,11 +59,14 @@ import { ChangeCountBadge } from "./ChangeCountBadge"
 import { FilesTree } from "./FilesTree"
 import { ProjectChatHistoryPanel } from "./ProjectChatHistory"
 import { setPathDragData } from "@/lib/pathDrag"
+import type { RightSidebarTab } from "@/lib/projects"
 import {
   EMPTY_GIT_FILES,
   applyOptimisticGitFileMoves,
   applyOptimisticGitFileRemovals,
   fetchGitQueryData,
+  gitLogQueryKey,
+  gitPullRequestsQueryKey,
   gitQueryKey,
   moveCachedGitFiles,
   removeCachedGitFiles,
@@ -68,6 +76,7 @@ import {
   type OptimisticGitFileRemoval,
   type GitStatus,
   type PullRequestInfo,
+  type CommitInfo,
 } from "@/lib/gitStatusQuery"
 
 const REFRESH_DEBOUNCE_MS = 350
@@ -75,6 +84,7 @@ const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
 const CHANGE_LIST_BATCH_SIZE = 150
+const COMMIT_PAGE_SIZE = 50
 // Optimistic overlays are confirm-cleared once a refetch reflects the action,
 // so these TTLs are only a safety net for the rare case where reality never
 // catches up (e.g. external git tampering). Keep them generous.
@@ -82,6 +92,10 @@ const OPTIMISTIC_GIT_MOVE_TTL_MS = 15000
 const OPTIMISTIC_GIT_REMOVE_TTL_MS = 15000
 const OPTIMISTIC_BRANCH_TTL_MS = 15000
 const EMPTY_BRANCHES: string[] = []
+const EMPTY_PULL_REQUESTS: PullRequestInfo[] = []
+const EMPTY_COMMITS: CommitInfo[] = []
+
+type GitSubTab = "changes" | "prs" | "commits"
 
 const STATUS_STYLES: Record<GitStatus, string> = {
   M: "text-amber-500",
@@ -101,11 +115,16 @@ type Props = {
   cwd: string | null
   projectId?: string | null
   isActive?: boolean
-  activeTab?: "changes" | "files" | "history"
-  onActiveTabChange?: (tab: "changes" | "files" | "history") => void
+  activeTab?: RightSidebarTab
+  onActiveTabChange?: (tab: RightSidebarTab) => void
   activeFilePath?: string
   onOpenDiff: (path: string, staged: boolean) => void
   onOpenFile: (path: string) => void
+  onOpenCommit?: (commit: {
+    hash: string
+    shortHash: string
+    subject: string
+  }) => void
   onCommitWithAi?: () => void
   canCommitWithAi?: boolean
   topRightActions?: React.ReactNode
@@ -120,13 +139,13 @@ export function RightSidebar({
   activeFilePath,
   onOpenDiff,
   onOpenFile,
+  onOpenCommit,
   onCommitWithAi,
   canCommitWithAi = false,
   topRightActions,
 }: Props) {
-  const [internalTab, setInternalTab] = useState<
-    "changes" | "files" | "history"
-  >("changes")
+  const [internalTab, setInternalTab] = useState<RightSidebarTab>("git")
+  const [gitSubTab, setGitSubTab] = useState<GitSubTab>("changes")
   const tab = activeTab ?? internalTab
   const [actionErrorsByCwd, setActionErrorsByCwd] = useState<
     Record<string, string>
@@ -140,13 +159,12 @@ export function RightSidebar({
   // so the right button can show the loading label.
   const [syncing, setSyncing] = useState(false)
   const [switchingBranch, setSwitchingBranch] = useState(false)
-  const [pullRequestBusy, setPullRequestBusy] = useState<
-    null | "create" | "open"
+  const [pullRequestBusy, setPullRequestBusy] = useState<null | "create">(null)
+  const [openingPullRequestNumber, setOpeningPullRequestNumber] = useState<
+    number | null
   >(null)
   const [githubBranchBusy, setGithubBranchBusy] = useState(false)
-  const [stagedListLimit, setStagedListLimit] = useState(
-    CHANGE_LIST_BATCH_SIZE
-  )
+  const [stagedListLimit, setStagedListLimit] = useState(CHANGE_LIST_BATCH_SIZE)
   const [unstagedListLimit, setUnstagedListLimit] = useState(
     CHANGE_LIST_BATCH_SIZE
   )
@@ -239,6 +257,48 @@ export function RightSidebar({
   const pullRequest = gitQuery.data?.pullRequest ?? null
   const canCreatePullRequest = gitQuery.data?.canCreatePullRequest ?? false
   const notRepo = gitQuery.data?.notRepo ?? false
+  const pullRequestsQuery = useQuery({
+    queryKey: gitPullRequestsQueryKey(cwd),
+    enabled: !!cwd && isActive && tab === "git",
+    queryFn: () => window.git.pullRequests(cwd!),
+  })
+  const pullRequests =
+    pullRequestsQuery.data?.pullRequests ?? EMPTY_PULL_REQUESTS
+  const pullRequestsGhAvailable = pullRequestsQuery.data?.ghAvailable ?? false
+  const pullRequestsError = pullRequestsQuery.error
+    ? pullRequestsQuery.error instanceof Error
+      ? pullRequestsQuery.error.message
+      : String(pullRequestsQuery.error)
+    : null
+  const commitsQuery = useInfiniteQuery({
+    queryKey: gitLogQueryKey(cwd),
+    enabled: !!cwd && isActive && tab === "git" && !notRepo,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      window.git.log(cwd!, COMMIT_PAGE_SIZE, pageParam),
+    // No more pages once git returns a short (final) page.
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage?.ok || (lastPage.commits?.length ?? 0) < COMMIT_PAGE_SIZE) {
+        return undefined
+      }
+      return allPages.reduce(
+        (total, page) => total + (page.commits?.length ?? 0),
+        0
+      )
+    },
+  })
+  const commits = useMemo(
+    () => commitsQuery.data?.pages.flatMap((page) => page.commits) ?? EMPTY_COMMITS,
+    [commitsQuery.data]
+  )
+  const firstCommitsPage = commitsQuery.data?.pages[0]
+  const commitsError = commitsQuery.error
+    ? commitsQuery.error instanceof Error
+      ? commitsQuery.error.message
+      : String(commitsQuery.error)
+    : firstCommitsPage && !firstCommitsPage.ok
+      ? (firstCommitsPage.error ?? "Failed to load commits")
+      : null
   const currentActionError = cwd ? (actionErrorsByCwd[cwd] ?? null) : null
   const setCurrentActionError = useCallback(
     (message: string | null) => {
@@ -612,6 +672,7 @@ export function RightSidebar({
           currentGitQueryKey,
           await fetchGitQueryData(cwd)
         )
+        void queryClient.invalidateQueries({ queryKey: gitLogQueryKey(cwd) })
       } finally {
         setBusy(false)
         setCommitting(null)
@@ -699,18 +760,26 @@ export function RightSidebar({
     [cwd, branches, runAction, updateCachedGitMeta]
   )
 
-  const openPullRequest = useCallback(async () => {
-    if (!cwd || !pullRequest || pullRequestBusy) return
-    setPullRequestBusy("open")
-    setCurrentActionError(null)
-    try {
-      const res = await window.git.openPullRequest(cwd, pullRequest.number)
-      if (!res.ok)
-        setCurrentActionError(res.error ?? "Open pull request failed")
-    } finally {
-      setPullRequestBusy(null)
-    }
-  }, [cwd, pullRequest, pullRequestBusy, setCurrentActionError])
+  const openPullRequestNumber = useCallback(
+    async (number: number) => {
+      if (!cwd || openingPullRequestNumber !== null) return
+      setOpeningPullRequestNumber(number)
+      setCurrentActionError(null)
+      try {
+        const res = await window.git.openPullRequest(cwd, number)
+        if (!res.ok)
+          setCurrentActionError(res.error ?? "Open pull request failed")
+      } finally {
+        setOpeningPullRequestNumber(null)
+      }
+    },
+    [cwd, openingPullRequestNumber, setCurrentActionError]
+  )
+
+  const openPullRequest = useCallback(() => {
+    if (!pullRequest) return
+    void openPullRequestNumber(pullRequest.number)
+  }, [openPullRequestNumber, pullRequest])
 
   const createPullRequest = useCallback(async () => {
     if (!cwd || !currentBranch || !canCreatePullRequest || pullRequestBusy) {
@@ -725,6 +794,9 @@ export function RightSidebar({
         return
       }
       void runRefresh()
+      void queryClient.refetchQueries({
+        queryKey: gitPullRequestsQueryKey(cwd),
+      })
     } finally {
       setPullRequestBusy(null)
     }
@@ -733,9 +805,16 @@ export function RightSidebar({
     currentBranch,
     canCreatePullRequest,
     pullRequestBusy,
+    queryClient,
     runRefresh,
     setCurrentActionError,
   ])
+
+  const currentPullRequestBusy = pullRequestBusy
+    ? pullRequestBusy
+    : openingPullRequestNumber === pullRequest?.number
+      ? "open"
+      : null
 
   const openBranchOnGitHub = useCallback(async () => {
     if (!cwd || !currentBranch || githubBranchBusy) return
@@ -784,6 +863,7 @@ export function RightSidebar({
         settleUntilRef.current,
         Date.now() + 700
       )
+      void queryClient.invalidateQueries({ queryKey: gitLogQueryKey(cwd) })
       void runRefresh()
     }
   }, [
@@ -791,6 +871,7 @@ export function RightSidebar({
     busy,
     ahead,
     behind,
+    queryClient,
     updateCachedGitMeta,
     runRefresh,
     setCurrentActionError,
@@ -856,7 +937,7 @@ export function RightSidebar({
       <Tabs
         value={tab}
         onValueChange={(v) => {
-          const next = v as "changes" | "files" | "history"
+          const next = v as RightSidebarTab
           setInternalTab(next)
           onActiveTabChange?.(next)
         }}
@@ -868,11 +949,11 @@ export function RightSidebar({
             className="h-full gap-1 bg-transparent p-0 [-webkit-app-region:no-drag]"
           >
             <TabsTrigger
-              value="changes"
+              value="git"
               className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
-              Changes
-              {hasData && files.length > 0 && (
+              Git
+              {tab !== "git" && hasData && files.length > 0 && (
                 <ChangeCountBadge count={files.length} />
               )}
             </TabsTrigger>
@@ -896,278 +977,365 @@ export function RightSidebar({
           )}
         </div>
         <TabsContent
-          value="changes"
+          value="git"
           keepMounted
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          className="min-h-0 flex-1 overflow-hidden"
         >
-          {cwd && notRepo && (
-            <div className="px-4 py-3 text-xs text-muted-foreground">
-              Not a git repository
-            </div>
-          )}
-          {cwd && !notRepo && (
-            <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3">
-              <div className="flex items-center gap-1.5">
-                <div className="min-w-0 flex-1">
-                  <BranchPicker
-                    current={currentBranch}
-                    branches={branches}
-                    busy={switchingBranch || busy}
-                    onSwitch={switchBranch}
-                    onCreate={createBranch}
-                  />
-                </div>
-                {ghAvailable && currentBranch && (
-                  <GitHubBranchAction
-                    branch={currentBranch}
-                    busy={githubBranchBusy}
-                    onOpen={openBranchOnGitHub}
-                  />
-                )}
-                {ghAvailable && (pullRequest || canCreatePullRequest) && (
-                  <PullRequestAction
-                    pullRequest={pullRequest}
-                    canCreate={canCreatePullRequest}
-                    busy={pullRequestBusy}
-                    onOpen={openPullRequest}
-                    onCreate={createPullRequest}
-                  />
-                )}
-              </div>
-              <textarea
-                value={commitMessage}
-                onChange={(e) => setCommitMessage(e.target.value)}
-                placeholder="Message (Ctrl+Enter to commit)"
-                rows={2}
-                onKeyDown={(e) => {
-                  if (
-                    (e.metaKey || e.ctrlKey) &&
-                    e.key === "Enter" &&
-                    canCommit
-                  ) {
-                    e.preventDefault()
-                    void commit()
-                  }
-                }}
-                className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              />
-              {showSync ? (
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() =>
-                    showPublishBranch ? void publishBranch() : void sync()
-                  }
-                  className="w-full"
+          <Tabs
+            value={gitSubTab}
+            onValueChange={(v) => setGitSubTab(v as GitSubTab)}
+            className="flex h-full min-h-0 flex-col gap-0"
+          >
+            <div className="flex h-[34px] shrink-0 items-center border-b border-border/60 px-3">
+              <TabsList
+                variant="line"
+                className="h-full gap-1 bg-transparent p-0"
+              >
+                <TabsTrigger
+                  value="changes"
+                  className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
                 >
-                  {syncing ? (
-                    <>
-                      <Loader2 className="size-3.5 animate-spin" />
-                      {committing === "publish"
-                        ? "Publishing…"
-                        : committing === "pull"
-                          ? "Pulling…"
-                          : committing === "push"
-                            ? "Pushing…"
-                            : "Syncing…"}
-                    </>
-                  ) : showPublishBranch ? (
-                    <>
-                      <CloudUpload className="size-3.5" />
-                      <span>Publish Branch</span>
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="size-3.5" />
-                      <span>Sync Changes</span>
-                      {ahead > 0 && (
-                        <span className="inline-flex items-center gap-0.5">
-                          {ahead}
-                          <ArrowUp className="size-3" />
-                        </span>
-                      )}
-                      {behind > 0 && (
-                        <span className="inline-flex items-center gap-0.5">
-                          {behind}
-                          <ArrowDown className="size-3" />
-                        </span>
-                      )}
-                    </>
+                  Changes
+                  {hasData && files.length > 0 && (
+                    <ChangeCountBadge count={files.length} />
                   )}
-                </Button>
-              ) : (
-                <div className="flex items-stretch">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={
-                      useManualCommit
-                        ? !canCommit || busy
-                        : !canCommitWithAi || stagedFiles.length === 0 || busy
-                    }
-                    onClick={() =>
-                      useManualCommit ? void commit() : onCommitWithAi?.()
-                    }
-                    className="flex-1 rounded-r-none"
-                  >
-                    {useManualCommit ? (
-                      committing === "commit" ? (
-                        <>
-                          <Loader2 className="size-3.5 animate-spin" />
-                          Committing…
-                        </>
-                      ) : committing === "push" ? (
-                        <>
-                          <Loader2 className="size-3.5 animate-spin" />
-                          Pushing…
-                        </>
-                      ) : (
-                        "Commit manually"
-                      )
-                    ) : (
-                      "Commit with AI"
-                    )}
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="default"
-                          size="sm"
-                          disabled={busy}
-                          aria-label="More commit options"
-                          className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
-                        >
-                          <ChevronDown className="size-3.5" />
-                        </Button>
-                      }
-                    />
-                    <DropdownMenuContent align="end" className="min-w-[180px]">
-                      <DropdownMenuItem
-                        disabled={
-                          !canCommitWithAi || stagedFiles.length === 0 || busy
-                        }
-                        onClick={onCommitWithAi}
-                      >
-                        Commit with AI
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={!canCommit || busy}
-                        onClick={() => void commit()}
-                      >
-                        Commit manually
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={!canCommit || busy}
-                        onClick={() => void commit({ push: true })}
-                      >
-                        Commit &amp; Push
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="commits"
+                  className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
+                >
+                  Commits
+                </TabsTrigger>
+                <TabsTrigger
+                  value="prs"
+                  className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
+                >
+                  PRs
+                  {pullRequests.length > 0 && (
+                    <ChangeCountBadge count={pullRequests.length} />
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent
+              value="changes"
+              keepMounted
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            >
+              {cwd && notRepo && (
+                <div className="px-4 py-3 text-xs text-muted-foreground">
+                  Not a git repository
                 </div>
               )}
-            </div>
-          )}
-          <ScrollArea className="min-h-0 flex-1">
-            {!cwd && (
-              <div className="px-4 py-3 text-xs text-muted-foreground">
-                No project open
-              </div>
-            )}
-            {cwd && !notRepo && loading && files.length === 0 && (
-              <div className="px-4 py-3 text-xs text-muted-foreground">
-                Loading changes…
-              </div>
-            )}
-            {cwd && !notRepo && error && (
-              <div className="px-4 py-3 text-xs text-red-500">{error}</div>
-            )}
-            {cwd && !notRepo && !loading && !error && files.length === 0 && (
-              <div className="px-4 py-3 text-xs text-muted-foreground">
-                No changes
-              </div>
-            )}
-            {cwd && stagedFiles.length > 0 && (
-              <FileGroup
-                label="Staged Changes"
-                count={stagedFiles.length}
-                onActionAll={unstageAll}
-                actionAllLabel="Unstage all"
-                actionAllIcon={<Minus className="size-3.5" />}
-                footer={
-                  hiddenStagedCount > 0 ? (
-                    <ShowMoreChangesButton
-                      hiddenCount={hiddenStagedCount}
-                      onClick={() =>
-                        setStagedListLimit((limit) =>
-                          limit + CHANGE_LIST_BATCH_SIZE
-                        )
+              {cwd && !notRepo && (
+                <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="min-w-0 flex-1">
+                      <BranchPicker
+                        current={currentBranch}
+                        branches={branches}
+                        busy={switchingBranch || busy}
+                        onSwitch={switchBranch}
+                        onCreate={createBranch}
+                      />
+                    </div>
+                    {ghAvailable && currentBranch && (
+                      <GitHubBranchAction
+                        branch={currentBranch}
+                        busy={githubBranchBusy}
+                        onOpen={openBranchOnGitHub}
+                      />
+                    )}
+                    {ghAvailable && (pullRequest || canCreatePullRequest) && (
+                      <PullRequestAction
+                        pullRequest={pullRequest}
+                        canCreate={canCreatePullRequest}
+                        busy={currentPullRequestBusy}
+                        onOpen={openPullRequest}
+                        onCreate={createPullRequest}
+                      />
+                    )}
+                  </div>
+                  <textarea
+                    value={commitMessage}
+                    onChange={(e) => setCommitMessage(e.target.value)}
+                    placeholder="Message (Ctrl+Enter to commit)"
+                    rows={2}
+                    onKeyDown={(e) => {
+                      if (
+                        (e.metaKey || e.ctrlKey) &&
+                        e.key === "Enter" &&
+                        canCommit
+                      ) {
+                        e.preventDefault()
+                        void commit()
                       }
-                    />
-                  ) : null
-                }
-              >
-                {visibleStagedFiles.map((c) => (
-                  <FileRow
-                    key={`staged-${c.path}`}
-                    cwd={cwd}
-                    file={c}
-                    actionIcon={<Minus className="size-3.5" />}
-                    actionLabel="Unstage"
-                    onAction={() => unstagePath(c.path)}
-                    onOpen={() => onOpenDiff(c.path, true)}
-                    onOpenFile={() => onOpenFile(c.path)}
-                    busy={busy}
+                    }}
+                    className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   />
-                ))}
-              </FileGroup>
-            )}
-            {cwd && unstagedFiles.length > 0 && (
-              <FileGroup
-                label="Changes"
-                count={unstagedFiles.length}
-                onActionAll={stageAll}
-                actionAllLabel="Stage all"
-                actionAllIcon={<Plus className="size-3.5" />}
-                secondaryActionAll={discardAllUnstaged}
-                secondaryActionAllLabel="Discard all"
-                secondaryActionAllIcon={<Undo2 className="size-3.5" />}
-                footer={
-                  hiddenUnstagedCount > 0 ? (
-                    <ShowMoreChangesButton
-                      hiddenCount={hiddenUnstagedCount}
+                  {showSync ? (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={busy}
                       onClick={() =>
-                        setUnstagedListLimit((limit) =>
-                          limit + CHANGE_LIST_BATCH_SIZE
-                        )
+                        showPublishBranch ? void publishBranch() : void sync()
                       }
-                    />
-                  ) : null
-                }
-              >
-                {visibleUnstagedFiles.map((c) => (
-                  <FileRow
-                    key={`unstaged-${c.path}`}
-                    cwd={cwd}
-                    file={c}
-                    actionIcon={<Plus className="size-3.5" />}
-                    actionLabel="Stage"
-                    onAction={() => stagePath(c.path)}
-                    secondaryActionIcon={<Undo2 className="size-3.5" />}
-                    secondaryActionLabel="Discard changes"
-                    onSecondaryAction={() => discardPath(c.path)}
-                    onOpen={() => onOpenDiff(c.path, false)}
-                    onOpenFile={() => onOpenFile(c.path)}
-                    busy={busy}
-                  />
-                ))}
-              </FileGroup>
-            )}
-          </ScrollArea>
+                      className="w-full"
+                    >
+                      {syncing ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          {committing === "publish"
+                            ? "Publishing…"
+                            : committing === "pull"
+                              ? "Pulling…"
+                              : committing === "push"
+                                ? "Pushing…"
+                                : "Syncing…"}
+                        </>
+                      ) : showPublishBranch ? (
+                        <>
+                          <CloudUpload className="size-3.5" />
+                          <span>Publish Branch</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="size-3.5" />
+                          <span>Sync Changes</span>
+                          {ahead > 0 && (
+                            <span className="inline-flex items-center gap-0.5">
+                              {ahead}
+                              <ArrowUp className="size-3" />
+                            </span>
+                          )}
+                          {behind > 0 && (
+                            <span className="inline-flex items-center gap-0.5">
+                              {behind}
+                              <ArrowDown className="size-3" />
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <div className="flex items-stretch">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        disabled={
+                          useManualCommit
+                            ? !canCommit || busy
+                            : !canCommitWithAi ||
+                              stagedFiles.length === 0 ||
+                              busy
+                        }
+                        onClick={() =>
+                          useManualCommit ? void commit() : onCommitWithAi?.()
+                        }
+                        className="flex-1 rounded-r-none"
+                      >
+                        {useManualCommit ? (
+                          committing === "commit" ? (
+                            <>
+                              <Loader2 className="size-3.5 animate-spin" />
+                              Committing…
+                            </>
+                          ) : committing === "push" ? (
+                            <>
+                              <Loader2 className="size-3.5 animate-spin" />
+                              Pushing…
+                            </>
+                          ) : (
+                            "Commit manually"
+                          )
+                        ) : (
+                          "Commit with AI"
+                        )}
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="default"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="More commit options"
+                              className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+                            >
+                              <ChevronDown className="size-3.5" />
+                            </Button>
+                          }
+                        />
+                        <DropdownMenuContent
+                          align="end"
+                          className="min-w-[180px]"
+                        >
+                          <DropdownMenuItem
+                            disabled={
+                              !canCommitWithAi ||
+                              stagedFiles.length === 0 ||
+                              busy
+                            }
+                            onClick={onCommitWithAi}
+                          >
+                            Commit with AI
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            disabled={!canCommit || busy}
+                            onClick={() => void commit()}
+                          >
+                            Commit manually
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            disabled={!canCommit || busy}
+                            onClick={() => void commit({ push: true })}
+                          >
+                            Commit &amp; Push
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
+                </div>
+              )}
+              <ScrollArea className="min-h-0 flex-1">
+                {!cwd && (
+                  <div className="px-4 py-3 text-xs text-muted-foreground">
+                    No project open
+                  </div>
+                )}
+                {cwd && !notRepo && loading && files.length === 0 && (
+                  <div className="px-4 py-3 text-xs text-muted-foreground">
+                    Loading changes…
+                  </div>
+                )}
+                {cwd && !notRepo && error && (
+                  <div className="px-4 py-3 text-xs text-red-500">{error}</div>
+                )}
+                {cwd &&
+                  !notRepo &&
+                  !loading &&
+                  !error &&
+                  files.length === 0 && (
+                    <div className="px-4 py-3 text-xs text-muted-foreground">
+                      No changes
+                    </div>
+                  )}
+                {cwd && stagedFiles.length > 0 && (
+                  <FileGroup
+                    label="Staged Changes"
+                    count={stagedFiles.length}
+                    onActionAll={unstageAll}
+                    actionAllLabel="Unstage all"
+                    actionAllIcon={<Minus className="size-3.5" />}
+                    footer={
+                      hiddenStagedCount > 0 ? (
+                        <ShowMoreChangesButton
+                          hiddenCount={hiddenStagedCount}
+                          onClick={() =>
+                            setStagedListLimit(
+                              (limit) => limit + CHANGE_LIST_BATCH_SIZE
+                            )
+                          }
+                        />
+                      ) : null
+                    }
+                  >
+                    {visibleStagedFiles.map((c) => (
+                      <FileRow
+                        key={`staged-${c.path}`}
+                        cwd={cwd}
+                        file={c}
+                        actionIcon={<Minus className="size-3.5" />}
+                        actionLabel="Unstage"
+                        onAction={() => unstagePath(c.path)}
+                        onOpen={() => onOpenDiff(c.path, true)}
+                        onOpenFile={() => onOpenFile(c.path)}
+                        busy={busy}
+                      />
+                    ))}
+                  </FileGroup>
+                )}
+                {cwd && unstagedFiles.length > 0 && (
+                  <FileGroup
+                    label="Changes"
+                    count={unstagedFiles.length}
+                    onActionAll={stageAll}
+                    actionAllLabel="Stage all"
+                    actionAllIcon={<Plus className="size-3.5" />}
+                    secondaryActionAll={discardAllUnstaged}
+                    secondaryActionAllLabel="Discard all"
+                    secondaryActionAllIcon={<Undo2 className="size-3.5" />}
+                    footer={
+                      hiddenUnstagedCount > 0 ? (
+                        <ShowMoreChangesButton
+                          hiddenCount={hiddenUnstagedCount}
+                          onClick={() =>
+                            setUnstagedListLimit(
+                              (limit) => limit + CHANGE_LIST_BATCH_SIZE
+                            )
+                          }
+                        />
+                      ) : null
+                    }
+                  >
+                    {visibleUnstagedFiles.map((c) => (
+                      <FileRow
+                        key={`unstaged-${c.path}`}
+                        cwd={cwd}
+                        file={c}
+                        actionIcon={<Plus className="size-3.5" />}
+                        actionLabel="Stage"
+                        onAction={() => stagePath(c.path)}
+                        secondaryActionIcon={<Undo2 className="size-3.5" />}
+                        secondaryActionLabel="Discard changes"
+                        onSecondaryAction={() => discardPath(c.path)}
+                        onOpen={() => onOpenDiff(c.path, false)}
+                        onOpenFile={() => onOpenFile(c.path)}
+                        busy={busy}
+                      />
+                    ))}
+                  </FileGroup>
+                )}
+              </ScrollArea>
+            </TabsContent>
+            <TabsContent
+              value="prs"
+              keepMounted
+              className="min-h-0 flex-1 overflow-hidden"
+            >
+              <PullRequestsPanel
+                cwd={cwd}
+                notRepo={notRepo}
+                loading={pullRequestsQuery.isLoading}
+                error={currentActionError ?? pullRequestsError}
+                ghAvailable={pullRequestsGhAvailable}
+                pullRequests={pullRequests}
+                openingNumber={openingPullRequestNumber}
+                onOpen={openPullRequestNumber}
+              />
+            </TabsContent>
+            <TabsContent
+              value="commits"
+              keepMounted
+              className="min-h-0 flex-1 overflow-hidden"
+            >
+              <CommitHistoryPanel
+                cwd={cwd}
+                notRepo={notRepo}
+                loading={commitsQuery.isLoading}
+                error={commitsError}
+                commits={commits}
+                hasNextPage={commitsQuery.hasNextPage}
+                isFetchingNextPage={commitsQuery.isFetchingNextPage}
+                onLoadMore={() => void commitsQuery.fetchNextPage()}
+                onOpen={onOpenCommit}
+              />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
         <TabsContent
           value="files"
@@ -1287,6 +1455,235 @@ function PullRequestAction({
           : "Open GitHub to create a pull request"}
       </TooltipContent>
     </Tooltip>
+  )
+}
+
+function PullRequestsPanel({
+  cwd,
+  notRepo,
+  loading,
+  error,
+  ghAvailable,
+  pullRequests,
+  openingNumber,
+  onOpen,
+}: {
+  cwd: string | null
+  notRepo: boolean
+  loading: boolean
+  error: string | null
+  ghAvailable: boolean
+  pullRequests: PullRequestInfo[]
+  openingNumber: number | null
+  onOpen: (number: number) => void
+}) {
+  if (!cwd) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        No project open
+      </div>
+    )
+  }
+
+  if (notRepo) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        Not a git repository
+      </div>
+    )
+  }
+
+  if (loading && pullRequests.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        Loading pull requests…
+      </div>
+    )
+  }
+
+  if (error) {
+    return <div className="px-4 py-3 text-xs text-red-500">{error}</div>
+  }
+
+  if (!ghAvailable) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        GitHub CLI is not available for this repository.
+      </div>
+    )
+  }
+
+  if (pullRequests.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        No open pull requests
+      </div>
+    )
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <ul className="flex flex-col">
+        {pullRequests.map((pr) => {
+          const busy = openingNumber === pr.number
+          return (
+            <li key={pr.id} className="border-b border-border/60">
+              <button
+                type="button"
+                disabled={openingNumber !== null}
+                onClick={() => onOpen(pr.number)}
+                className="group/pr flex w-full min-w-0 items-center gap-2.5 px-3 py-2.5 text-left transition-colors outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+              >
+                <GitPullRequest className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-xs font-medium text-foreground">
+                    {pr.title}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="shrink-0">#{pr.number}</span>
+                    {pr.authorLogin && (
+                      <>
+                        <span className="shrink-0">·</span>
+                        <span className="truncate">{pr.authorLogin}</span>
+                      </>
+                    )}
+                  </span>
+                  {(pr.headRefName || pr.baseRefName) && (
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {pr.headRefName ?? "unknown"} → {pr.baseRefName ?? "base"}
+                    </span>
+                  )}
+                </span>
+                {busy ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                ) : (
+                  <ExternalLink className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/pr:opacity-100" />
+                )}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </ScrollArea>
+  )
+}
+
+function CommitHistoryPanel({
+  cwd,
+  notRepo,
+  loading,
+  error,
+  commits,
+  hasNextPage,
+  isFetchingNextPage,
+  onLoadMore,
+  onOpen,
+}: {
+  cwd: string | null
+  notRepo: boolean
+  loading: boolean
+  error: string | null
+  commits: CommitInfo[]
+  hasNextPage: boolean
+  isFetchingNextPage: boolean
+  onLoadMore: () => void
+  onOpen?: (commit: {
+    hash: string
+    shortHash: string
+    subject: string
+  }) => void
+}) {
+  // Auto-load the next page when the sentinel scrolls into view.
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!node || !hasNextPage) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetchingNextPage) onLoadMore()
+      },
+      { rootMargin: "200px" }
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, onLoadMore, commits.length])
+
+  if (!cwd) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        No project open
+      </div>
+    )
+  }
+
+  if (notRepo) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        Not a git repository
+      </div>
+    )
+  }
+
+  if (loading && commits.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">
+        Loading commits…
+      </div>
+    )
+  }
+
+  if (error) {
+    return <div className="px-4 py-3 text-xs text-red-500">{error}</div>
+  }
+
+  if (commits.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-muted-foreground">No commits</div>
+    )
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <ul className="flex flex-col">
+        {commits.map((commit) => (
+          <li key={commit.hash} className="border-b border-border/60">
+            <button
+              type="button"
+              onClick={() =>
+                onOpen?.({
+                  hash: commit.hash,
+                  shortHash: commit.shortHash,
+                  subject: commit.subject,
+                })
+              }
+              className="flex w-full min-w-0 items-center gap-2.5 px-3 py-2.5 text-left transition-colors outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <GitCommitVertical className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-xs font-medium text-foreground">
+                  {commit.subject}
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="shrink-0 font-mono">{commit.shortHash}</span>
+                  <span className="shrink-0">·</span>
+                  <span className="truncate">{commit.authorName}</span>
+                  <span className="shrink-0">·</span>
+                  <span className="shrink-0">{commit.relativeDate}</span>
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {hasNextPage && (
+        <div
+          ref={sentinelRef}
+          className="px-4 py-3 text-center text-[11px] text-muted-foreground"
+        >
+          {isFetchingNextPage ? "Loading more…" : ""}
+        </div>
+      )}
+    </ScrollArea>
   )
 }
 
@@ -1475,7 +1872,8 @@ function ShowMoreChangesButton({
         onClick={onClick}
         className="w-full rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
       >
-        Show {Math.min(hiddenCount, CHANGE_LIST_BATCH_SIZE)} more of {hiddenCount}
+        Show {Math.min(hiddenCount, CHANGE_LIST_BATCH_SIZE)} more of{" "}
+        {hiddenCount}
       </button>
     </div>
   )

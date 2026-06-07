@@ -68,6 +68,10 @@ type PullRequestInfo = {
   id: string
   title: string
   url: string
+  headRefName?: string
+  baseRefName?: string
+  authorLogin?: string
+  updatedAt?: string
 }
 
 type AgentStatusInfo = {
@@ -964,23 +968,59 @@ async function getDefaultBranch(cwd: string): Promise<string | null> {
   }
 }
 
-function parsePullRequest(raw: string): PullRequestInfo | null {
-  try {
-    const parsed = JSON.parse(raw) as PullRequestInfo[]
-    const pr = parsed[0]
-    if (
-      !pr ||
-      typeof pr.number !== "number" ||
-      typeof pr.id !== "string" ||
-      typeof pr.title !== "string" ||
-      typeof pr.url !== "string"
-    ) {
-      return null
-    }
-    return pr
-  } catch {
+function normalizePullRequest(value: unknown): PullRequestInfo | null {
+  const pr = value as {
+    number?: unknown
+    id?: unknown
+    title?: unknown
+    url?: unknown
+    headRefName?: unknown
+    baseRefName?: unknown
+    author?: { login?: unknown }
+    updatedAt?: unknown
+  }
+  if (
+    !pr ||
+    typeof pr.number !== "number" ||
+    typeof pr.id !== "string" ||
+    typeof pr.title !== "string" ||
+    typeof pr.url !== "string"
+  ) {
     return null
   }
+  return {
+    number: pr.number,
+    id: pr.id,
+    title: pr.title,
+    url: pr.url,
+    ...(typeof pr.headRefName === "string"
+      ? { headRefName: pr.headRefName }
+      : {}),
+    ...(typeof pr.baseRefName === "string"
+      ? { baseRefName: pr.baseRefName }
+      : {}),
+    ...(typeof pr.author?.login === "string"
+      ? { authorLogin: pr.author.login }
+      : {}),
+    ...(typeof pr.updatedAt === "string" ? { updatedAt: pr.updatedAt } : {}),
+  }
+}
+
+function parsePullRequests(raw: string): PullRequestInfo[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((pr) => {
+      const normalized = normalizePullRequest(pr)
+      return normalized ? [normalized] : []
+    })
+  } catch {
+    return []
+  }
+}
+
+function parsePullRequest(raw: string): PullRequestInfo | null {
+  return parsePullRequests(raw)[0] ?? null
 }
 
 function isExpectedPullRequestStatusError(message: string): boolean {
@@ -2292,6 +2332,132 @@ app.whenReady().then(async () => {
       }
     }
   )
+
+  ipcMain.handle("git:pullRequests", async (_event, cwd: string) => {
+    if (!cwd) {
+      return { ok: true, ghAvailable: false, pullRequests: [] }
+    }
+
+    const env = await projectCommandEnv(cwd)
+    const gh = await findGhBinary(env)
+    if (!gh) {
+      return { ok: true, ghAvailable: false, pullRequests: [] }
+    }
+
+    if (!(await hasGitRemote(cwd))) {
+      return { ok: true, ghAvailable: true, pullRequests: [] }
+    }
+
+    try {
+      const { stdout } = await execFileP(
+        gh,
+        [
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--json",
+          "number,id,title,url,headRefName,baseRefName,author,updatedAt",
+          "--limit",
+          "100",
+        ],
+        { cwd, env, maxBuffer: 20 * 1024 * 1024 }
+      )
+      return {
+        ok: true,
+        ghAvailable: true,
+        pullRequests: parsePullRequests(stdout),
+      }
+    } catch (err) {
+      const e = err as { signal?: string; stderr?: string; message?: string }
+      const message = `${e?.stderr ?? ""}\n${e?.message ?? ""}`
+      if (
+        e?.signal !== "SIGINT" &&
+        e?.signal !== "SIGTERM" &&
+        !isExpectedPullRequestStatusError(message)
+      ) {
+        console.warn("pull request list failed", err)
+      }
+      return { ok: true, ghAvailable: false, pullRequests: [] }
+    }
+  })
+
+  ipcMain.handle(
+    "git:log",
+    async (_event, cwd: string, limit = 50, skip = 0) => {
+      if (!cwd) return { ok: true, commits: [] }
+      try {
+        // \x1f separates fields, \x1e separates records — both are safe
+        // because they can't appear in commit metadata.
+        const out = await runGitAllowExit1(cwd, [
+          "log",
+          "-n",
+          String(limit),
+          ...(skip > 0 ? ["--skip", String(skip)] : []),
+          "--format=%H%x1f%h%x1f%an%x1f%aI%x1f%ar%x1f%s%x1e",
+        ])
+        const commits = out
+          .split("\x1e")
+          .map((record) => record.trim())
+          .filter(Boolean)
+          .map((record) => {
+            const [hash, shortHash, authorName, isoDate, relativeDate, subject] =
+              record.split("\x1f")
+            return {
+              hash,
+              shortHash,
+              authorName,
+              isoDate,
+              relativeDate,
+              subject,
+            }
+          })
+        return { ok: true, commits }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "git log failed",
+          commits: [],
+        }
+      }
+    }
+  )
+
+  ipcMain.handle("git:show", async (_event, cwd: string, hash: string) => {
+    // hash always comes from our own git log output, but validate defensively
+    // so it can never be coerced into an option or another command.
+    if (!cwd || !/^[0-9a-f]{7,40}$/i.test(hash)) {
+      return { ok: false, error: "invalid-commit", patch: "", commit: null }
+    }
+    try {
+      const [metaRaw, patch] = await Promise.all([
+        runGitAllowExit1(cwd, [
+          "show",
+          "--no-patch",
+          "--format=%H%x1f%h%x1f%an%x1f%aI%x1f%ar%x1f%s",
+          hash,
+        ]),
+        runGitAllowExit1(cwd, ["show", "--format=", "--patch", hash]),
+      ])
+      const [hashF, shortHash, authorName, isoDate, relativeDate, subject] =
+        metaRaw.trim().split("\x1f")
+      return {
+        ok: true,
+        // The empty --format= still emits a leading newline before the diff.
+        patch: patch.replace(/^\n+/, ""),
+        commit: { hash: hashF, shortHash, authorName, isoDate, relativeDate, subject },
+      }
+    } catch (err) {
+      const e = err as { stderr?: string; message?: string }
+      return {
+        ok: false,
+        error: e.stderr || e.message || "git show failed",
+        patch: "",
+        commit: null,
+      }
+    }
+  })
 
   ipcMain.handle(
     "git:checkout",

@@ -4,6 +4,10 @@ import { WorkerPoolContextProvider } from "@pierre/diffs/react"
 import { useTheme } from "@/components/theme-provider"
 import { DiffViewer } from "./DiffViewer"
 import {
+  diffsHighlighterOptions,
+  diffsWorkerPoolOptions,
+} from "./diffWorkerConfig"
+import {
   AudioPreview,
   MarkdownView,
   isAudioPath,
@@ -35,21 +39,6 @@ const HIGHLIGHT_STYLE = `
 ::highlight(${HIGHLIGHT_NAME}) { background-color: rgba(250, 204, 21, 0.5); color: inherit; }
 ::highlight(${HIGHLIGHT_ACTIVE_NAME}) { background-color: rgb(250, 204, 21); color: black; }
 `
-
-const diffsWorkerPoolOptions = {
-  workerFactory: () =>
-    new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), {
-      type: "module",
-    }),
-  poolSize: 4,
-}
-
-// The worker pool tokenizes with the theme it's initialized with here — the
-// per-render `theme` option on the viewer only drives CSS variables, not the
-// syntax tokens. Use Atom One to match the code editor (oneDark).
-const diffsHighlighterOptions = {
-  theme: { dark: "one-dark-pro", light: "one-light" },
-} as const
 
 function isUnsupportedDiff(patch: string): boolean {
   return (

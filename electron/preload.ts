@@ -355,6 +355,19 @@ type PullRequestInfo = {
   id: string
   title: string
   url: string
+  headRefName?: string
+  baseRefName?: string
+  authorLogin?: string
+  updatedAt?: string
+}
+
+type GitCommitInfo = {
+  hash: string
+  shortHash: string
+  authorName: string
+  isoDate: string
+  relativeDate: string
+  subject: string
 }
 
 const gitApi = {
@@ -468,6 +481,26 @@ const gitApi = {
       ghAvailable: boolean
       pullRequest: PullRequestInfo | null
       canCreatePullRequest: boolean
+    }>,
+  log: (cwd: string, limit?: number, skip?: number) =>
+    ipcRenderer.invoke("git:log", cwd, limit, skip) as Promise<{
+      ok: boolean
+      error?: string
+      commits: GitCommitInfo[]
+    }>,
+  show: (cwd: string, hash: string) =>
+    ipcRenderer.invoke("git:show", cwd, hash) as Promise<{
+      ok: boolean
+      error?: string
+      patch: string
+      commit: GitCommitInfo | null
+    }>,
+  pullRequests: (cwd: string) =>
+    ipcRenderer.invoke("git:pullRequests", cwd) as Promise<{
+      ok: boolean
+      error?: string
+      ghAvailable: boolean
+      pullRequests: PullRequestInfo[]
     }>,
   openPullRequest: (cwd: string, number: number) =>
     ipcRenderer.invoke("git:openPullRequest", cwd, number) as Promise<{

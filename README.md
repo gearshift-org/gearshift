@@ -12,7 +12,7 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 
 - Multi-project workspace with project tabs, split panes, and custom project avatars.
 - File tree with drag-and-drop moves, file preview, Markdown rendering, and syntax-highlighted diffs.
-- Git status, file changes, branch actions, and pull request shortcuts.
+- Git status, file changes, branch actions, open pull request lists, and pull request shortcuts.
 - Agent activity detection for supported CLI coding agents.
 - Configurable default launch options for supported coding-agent terminals.
 - Desktop and in-app notifications when background agent work finishes.

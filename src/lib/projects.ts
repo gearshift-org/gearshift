@@ -431,15 +431,15 @@ const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 export const RIGHT_SIDEBAR_EDGE_REVEAL_EVENT =
   "gearshift:rightSidebarEdgeRevealChanged"
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
-export type RightSidebarTab = "changes" | "files" | "history"
+export type RightSidebarTab = "git" | "files" | "history"
 
 export function loadRightSidebarTab(): RightSidebarTab {
   try {
     const v = store.get(RIGHT_SIDEBAR_TAB_KEY)
     if (v === "files" || v === "history") return v
-    return "changes"
+    return "git"
   } catch {
-    return "changes"
+    return "git"
   }
 }
 

@@ -13,6 +13,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { execFile, spawn } from "node:child_process"
 import net from "node:net"
+import os from "node:os"
 import { promisify } from "node:util"
 import fs from "node:fs/promises"
 import { readFileSync, writeFileSync } from "node:fs"
@@ -1155,8 +1156,65 @@ async function buildUntrackedPatch(cwd: string, files: string[]) {
   return patches.filter(Boolean).join("\n")
 }
 
+const PROJECTS_STATE_KEY = "gearshift.projects"
+const LAST_AGENT_TERMINAL_STATE_KEY = "gearshift.lastAgentTerminal"
+const SYSTEM_BOOT_ID_STATE_KEY = "gearshift.systemBootId"
+
 function stateFilePath(): string {
   return path.join(app.getPath("userData"), "state.json")
+}
+
+let currentSystemBootIdPromise: Promise<string> | null = null
+async function currentSystemBootId(): Promise<string> {
+  if (currentSystemBootIdPromise) return currentSystemBootIdPromise
+  currentSystemBootIdPromise = (async () => {
+    if (process.platform === "darwin") {
+      try {
+        const { stdout } = await execFileP("/usr/sbin/sysctl", [
+          "-n",
+          "kern.boottime",
+        ])
+        const sec = stdout.match(/sec = (\d+)/)?.[1]
+        if (sec) return `darwin:${sec}`
+      } catch {
+        // fall through to the portable uptime estimate
+      }
+    }
+    return `${process.platform}:${Math.round(Date.now() / 1000 - os.uptime())}`
+  })()
+  return currentSystemBootIdPromise
+}
+
+function dropRestoredTerminalState(
+  state: Record<string, string>
+): Record<string, string> {
+  const raw = state[PROJECTS_STATE_KEY]
+  if (!raw) return state
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return state
+    return {
+      ...state,
+      [PROJECTS_STATE_KEY]: JSON.stringify(
+        parsed.map((project) =>
+          project && typeof project === "object"
+            ? { ...project, tabs: [], activeTabId: "" }
+            : project
+        )
+      ),
+      [LAST_AGENT_TERMINAL_STATE_KEY]: JSON.stringify({}),
+    }
+  } catch {
+    return state
+  }
+}
+
+async function writeStateSnapshot(data: Record<string, string>) {
+  const file = stateFilePath()
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8")
+  await fs.rename(tmp, file)
 }
 
 async function readState(): Promise<Record<string, string>> {
@@ -1164,16 +1222,25 @@ async function readState(): Promise<Record<string, string>> {
     const raw = await fs.readFile(stateFilePath(), "utf8")
     const parsed = JSON.parse(raw)
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const out: Record<string, string> = {}
+      let out: Record<string, string> = {}
       for (const [k, v] of Object.entries(parsed)) {
         if (typeof v === "string") out[k] = v
+      }
+      const bootId = await currentSystemBootId()
+      const previousBootId = out[SYSTEM_BOOT_ID_STATE_KEY]
+      if (previousBootId && previousBootId !== bootId) {
+        out = dropRestoredTerminalState(out)
+      }
+      if (out[SYSTEM_BOOT_ID_STATE_KEY] !== bootId) {
+        out[SYSTEM_BOOT_ID_STATE_KEY] = bootId
+        await writeStateSnapshot(out)
       }
       return out
     }
   } catch {
     // missing or corrupt → start empty
   }
-  return {}
+  return { [SYSTEM_BOOT_ID_STATE_KEY]: await currentSystemBootId() }
 }
 
 let stateWriteTimer: NodeJS.Timeout | undefined
@@ -1186,12 +1253,8 @@ async function flushState() {
   if (!data) return
   pendingState = null
   stateWriteInFlight = true
-  const file = stateFilePath()
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
   try {
-    await fs.mkdir(path.dirname(file), { recursive: true })
-    await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8")
-    await fs.rename(tmp, file)
+    await writeStateSnapshot(data)
   } catch (err) {
     console.error("state write failed", err)
   } finally {

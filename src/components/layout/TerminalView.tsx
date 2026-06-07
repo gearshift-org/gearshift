@@ -1611,15 +1611,25 @@ export function TerminalView({
         emitAgentStatus({
           running: detected.running,
           working: detected.running
-            ? current.working || recentlyActive
+            ? current.completed
+              ? false
+              : current.working || recentlyActive
             : false,
           agentName: detected.agentName,
           workStartedAt:
             detected.running || current.completed
               ? current.workStartedAt
               : undefined,
-          completedAt: detected.running ? undefined : current.completedAt,
-          completed: detected.running ? false : current.completed,
+          completedAt: current.completed
+            ? current.completedAt
+            : detected.running
+              ? undefined
+              : current.completedAt,
+          completed: current.completed
+            ? true
+            : detected.running
+              ? false
+              : current.completed,
           needsAttention: detected.running ? current.needsAttention : false,
         })
       } catch {

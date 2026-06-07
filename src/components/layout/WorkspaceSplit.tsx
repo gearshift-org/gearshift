@@ -56,6 +56,11 @@ type Props = {
   ) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onTerminalFocusChange?: (
+    tabId: string,
+    paneId: string,
+    focused: boolean
+  ) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
   onDropPane?: (
     tabId: string,
@@ -96,6 +101,7 @@ export function WorkspaceSplit({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onTerminalFocusChange,
   onRenamePane,
   onDropPane,
   onTerminalLayoutChange,
@@ -275,6 +281,7 @@ export function WorkspaceSplit({
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
               onFocusPane={onFocusPane}
+              onTerminalFocusChange={onTerminalFocusChange}
               onRenamePane={onRenamePane}
               onDropPane={onDropPane}
               onLayoutChange={onTerminalLayoutChange}

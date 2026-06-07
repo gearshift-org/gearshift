@@ -85,6 +85,11 @@ type Props = {
   onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onTerminalFocusChange?: (
+    tabId: string,
+    paneId: string,
+    focused: boolean
+  ) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
   onDropPane?: (
     tabId: string,
@@ -286,6 +291,7 @@ function TerminalTabContent({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onTerminalFocusChange,
   onRenamePane,
   onDropPane,
   onLayoutChange,
@@ -309,6 +315,11 @@ function TerminalTabContent({
   onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onTerminalFocusChange?: (
+    tabId: string,
+    paneId: string,
+    focused: boolean
+  ) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
   onDropPane?: (
     tabId: string,
@@ -347,8 +358,9 @@ function TerminalTabContent({
         if (focused) return paneId
         return current === paneId ? null : current
       })
+      onTerminalFocusChange?.(tab.id, paneId, focused)
     },
-    []
+    [onTerminalFocusChange, tab.id]
   )
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -560,6 +572,7 @@ function PaneContent({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onTerminalFocusChange,
   onRenamePane,
   onDropPane,
   onLayoutChange,
@@ -588,6 +601,11 @@ function PaneContent({
   onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
+  onTerminalFocusChange?: (
+    tabId: string,
+    paneId: string,
+    focused: boolean
+  ) => void
   onRenamePane?: (tabId: string, paneId: string, name: string) => void
   onDropPane?: (
     tabId: string,
@@ -624,6 +642,7 @@ function PaneContent({
         onSplitTerminal={onSplitTerminal}
         onClosePane={onClosePane}
         onFocusPane={onFocusPane}
+        onTerminalFocusChange={onTerminalFocusChange}
         onRenamePane={onRenamePane}
         onDropPane={onDropPane}
         onLayoutChange={onLayoutChange}
@@ -672,6 +691,7 @@ export function WorkspacePane({
   onSplitTerminal,
   onClosePane,
   onFocusPane,
+  onTerminalFocusChange,
   onRenamePane,
   onDropPane,
   onLayoutChange,
@@ -872,6 +892,7 @@ export function WorkspacePane({
                 onSplitTerminal={onSplitTerminal}
                 onClosePane={onClosePane}
                 onFocusPane={onFocusPane}
+                onTerminalFocusChange={onTerminalFocusChange}
                 onRenamePane={onRenamePane}
                 onDropPane={onDropPane}
                 onLayoutChange={onLayoutChange}

@@ -1727,10 +1727,11 @@ export function TerminalView({
       // exits or resets while no prompt is running; those must not leave a stale
       // completed dot on the project.
       const hadActiveTurn = activeHookWorkRef.current || current.working
+      const wasWaitingForInput = current.needsAttention === true
       activeHookWorkRef.current = false
       lastAgentActivityAtRef.current = 0
       hasSubmittedToAgentRef.current = false
-      if (!hadActiveTurn) {
+      if (!hadActiveTurn || wasWaitingForInput) {
         emitAgentStatus({
           ...current,
           working: false,

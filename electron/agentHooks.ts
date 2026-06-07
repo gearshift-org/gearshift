@@ -632,12 +632,14 @@ async function writePiExtension(): Promise<void> {
 //
 //   before_agent_start / tool_execution_end    -> start
 //   agent_end / session_end / session_shutdown -> stop
+//   ctx.ui prompts after agent_end              -> needs_attention
 
 import { createConnection } from "node:net"
 
 type PiContext = {
   hasUI?: boolean
   sessionManager?: { getSessionId?: () => string }
+  ui?: Record<string, unknown>
 }
 
 export default function (pi: {
@@ -675,17 +677,70 @@ export default function (pi: {
     }
   }
 
+  let pendingStop: ReturnType<typeof setTimeout> | undefined
+  let waitingForUi = false
+  let latestCtx: PiContext | undefined
+
+  const cancelPendingStop = () => {
+    if (!pendingStop) return
+    clearTimeout(pendingStop)
+    pendingStop = undefined
+  }
+
   // Subagents and print mode (-p) set hasUI=false; never toggle the pane dot
   // for those. Older pi versions without hasUI still fire (best-effort).
   const skip = (ctx: PiContext) => ctx.hasUI === false
 
+  const markNeedsAttention = () => {
+    const ctx = latestCtx
+    if (!ctx || skip(ctx) || waitingForUi) return
+    waitingForUi = true
+    cancelPendingStop()
+    fire("needs_attention", nativeSessionId(ctx))
+  }
+
+  const clearNeedsAttention = () => {
+    const ctx = latestCtx
+    if (!ctx || !waitingForUi) return
+    waitingForUi = false
+    fire("stop", nativeSessionId(ctx))
+  }
+
+  const wrapUi = (ctx: PiContext) => {
+    latestCtx = ctx
+    const ui = ctx.ui
+    if (!ui || (ui as { __gearshiftWrapped?: boolean }).__gearshiftWrapped) return
+    ;(ui as { __gearshiftWrapped?: boolean }).__gearshiftWrapped = true
+    for (const name of ["select", "confirm", "input", "editor", "custom"]) {
+      const original = ui[name]
+      if (typeof original !== "function") continue
+      ui[name] = async (...args: unknown[]) => {
+        markNeedsAttention()
+        try {
+          return await original.apply(ui, args)
+        } finally {
+          clearNeedsAttention()
+        }
+      }
+    }
+  }
+
+  const scheduleStop = (ctx: PiContext) => {
+    cancelPendingStop()
+    pendingStop = setTimeout(() => {
+      pendingStop = undefined
+      if (!skip(ctx) && !waitingForUi) fire("stop", nativeSessionId(ctx))
+    }, 250)
+  }
+
   // session_start only means the TUI opened. Wait for a prompt submission
   // before marking the terminal agent as busy.
-  pi.on("before_agent_start", (_e, ctx) => { if (!skip(ctx)) fire("start", nativeSessionId(ctx)) })
-  pi.on("tool_execution_end", (_e, ctx) => { if (!skip(ctx)) fire("start", nativeSessionId(ctx)) })
-  pi.on("agent_end", (_e, ctx) => { if (!skip(ctx)) fire("stop", nativeSessionId(ctx)) })
-  pi.on("session_end", (_e, ctx) => { if (!skip(ctx)) fire("stop", nativeSessionId(ctx)) })
-  pi.on("session_shutdown", (_e, ctx) => { if (!skip(ctx)) fire("stop", nativeSessionId(ctx)) })
+  pi.on("session_start", (_e, ctx) => { wrapUi(ctx) })
+  pi.on("before_agent_start", (_e, ctx) => { wrapUi(ctx); if (!skip(ctx)) { cancelPendingStop(); waitingForUi = false; fire("start", nativeSessionId(ctx)) } })
+  pi.on("tool_execution_end", (_e, ctx) => { wrapUi(ctx); if (!skip(ctx)) fire("start", nativeSessionId(ctx)) })
+  pi.on("agent_end", (_e, ctx) => { wrapUi(ctx); if (!skip(ctx)) scheduleStop(ctx) })
+  pi.on("session_end", (_e, ctx) => { wrapUi(ctx); if (!skip(ctx)) scheduleStop(ctx) })
+  pi.on("session_shutdown", (_e, ctx) => { wrapUi(ctx); if (!skip(ctx)) scheduleStop(ctx) })
 }
 `
   const extensionsDir = path.join(

@@ -14,6 +14,7 @@ export type PullRequestInfo = {
   headRefName?: string
   baseRefName?: string
   authorLogin?: string
+  createdAt?: string
   updatedAt?: string
 }
 

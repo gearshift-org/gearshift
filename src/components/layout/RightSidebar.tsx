@@ -53,6 +53,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
+import { formatRelative } from "@/lib/relativeTime"
 import { FileIcon } from "@/components/icons/FileIcon"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { ChangeCountBadge } from "./ChangeCountBadge"
@@ -1551,6 +1552,23 @@ function PullRequestsPanel({
                   {(pr.headRefName || pr.baseRefName) && (
                     <span className="truncate text-[11px] text-muted-foreground">
                       {pr.headRefName ?? "unknown"} → {pr.baseRefName ?? "base"}
+                    </span>
+                  )}
+                  {(pr.createdAt || pr.updatedAt) && (
+                    <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground/80">
+                      {pr.createdAt && (
+                        <span className="shrink-0">
+                          opened {formatRelative(Date.parse(pr.createdAt))}
+                        </span>
+                      )}
+                      {pr.createdAt && pr.updatedAt && (
+                        <span className="shrink-0">·</span>
+                      )}
+                      {pr.updatedAt && (
+                        <span className="shrink-0">
+                          updated {formatRelative(Date.parse(pr.updatedAt))}
+                        </span>
+                      )}
                     </span>
                   )}
                 </span>

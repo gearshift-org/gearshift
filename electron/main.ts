@@ -71,6 +71,7 @@ type PullRequestInfo = {
   headRefName?: string
   baseRefName?: string
   authorLogin?: string
+  createdAt?: string
   updatedAt?: string
 }
 
@@ -977,6 +978,7 @@ function normalizePullRequest(value: unknown): PullRequestInfo | null {
     headRefName?: unknown
     baseRefName?: unknown
     author?: { login?: unknown }
+    createdAt?: unknown
     updatedAt?: unknown
   }
   if (
@@ -1002,6 +1004,7 @@ function normalizePullRequest(value: unknown): PullRequestInfo | null {
     ...(typeof pr.author?.login === "string"
       ? { authorLogin: pr.author.login }
       : {}),
+    ...(typeof pr.createdAt === "string" ? { createdAt: pr.createdAt } : {}),
     ...(typeof pr.updatedAt === "string" ? { updatedAt: pr.updatedAt } : {}),
   }
 }
@@ -2357,7 +2360,7 @@ app.whenReady().then(async () => {
           "--state",
           "open",
           "--json",
-          "number,id,title,url,headRefName,baseRefName,author,updatedAt",
+          "number,id,title,url,headRefName,baseRefName,author,createdAt,updatedAt",
           "--limit",
           "100",
         ],

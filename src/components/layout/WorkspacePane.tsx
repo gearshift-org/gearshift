@@ -31,6 +31,7 @@ import {
   isAudioPath,
   isImagePath,
   isMarkdownPath,
+  isPdfPath,
   readMdMode,
   writeMdMode,
   type MdMode,
@@ -760,8 +761,10 @@ export function WorkspacePane({
   const isMarkdownActive = !!activeTabPath && isMarkdownPath(activeTabPath)
   const isImageActive = !!activeTabPath && isImagePath(activeTabPath)
   const isAudioActive = !!activeTabPath && isAudioPath(activeTabPath)
+  const isPdfActive = !!activeTabPath && isPdfPath(activeTabPath)
   const isMediaDiffActive =
-    activeTab?.kind === "diff" && (isImageActive || isAudioActive)
+    activeTab?.kind === "diff" &&
+    (isImageActive || isAudioActive || isPdfActive)
   const lastMediaDiffKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (!activeTab || !isMediaDiffActive) {
@@ -776,7 +779,7 @@ export function WorkspacePane({
   // Only the diff tab benefits from a raw/preview switch on media — the
   // file tab always renders the media preview. So the toggle is shown when:
   //   - active tab is a markdown file/diff (preview vs source), or
-  //   - active tab is a media diff (preview media vs the textual diff)
+  //   - active tab is a media diff (preview media/PDF vs the textual diff)
   const showMdToggle = isMarkdownActive || isMediaDiffActive
   const activeFileDirtyStatus = activeTab
     ? fileDirtyStatuses[activeTab.id]

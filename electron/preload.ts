@@ -292,6 +292,14 @@ const fsApi = {
       mime?: string
       size?: number
     }>,
+  readPdf: (absPath: string) =>
+    ipcRenderer.invoke("fs:readPdf", absPath) as Promise<{
+      ok: boolean
+      error?: string
+      dataUrl?: string
+      mime?: string
+      size?: number
+    }>,
   writeFile: (absPath: string, content: string) =>
     ipcRenderer.invoke("fs:writeFile", absPath, content) as Promise<{
       ok: boolean
@@ -395,7 +403,7 @@ const gitApi = {
     cwd: string,
     path: string,
     staged: boolean,
-    kind: "image" | "audio"
+    kind: "image" | "audio" | "pdf"
   ) =>
     ipcRenderer.invoke("git:readDiffMedia", cwd, path, staged, kind) as Promise<{
       ok: boolean

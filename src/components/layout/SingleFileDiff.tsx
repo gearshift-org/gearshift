@@ -10,9 +10,11 @@ import {
 import {
   AudioPreview,
   MarkdownView,
+  PdfPreview,
   isAudioPath,
   isImagePath,
   isMarkdownPath,
+  isPdfPath,
   type MdMode,
 } from "./FilePreview"
 import {
@@ -57,6 +59,7 @@ export function SingleFileDiff({
   const showMarkdownPreview = isMarkdownPath(path) && mdMode === "preview"
   const showImagePreview = isImagePath(path) && mdMode === "preview"
   const showAudioPreview = isAudioPath(path) && mdMode === "preview"
+  const showPdfPreview = isPdfPath(path) && mdMode === "preview"
   const absPath = path.startsWith("/")
     ? path
     : `${cwd.replace(/\/+$/, "")}/${path}`
@@ -126,6 +129,26 @@ export function SingleFileDiff({
       cancelled = true
     }
   }, [cwd, path, staged, showAudioPreview])
+
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showPdfPreview) return
+    let cancelled = false
+    setPdfUrl(null)
+    setPdfError(null)
+    window.git.readDiffMedia(cwd, path, staged, "pdf").then((res) => {
+      if (cancelled) return
+      if (!res.ok || !res.dataUrl) {
+        setPdfError(res.error ?? "Failed to load PDF")
+      } else {
+        setPdfUrl(res.dataUrl)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [cwd, path, staged, showPdfPreview])
   const { resolvedTheme } = useTheme()
   const [patch, setPatch] = useState("")
   const [loading, setLoading] = useState(true)
@@ -377,6 +400,26 @@ export function SingleFileDiff({
       )
     }
     return <AudioPreview src={audioUrl} path={path} />
+  }
+
+  if (showPdfPreview) {
+    if (pdfError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {pdfError === "unsupported-type"
+            ? "Unsupported file preview"
+            : pdfError}
+        </div>
+      )
+    }
+    if (!pdfUrl) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    return <PdfPreview src={pdfUrl} path={path} />
   }
 
   return (

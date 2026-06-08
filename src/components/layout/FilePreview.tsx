@@ -43,6 +43,7 @@ const IMAGE_EXTS = new Set([
 ])
 
 const AUDIO_EXTS = new Set(["mp3", "wav"])
+const PDF_EXTS = new Set(["pdf"])
 
 const MARKDOWN_EXTS = new Set(["md", "markdown", "mdown", "mkd"])
 
@@ -137,10 +138,54 @@ export function isAudioPath(path: string): boolean {
   return AUDIO_EXTS.has(extOf(path))
 }
 
+export function isPdfPath(path: string): boolean {
+  return PDF_EXTS.has(extOf(path))
+}
+
 export function AudioPreview({ src, path }: { src: string; path: string }) {
   return (
     <div className="grid h-full place-items-center overflow-auto bg-card p-4">
       <audio controls src={src} aria-label={path} className="w-full max-w-xl" />
+    </div>
+  )
+}
+
+export function PdfPreview({ src, path }: { src: string; path: string }) {
+  const [previewUrl, setPreviewUrl] = useState(src)
+
+  useEffect(() => {
+    if (!src.startsWith("data:")) {
+      setPreviewUrl(src)
+      return
+    }
+
+    let cancelled = false
+    let objectUrl: string | null = null
+
+    fetch(src)
+      .then((res) => res.blob())
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setPreviewUrl(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewUrl(src)
+      })
+
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [src])
+
+  return (
+    <div className="h-full overflow-hidden bg-card p-2">
+      <iframe
+        src={previewUrl}
+        title={path}
+        className="h-full w-full rounded border border-border bg-background"
+      />
     </div>
   )
 }
@@ -520,12 +565,15 @@ export function FilePreview({
   const ext = useMemo(() => extOf(path), [path])
   const isImage = IMAGE_EXTS.has(ext)
   const isAudio = AUDIO_EXTS.has(ext)
+  const isPdf = PDF_EXTS.has(ext)
   const isMarkdown = MARKDOWN_EXTS.has(ext)
 
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioError, setAudioError] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isImage) {
@@ -570,6 +618,28 @@ export function FilePreview({
       cancelled = true
     }
   }, [abs, isAudio])
+
+  useEffect(() => {
+    if (!isPdf) {
+      setPdfUrl(null)
+      setPdfError(null)
+      return
+    }
+    let cancelled = false
+    setPdfUrl(null)
+    setPdfError(null)
+    window.fsApi.readPdf(abs).then((res) => {
+      if (cancelled) return
+      if (!res.ok || !res.dataUrl) {
+        setPdfError(res.error ?? "Failed to load PDF")
+      } else {
+        setPdfUrl(res.dataUrl)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [abs, isPdf])
 
   const [state, setState] = useState<LoadState>({ kind: "loading" })
   const [savedContent, setSavedContent] = useState<string>("")
@@ -820,7 +890,7 @@ export function FilePreview({
   }, [])
 
   useEffect(() => {
-    if (isImage || isAudio) return
+    if (isImage || isAudio || isPdf) return
     let cancelled = false
     loadedAbsRef.current = null
     queueMicrotask(() => {
@@ -847,7 +917,7 @@ export function FilePreview({
     return () => {
       cancelled = true
     }
-  }, [abs, isAudio, isImage])
+  }, [abs, isAudio, isImage, isPdf])
 
   const save = useCallback(async () => {
     if (state.kind !== "ready" || !dirty || saving) return
@@ -998,6 +1068,26 @@ export function FilePreview({
       )
     }
     return <AudioPreview src={audioUrl} path={path} />
+  }
+
+  if (isPdf) {
+    if (pdfError) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-red-500">
+          {pdfError === "unsupported-type"
+            ? "Unsupported file preview"
+            : pdfError}
+        </div>
+      )
+    }
+    if (!pdfUrl) {
+      return (
+        <div className="grid h-full place-items-center text-xs text-muted-foreground">
+          Loading…
+        </div>
+      )
+    }
+    return <PdfPreview src={pdfUrl} path={path} />
   }
 
   if (state.kind === "loading") {

@@ -579,6 +579,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      plugins: true,
     },
   })
   if (VITE_DEV_SERVER_URL && process.platform === "darwin") {
@@ -2028,6 +2029,12 @@ app.whenReady().then(async () => {
     if (has("audio/wav") && buf.subarray(0, 4).toString("ascii") === "RIFF") {
       return "audio/wav"
     }
+    if (
+      has("application/pdf") &&
+      buf.subarray(0, 4).toString("ascii") === "%PDF"
+    ) {
+      return "application/pdf"
+    }
     return null
   }
 
@@ -2046,6 +2053,10 @@ app.whenReady().then(async () => {
   const audioMimeByExt = {
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
+  }
+
+  const pdfMimeByExt = {
+    ".pdf": "application/pdf",
   }
 
   function mediaDataUrlFromBuffer(
@@ -2084,6 +2095,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("fs:readAudio", async (_event, absPath: string) => {
     return readMediaDataUrl(absPath, audioMimeByExt, 100 * 1024 * 1024)
+  })
+
+  ipcMain.handle("fs:readPdf", async (_event, absPath: string) => {
+    return readMediaDataUrl(absPath, pdfMimeByExt, 100 * 1024 * 1024)
   })
 
   ipcMain.handle("fs:readFile", async (_event, absPath: string) => {
@@ -2657,7 +2672,7 @@ app.whenReady().then(async () => {
       cwd: string,
       filePath: string,
       staged: boolean,
-      kind: "image" | "audio"
+      kind: "image" | "audio" | "pdf"
     ) => {
       if (!cwd || !filePath) return { ok: false, error: "no-path" }
       try {
@@ -2668,10 +2683,16 @@ app.whenReady().then(async () => {
         const buf = staged
           ? await runGitBuffer(cwd, ["show", `:${filePath}`])
           : await fs.readFile(fullPath)
+        const mimeByExt =
+          kind === "image"
+            ? imageMimeByExt
+            : kind === "audio"
+              ? audioMimeByExt
+              : pdfMimeByExt
         return mediaDataUrlFromBuffer(
           filePath,
           buf,
-          kind === "image" ? imageMimeByExt : audioMimeByExt,
+          mimeByExt,
           kind === "image" ? 25 * 1024 * 1024 : 100 * 1024 * 1024
         )
       } catch (err) {

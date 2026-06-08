@@ -8,7 +8,7 @@ Each open project subscribes to a recursive native watcher via [`@parcel/watcher
 
 The watcher is intentionally noisy at the OS level but quiet at the IPC level:
 
-- Ignored at the source: base globs like `**/.git/**` and `**/.DS_Store`, plus every line of the project's `.gitignore`, converted to globs by `gitignoreToGlobs`.
+- Ignored at the source: only base globs like `**/.git/**` and `**/.DS_Store`. Project `.gitignore` rules are not ignored by the watcher because the file tree still shows gitignored files and must refresh when they change.
 - Debounced in main: events are collected into a `Set<string>` per watch and flushed after 150 ms as one `fs:changed` IPC event.
 - Native module handling: `@parcel/watcher` is marked external in `vite.config.ts` so the bundler does not inline its prebuilt binaries.
 

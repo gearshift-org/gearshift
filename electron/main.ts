@@ -362,30 +362,6 @@ const VSCODE_DEFAULT_EXCLUDED_NAMES = new Set([
   "Thumbs.db",
 ])
 
-function gitignoreToGlobs(line: string): string[] {
-  let p = line.trim()
-  if (!p || p.startsWith("#") || p.startsWith("!")) return []
-  // strip trailing slash; we'll match both file and dir contents below
-  const dirOnly = p.endsWith("/")
-  if (dirOnly) p = p.slice(0, -1)
-  // anchored to repo root
-  if (p.startsWith("/")) {
-    p = p.slice(1)
-    return dirOnly ? [`${p}/**`] : [p, `${p}/**`]
-  }
-  // unanchored — match anywhere in tree
-  return dirOnly ? [`**/${p}/**`] : [`**/${p}`, `**/${p}/**`]
-}
-
-async function readGitignoreGlobs(cwd: string): Promise<string[]> {
-  try {
-    const raw = await fs.readFile(path.join(cwd, ".gitignore"), "utf8")
-    return raw.split(/\r?\n/).flatMap(gitignoreToGlobs)
-  } catch {
-    return []
-  }
-}
-
 function isAllowlistedDotenv(name: string) {
   return name === ".env" || name.startsWith(".env.")
 }
@@ -1615,15 +1591,16 @@ app.whenReady().then(async () => {
     if (!cwd) return { ok: false, error: "no-cwd" }
     try {
       const watchId = randomUUID()
-      const gitignoreGlobs = await readGitignoreGlobs(cwd)
-      const ignore = [...WATCHER_IGNORE_BASE, ...gitignoreGlobs]
+      // Do not ignore .gitignore patterns here. The file tree intentionally
+      // shows gitignored files, so external changes under ignored paths (for
+      // example .env files) must still trigger a refresh.
       const subscription = await parcelWatcher.subscribe(
         cwd,
         (err, events) => {
           if (err) return
           for (const ev of events) queueProjectWatchEvent(watchId, ev.path)
         },
-        { ignore }
+        { ignore: WATCHER_IGNORE_BASE }
       )
       projectWatchers.set(watchId, {
         cwd,

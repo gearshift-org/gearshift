@@ -157,9 +157,11 @@ function makeId() {
 
 const SIDEBAR_REVEAL_OUTSIDE_LIMIT = 500
 const RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS = 200
-// Must match the fixed width of ProjectSidebar so the collapse/expand width
-// animation clips its contents without reflowing them.
+// Must match the fixed width of ProjectSidebar so the collapse/expand margin
+// animation slides it fully off-screen without reflowing its contents.
 const PROJECT_SIDEBAR_WIDTH = 248
+// Must match the wrapper's `duration-200` margin transition below.
+const PROJECT_SIDEBAR_TRANSITION_MS = 200
 const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   claude: "claude",
   codex: "codex",
@@ -627,6 +629,17 @@ export function AppShell() {
   }, [sidebarOpen])
   useEffect(() => {
     saveProjectSidebarOpen(projectSidebarOpen)
+  }, [projectSidebarOpen])
+  // Treat the project sidebar's collapse/expand width animation like a sidebar
+  // resize drag (same trick as WorkspaceSplit's right-sidebar toggle): terminals
+  // skip per-frame refits while this class is on <body> and do one settle fit
+  // after the layout stops moving, which keeps the slide smooth.
+  useEffect(() => {
+    document.body.classList.add("gs-sidebar-resizing")
+    const id = window.setTimeout(() => {
+      document.body.classList.remove("gs-sidebar-resizing")
+    }, PROJECT_SIDEBAR_TRANSITION_MS + 170)
+    return () => window.clearTimeout(id)
   }, [projectSidebarOpen])
   const focusedProjectIdsRef = useRef(focusedProjectIds)
   useEffect(() => {
@@ -2755,14 +2768,17 @@ export function AppShell() {
         onSelectTab={selectTab}
         onOpenFile={openFileFromCommandPalette}
       />
-      {/* Keep the sidebar mounted and animate its width so collapse/expand
-          slides instead of popping. The inner sidebar stays at its full fixed
-          width so its contents don't reflow while the wrapper clips them. */}
+      {/* Keep the sidebar mounted at its full width and slide it off-screen on
+          collapse via a negative margin, so its contents never reflow — the
+          panel glides left while the workspace expands to fill the space. */}
       <div
         aria-hidden={!projectSidebarOpen}
-        style={{ width: projectSidebarOpen ? PROJECT_SIDEBAR_WIDTH : 0 }}
+        style={{
+          width: PROJECT_SIDEBAR_WIDTH,
+          marginLeft: projectSidebarOpen ? 0 : -PROJECT_SIDEBAR_WIDTH,
+        }}
         className={cn(
-          "shrink-0 overflow-hidden transition-[width] duration-200 ease-out [-webkit-app-region:no-drag]",
+          "shrink-0 transition-[margin-left] duration-200 ease-in-out [-webkit-app-region:no-drag]",
           !projectSidebarOpen && "pointer-events-none"
         )}
       >

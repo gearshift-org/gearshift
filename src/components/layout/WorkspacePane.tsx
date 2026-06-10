@@ -446,10 +446,7 @@ function TerminalTabContent({
     const pane = tab.panes.find((p) => p.id === paneId)
     if (!pane) return null
     const activePane =
-      multi &&
-      isActive &&
-      tab.activePaneId === paneId &&
-      focusedTerminalPaneId === paneId
+      isActive && tab.activePaneId === paneId && focusedTerminalPaneId === paneId
     return (
       <div className="relative flex h-full flex-col">
         <HeaderDropZone

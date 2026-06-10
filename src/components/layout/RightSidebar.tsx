@@ -2039,8 +2039,9 @@ function TruncatedPathLabel({ path }: { path: string }) {
   }, [])
 
   return (
-    <Tooltip delay={3000} disabled={!truncated}>
+    <Tooltip disabled={!truncated}>
       <TooltipTrigger
+        delay={3000}
         render={
           <span ref={observe} className="min-w-0 flex-1 truncate font-mono">
             {path}

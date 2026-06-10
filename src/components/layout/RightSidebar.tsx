@@ -7,8 +7,10 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
   CloudUpload,
+  Copy,
   ExternalLink,
   GitBranch,
   GitCommitVertical,
@@ -161,9 +163,9 @@ export function RightSidebar({
   const [syncing, setSyncing] = useState(false)
   const [switchingBranch, setSwitchingBranch] = useState(false)
   const [pullRequestBusy, setPullRequestBusy] = useState<null | "create">(null)
-  const [openingPullRequestNumber, setOpeningPullRequestNumber] = useState<
-    number | null
-  >(null)
+  const [checkingOutPrNumber, setCheckingOutPrNumber] = useState<number | null>(
+    null
+  )
   const [githubBranchBusy, setGithubBranchBusy] = useState(false)
   const [stagedListLimit, setStagedListLimit] = useState(CHANGE_LIST_BATCH_SIZE)
   const [unstagedListLimit, setUnstagedListLimit] = useState(
@@ -289,7 +291,8 @@ export function RightSidebar({
     },
   })
   const commits = useMemo(
-    () => commitsQuery.data?.pages.flatMap((page) => page.commits) ?? EMPTY_COMMITS,
+    () =>
+      commitsQuery.data?.pages.flatMap((page) => page.commits) ?? EMPTY_COMMITS,
     [commitsQuery.data]
   )
   const firstCommitsPage = commitsQuery.data?.pages[0]
@@ -761,26 +764,35 @@ export function RightSidebar({
     [cwd, branches, runAction, updateCachedGitMeta]
   )
 
-  const openPullRequestNumber = useCallback(
-    async (number: number) => {
-      if (!cwd || openingPullRequestNumber !== null) return
-      setOpeningPullRequestNumber(number)
-      setCurrentActionError(null)
-      try {
-        const res = await window.git.openPullRequest(cwd, number)
-        if (!res.ok)
-          setCurrentActionError(res.error ?? "Open pull request failed")
-      } finally {
-        setOpeningPullRequestNumber(null)
-      }
-    },
-    [cwd, openingPullRequestNumber, setCurrentActionError]
-  )
-
   const openPullRequest = useCallback(() => {
     if (!pullRequest) return
-    void openPullRequestNumber(pullRequest.number)
-  }, [openPullRequestNumber, pullRequest])
+    void window.shellApi.openExternal(pullRequest.url)
+  }, [pullRequest])
+
+  // Switching to a PR branch is only allowed on a clean working tree, so
+  // uncommitted changes can't be carried over (or block) the checkout.
+  const checkoutPullRequestBranch = useCallback(
+    (pr: PullRequestInfo) => {
+      if (!cwd || files.length > 0 || checkingOutPrNumber !== null) return
+      setCheckingOutPrNumber(pr.number)
+      return runAction({
+        label: "Checkout pull request",
+        optimistic: () => {
+          if (pr.headRefName) {
+            pendingBranchRef.current = {
+              branch: pr.headRefName,
+              expiresAt: Date.now() + OPTIMISTIC_BRANCH_TTL_MS,
+            }
+          }
+        },
+        rollback: () => {
+          pendingBranchRef.current = null
+        },
+        mutation: () => window.git.checkoutPullRequest(cwd, pr.number),
+      })?.finally(() => setCheckingOutPrNumber(null))
+    },
+    [cwd, files.length, checkingOutPrNumber, runAction]
+  )
 
   const createPullRequest = useCallback(async () => {
     if (!cwd || !currentBranch || !canCreatePullRequest || pullRequestBusy) {
@@ -810,12 +822,6 @@ export function RightSidebar({
     runRefresh,
     setCurrentActionError,
   ])
-
-  const currentPullRequestBusy = pullRequestBusy
-    ? pullRequestBusy
-    : openingPullRequestNumber === pullRequest?.number
-      ? "open"
-      : null
 
   const openBranchOnGitHub = useCallback(async () => {
     if (!cwd || !currentBranch || githubBranchBusy) return
@@ -1051,7 +1057,7 @@ export function RightSidebar({
                       <PullRequestAction
                         pullRequest={pullRequest}
                         canCreate={canCreatePullRequest}
-                        busy={currentPullRequestBusy}
+                        busy={pullRequestBusy}
                         onOpen={openPullRequest}
                         onCreate={createPullRequest}
                       />
@@ -1315,8 +1321,9 @@ export function RightSidebar({
                 error={currentActionError ?? pullRequestsError}
                 ghAvailable={pullRequestsGhAvailable}
                 pullRequests={pullRequests}
-                openingNumber={openingPullRequestNumber}
-                onOpen={openPullRequestNumber}
+                hasChanges={files.length > 0}
+                checkingOutNumber={checkingOutPrNumber}
+                onCheckout={(pr) => void checkoutPullRequestBranch(pr)}
               />
             </TabsContent>
             <TabsContent
@@ -1414,11 +1421,10 @@ function PullRequestAction({
 }: {
   pullRequest: PullRequestInfo | null
   canCreate: boolean
-  busy: null | "create" | "open"
+  busy: null | "create"
   onOpen: () => void
   onCreate: () => void
 }) {
-  const isOpening = busy === "open"
   const isCreating = busy === "create"
   const label = pullRequest
     ? `View Pull Request #${pullRequest.number}`
@@ -1441,7 +1447,7 @@ function PullRequestAction({
                 "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
             )}
           >
-            {isOpening || isCreating ? (
+            {isCreating ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <GitPullRequest className="size-3.5" />
@@ -1466,8 +1472,9 @@ function PullRequestsPanel({
   error,
   ghAvailable,
   pullRequests,
-  openingNumber,
-  onOpen,
+  hasChanges,
+  checkingOutNumber,
+  onCheckout,
 }: {
   cwd: string | null
   notRepo: boolean
@@ -1475,9 +1482,24 @@ function PullRequestsPanel({
   error: string | null
   ghAvailable: boolean
   pullRequests: PullRequestInfo[]
-  openingNumber: number | null
-  onOpen: (number: number) => void
+  hasChanges: boolean
+  checkingOutNumber: number | null
+  onCheckout: (pr: PullRequestInfo) => void
 }) {
+  const [copiedNumber, setCopiedNumber] = useState<number | null>(null)
+  const copiedTimerRef = useRef<number | null>(null)
+  const copyLink = (pr: PullRequestInfo) => {
+    void navigator.clipboard.writeText(pr.url)
+    setCopiedNumber(pr.number)
+    if (copiedTimerRef.current !== null) {
+      window.clearTimeout(copiedTimerRef.current)
+    }
+    copiedTimerRef.current = window.setTimeout(
+      () => setCopiedNumber(null),
+      1500
+    )
+  }
+
   if (!cwd) {
     return (
       <div className="px-4 py-3 text-xs text-muted-foreground">
@@ -1526,58 +1548,147 @@ function PullRequestsPanel({
     <ScrollArea className="h-full">
       <ul className="flex flex-col">
         {pullRequests.map((pr) => {
-          const busy = openingNumber === pr.number
+          const checkingOut = checkingOutNumber === pr.number
+          const checkoutDisabled = hasChanges || checkingOutNumber !== null
           return (
             <li key={pr.id} className="border-b border-border/60">
-              <button
-                type="button"
-                disabled={openingNumber !== null}
-                onClick={() => onOpen(pr.number)}
-                className="group/pr flex w-full min-w-0 items-center gap-2.5 px-3 py-2.5 text-left transition-colors outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
-              >
-                <GitPullRequest className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-xs font-medium text-foreground">
-                    {pr.title}
-                  </span>
-                  <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="shrink-0">#{pr.number}</span>
-                    {pr.authorLogin && (
-                      <>
-                        <span className="shrink-0">·</span>
-                        <span className="truncate">{pr.authorLogin}</span>
-                      </>
+              <ContextMenu>
+                <ContextMenuTrigger
+                  render={
+                    <div
+                      onClick={() => void window.shellApi.openExternal(pr.url)}
+                      className="group/pr relative flex w-full min-w-0 cursor-pointer items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-accent/40"
+                    />
+                  }
+                >
+                  <GitPullRequest className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {pr.title}
+                    </span>
+                    <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="shrink-0">#{pr.number}</span>
+                      {pr.authorLogin && (
+                        <>
+                          <span className="shrink-0">·</span>
+                          <span className="truncate">{pr.authorLogin}</span>
+                        </>
+                      )}
+                    </span>
+                    {(pr.headRefName || pr.baseRefName) && (
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {pr.headRefName ?? "unknown"} →{" "}
+                        {pr.baseRefName ?? "base"}
+                      </span>
+                    )}
+                    {(pr.createdAt || pr.updatedAt) && (
+                      <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground/80">
+                        {pr.createdAt && (
+                          <span className="shrink-0">
+                            opened {formatRelative(Date.parse(pr.createdAt))}
+                          </span>
+                        )}
+                        {pr.createdAt && pr.updatedAt && (
+                          <span className="shrink-0">·</span>
+                        )}
+                        {pr.updatedAt && (
+                          <span className="shrink-0">
+                            updated {formatRelative(Date.parse(pr.updatedAt))}
+                          </span>
+                        )}
+                      </span>
                     )}
                   </span>
-                  {(pr.headRefName || pr.baseRefName) && (
-                    <span className="truncate text-[11px] text-muted-foreground">
-                      {pr.headRefName ?? "unknown"} → {pr.baseRefName ?? "base"}
-                    </span>
-                  )}
-                  {(pr.createdAt || pr.updatedAt) && (
-                    <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground/80">
-                      {pr.createdAt && (
-                        <span className="shrink-0">
-                          opened {formatRelative(Date.parse(pr.createdAt))}
-                        </span>
-                      )}
-                      {pr.createdAt && pr.updatedAt && (
-                        <span className="shrink-0">·</span>
-                      )}
-                      {pr.updatedAt && (
-                        <span className="shrink-0">
-                          updated {formatRelative(Date.parse(pr.updatedAt))}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </span>
-                {busy ? (
-                  <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                ) : (
-                  <ExternalLink className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/pr:opacity-100" />
-                )}
-              </button>
+                  <span className="pointer-events-none absolute top-1.5 right-2 flex items-center gap-0.5 rounded-md border border-border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/pr:pointer-events-auto group-hover/pr:opacity-100">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            disabled={checkoutDisabled}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onCheckout(pr)
+                            }}
+                            aria-label="Check out branch"
+                            className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {checkingOut ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <GitBranch className="size-3.5" />
+                            )}
+                          </button>
+                        }
+                      />
+                      <TooltipContent>
+                        {hasChanges
+                          ? "Commit or discard your changes first"
+                          : "Check out branch"}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              copyLink(pr)
+                            }}
+                            aria-label="Copy link"
+                            className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                          >
+                            {copiedNumber === pr.number ? (
+                              <Check className="size-3.5" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </button>
+                        }
+                      />
+                      <TooltipContent>
+                        {copiedNumber === pr.number ? "Copied!" : "Copy link"}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void window.shellApi.openExternal(pr.url)
+                            }}
+                            aria-label="Open in browser"
+                            className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </button>
+                        }
+                      />
+                      <TooltipContent>Open in browser</TooltipContent>
+                    </Tooltip>
+                  </span>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+                  <ContextMenuItem
+                    disabled={checkoutDisabled}
+                    onClick={() => onCheckout(pr)}
+                  >
+                    Check Out Branch
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => copyLink(pr)}>
+                    Copy Link
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => void window.shellApi.openExternal(pr.url)}
+                  >
+                    Open in Browser
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
             </li>
           )
         })}

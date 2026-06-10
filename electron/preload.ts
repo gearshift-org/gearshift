@@ -62,7 +62,9 @@ const termApi = {
     agent: "claude" | "codex" | "opencode" | "pi" | "gemini"
     agentSessionId: string
   }) =>
-    ipcRenderer.invoke("term:agentSessionTitle", args) as Promise<string | null>,
+    ipcRenderer.invoke("term:agentSessionTitle", args) as Promise<
+      string | null
+    >,
   onAgentEvent: (
     id: string,
     cb: (event: {
@@ -128,7 +130,10 @@ const termApi = {
         ok: boolean
       }>,
     migrateProjectIds: (migrations: Array<{ from: string; to: string }>) =>
-      ipcRenderer.invoke("term:history:migrateProjectIds", migrations) as Promise<{
+      ipcRenderer.invoke(
+        "term:history:migrateProjectIds",
+        migrations
+      ) as Promise<{
         ok: boolean
       }>,
     onProjectAppended: (
@@ -405,7 +410,13 @@ const gitApi = {
     staged: boolean,
     kind: "image" | "audio" | "pdf"
   ) =>
-    ipcRenderer.invoke("git:readDiffMedia", cwd, path, staged, kind) as Promise<{
+    ipcRenderer.invoke(
+      "git:readDiffMedia",
+      cwd,
+      path,
+      staged,
+      kind
+    ) as Promise<{
       ok: boolean
       error?: string
       dataUrl?: string
@@ -515,6 +526,11 @@ const gitApi = {
       ok: boolean
       error?: string
     }>,
+  checkoutPullRequest: (cwd: string, number: number) =>
+    ipcRenderer.invoke("git:checkoutPullRequest", cwd, number) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
   openBranchOnGitHub: (cwd: string, branch: string) =>
     ipcRenderer.invoke("git:openBranchOnGitHub", cwd, branch) as Promise<{
       ok: boolean
@@ -576,7 +592,8 @@ type UpdaterState =
   | { status: "error"; message: string }
 
 const updaterApi = {
-  getState: () => ipcRenderer.invoke("updater:getState") as Promise<UpdaterState>,
+  getState: () =>
+    ipcRenderer.invoke("updater:getState") as Promise<UpdaterState>,
   check: (options?: { alertWhenNoUpdate?: boolean }) =>
     ipcRenderer.invoke("updater:check", options) as Promise<UpdaterState>,
   quitAndInstall: () =>

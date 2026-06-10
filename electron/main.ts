@@ -508,11 +508,20 @@ function clampWindowStateToDisplay(state: WindowState): WindowState {
     )
   })
   if (onScreen) return state
-  return { width: state.width, height: state.height, isMaximized: state.isMaximized }
+  return {
+    width: state.width,
+    height: state.height,
+    isMaximized: state.isMaximized,
+  }
 }
 
 let windowStateWriteTimer: NodeJS.Timeout | undefined
-let lastNormalBounds: { width: number; height: number; x: number; y: number } | null = null
+let lastNormalBounds: {
+  width: number
+  height: number
+  x: number
+  y: number
+} | null = null
 function persistWindowState(win: BrowserWindow) {
   if (win.isDestroyed()) return
   if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {
@@ -561,8 +570,8 @@ function createWindow() {
   if (VITE_DEV_SERVER_URL && process.platform === "darwin") {
     app.dock.setIcon(
       nativeImage.createFromPath(
-        path.join(app.getAppPath(), "build", "dev-icon.png"),
-      ),
+        path.join(app.getAppPath(), "build", "dev-icon.png")
+      )
     )
   }
   if (state?.isMaximized) win.maximize()
@@ -745,7 +754,9 @@ async function runGitBuffer(cwd: string, args: string[]): Promise<Buffer> {
         return
       }
       reject(
-        new Error(Buffer.concat(stderr).toString("utf8") || `git exited ${code}`)
+        new Error(
+          Buffer.concat(stderr).toString("utf8") || `git exited ${code}`
+        )
       )
     })
   })
@@ -900,6 +911,15 @@ async function projectCommandEnv(cwd: string): Promise<NodeJS.ProcessEnv> {
   }
 
   return env
+}
+
+// Convert a git remote URL (SSH or HTTPS) to its GitHub web URL, e.g.
+// `git@github.com:owner/repo.git` → `https://github.com/owner/repo`.
+function githubRemoteToWebUrl(remote: string): string | null {
+  const match = remote.match(
+    /^(?:https:\/\/|git@|ssh:\/\/git@)github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?\/?$/
+  )
+  return match ? `https://github.com/${match[1]}` : null
 }
 
 async function runGh(cwd: string, args: string[]): Promise<string> {
@@ -1782,11 +1802,15 @@ app.whenReady().then(async () => {
           const secondColon = raw.indexOf(":", firstColon + 1)
           if (secondColon === -1) continue
           const path = raw.slice(0, firstColon)
-          const line = Number.parseInt(raw.slice(firstColon + 1, secondColon), 10)
+          const line = Number.parseInt(
+            raw.slice(firstColon + 1, secondColon),
+            10
+          )
           if (!Number.isFinite(line)) continue
           let text = raw.slice(secondColon + 1).trim()
           if (tokens.length > 1 && !hasTokensInOrder(text, tokens)) continue
-          if (text.length > MAX_TEXT_LEN) text = text.slice(0, MAX_TEXT_LEN) + "…"
+          if (text.length > MAX_TEXT_LEN)
+            text = text.slice(0, MAX_TEXT_LEN) + "…"
           results.push({ path, line, text })
           if (results.length >= MAX_CONTENT_RESULTS) break
         }
@@ -2396,8 +2420,14 @@ app.whenReady().then(async () => {
           .map((record) => record.trim())
           .filter(Boolean)
           .map((record) => {
-            const [hash, shortHash, authorName, isoDate, relativeDate, subject] =
-              record.split("\x1f")
+            const [
+              hash,
+              shortHash,
+              authorName,
+              isoDate,
+              relativeDate,
+              subject,
+            ] = record.split("\x1f")
             return {
               hash,
               shortHash,
@@ -2441,7 +2471,14 @@ app.whenReady().then(async () => {
         ok: true,
         // The empty --format= still emits a leading newline before the diff.
         patch: patch.replace(/^\n+/, ""),
-        commit: { hash: hashF, shortHash, authorName, isoDate, relativeDate, subject },
+        commit: {
+          hash: hashF,
+          shortHash,
+          authorName,
+          isoDate,
+          relativeDate,
+          subject,
+        },
       }
     } catch (err) {
       const e = err as { stderr?: string; message?: string }
@@ -2575,6 +2612,25 @@ app.whenReady().then(async () => {
   )
 
   ipcMain.handle(
+    "git:checkoutPullRequest",
+    async (_event, cwd: string, number: number) => {
+      if (!cwd || !Number.isInteger(number) || number <= 0) {
+        return { ok: false, error: "invalid-pull-request" }
+      }
+      try {
+        await runGh(cwd, ["pr", "checkout", String(number)])
+        return { ok: true }
+      } catch (err) {
+        const e = err as { stderr?: string; message?: string }
+        return {
+          ok: false,
+          error: e.stderr || e.message || "checkout pull request failed",
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
     "git:openBranchOnGitHub",
     async (_event, cwd: string, branch: string) => {
       const currentBranch = branch?.trim()
@@ -2582,7 +2638,19 @@ app.whenReady().then(async () => {
         return { ok: false, error: "no-branch" }
       }
       try {
-        await runGh(cwd, ["browse", "--branch", currentBranch])
+        // Build the URL from the local remote instead of `gh browse`, which
+        // makes a GitHub API round-trip and is noticeably slower.
+        const remote = (
+          await runGit(cwd, ["remote", "get-url", "origin"])
+        ).trim()
+        const repoUrl = githubRemoteToWebUrl(remote)
+        if (!repoUrl) return { ok: false, error: "no-github-remote" }
+        await shell.openExternal(
+          `${repoUrl}/tree/${currentBranch
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/")}`
+        )
         return { ok: true }
       } catch (err) {
         const e = err as { stderr?: string; message?: string }
@@ -2866,7 +2934,9 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "term:history:migrateProjectIds",
     async (_event, migrations: Array<{ from: string; to: string }>) => {
-      await chatDb.migrateProjectIds(Array.isArray(migrations) ? migrations : [])
+      await chatDb.migrateProjectIds(
+        Array.isArray(migrations) ? migrations : []
+      )
       return { ok: true }
     }
   )

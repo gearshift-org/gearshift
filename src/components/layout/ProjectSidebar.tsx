@@ -13,7 +13,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Focus, PanelLeft, Settings, X } from "lucide-react"
+import { Focus, GitBranch, PanelLeft, Settings, X } from "lucide-react"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -132,6 +132,7 @@ function ProjectSidebarRow({
     queryFn: () => fetchGitQueryData(p.path),
   })
   const subtitle = data?.currentBranch ?? null
+  const changeCount = data?.files.length ?? 0
 
   const randomizeAvatarColor = () => {
     randomizeProjectColor(p.path)
@@ -162,9 +163,9 @@ function ProjectSidebarRow({
         style={style}
         onClick={() => onSelect(p.id)}
         className={cn(
-          "group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left outline-none transition-colors focus:outline-none focus-visible:ring-0",
+          "group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
           animate &&
-            "duration-200 fill-mode-both animate-in fade-in slide-in-from-left-2",
+            "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
             ? "bg-sidebar-accent text-foreground"
             : "text-foreground hover:bg-sidebar-accent/70",
@@ -179,9 +180,9 @@ function ProjectSidebarRow({
           path={p.path}
           className="size-6 rounded-sm text-[11px]"
         />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium leading-tight">
+            <span className="truncate text-sm leading-tight font-medium">
               {p.name}
             </span>
             {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
@@ -196,8 +197,17 @@ function ProjectSidebarRow({
               </span>
             )}
           </div>
-          <span className="truncate text-xs leading-tight text-muted-foreground">
-            {subtitle ?? " "}
+          <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-muted-foreground">
+            <span className="truncate">{subtitle ?? " "}</span>
+            {changeCount > 0 && (
+              <span
+                title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
+                className="flex shrink-0 items-center gap-0.5 tabular-nums"
+              >
+                <GitBranch className="size-3" />
+                {changeCount}
+              </span>
+            )}
           </span>
         </div>
         {canClose && (
@@ -209,7 +219,7 @@ function ProjectSidebarRow({
               onClose?.(p.id)
             }}
             aria-label={`Close ${p.name}`}
-            className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100"
           >
             <X className="size-3.5" />
           </button>
@@ -366,7 +376,7 @@ export function ProjectSidebar({
       onDrop={handleDrop}
       className={cn(
         "flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]",
-        isFileDragOver && "bg-accent/30 ring-1 ring-inset ring-primary/35"
+        isFileDragOver && "bg-accent/30 ring-1 ring-primary/35 ring-inset"
       )}
     >
       {/* Reserve the top-left area for the macOS traffic lights, with the
@@ -381,7 +391,7 @@ export function ProjectSidebar({
                   type="button"
                   onClick={onCollapse}
                   aria-label="Collapse sidebar"
-                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground [-webkit-app-region:no-drag]"
+                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:bg-foreground/15 hover:text-foreground"
                 >
                   <PanelLeft className="size-3.5" />
                 </button>
@@ -427,9 +437,9 @@ export function ProjectSidebar({
             onClick={onExitFocus}
             aria-label="Exit focus mode"
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:bg-sidebar-accent/70 focus-visible:outline-none",
+              "flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
               animateFocus &&
-                "duration-200 animate-in fade-in slide-in-from-left-2"
+                "animate-in duration-200 fade-in slide-in-from-left-2"
             )}
           >
             <span className="grid size-6 shrink-0 place-items-center rounded-sm bg-sidebar-accent">
@@ -446,7 +456,7 @@ export function ProjectSidebar({
           onRemoveRecent={onRemoveRecent}
         />
       </div>
-      <div className="shrink-0 px-3 pb-3 pt-1.5">
+      <div className="shrink-0 px-3 pt-1.5 pb-3">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -454,7 +464,7 @@ export function ProjectSidebar({
                 type="button"
                 onClick={onOpenSettings}
                 aria-label="Open settings"
-                className="flex h-7 w-fit items-center gap-2 rounded-md px-2 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                className="flex h-7 w-fit items-center gap-2 rounded-md px-2 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
               >
                 <Settings className="size-3.5 shrink-0" />
                 <span className="truncate">Settings</span>

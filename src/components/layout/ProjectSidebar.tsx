@@ -121,7 +121,10 @@ function ProjectSidebarRow({
   } = useSortable({ id: p.id })
 
   const style = {
-    transform: CSS.Translate.toString(transform),
+    // Lock dragging to the vertical axis so rows can't overflow sideways.
+    transform: CSS.Translate.toString(
+      transform ? { ...transform, x: 0 } : null
+    ),
     transition,
     zIndex: isDragging ? 30 : undefined,
     animationDelay: animate ? `${index * 35}ms` : undefined,
@@ -401,7 +404,7 @@ export function ProjectSidebar({
           </Tooltip>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-3 pb-3">
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
             items={visibleProjects.map((p) => p.id)}

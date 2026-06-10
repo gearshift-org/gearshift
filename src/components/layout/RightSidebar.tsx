@@ -2025,6 +2025,33 @@ function DiffStats({
   )
 }
 
+// Shows the full path in a tooltip (after a 3s hover) only when the
+// label is actually truncated.
+function TruncatedPathLabel({ path }: { path: string }) {
+  const [truncated, setTruncated] = useState(false)
+  const observe = useCallback((el: HTMLSpanElement | null) => {
+    if (!el) return
+    const check = () => setTruncated(el.scrollWidth > el.clientWidth)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  return (
+    <Tooltip delay={3000} disabled={!truncated}>
+      <TooltipTrigger
+        render={
+          <span ref={observe} className="min-w-0 flex-1 truncate font-mono">
+            {path}
+          </span>
+        }
+      />
+      <TooltipContent className="font-mono break-all">{path}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function FileRow({
   cwd,
   file,
@@ -2074,9 +2101,7 @@ function FileRow({
               name={file.path.split("/").pop() ?? file.path}
               className="mx-2 size-4 shrink-0"
             />
-            <span className="min-w-0 flex-1 truncate font-mono">
-              {file.path}
-            </span>
+            <TruncatedPathLabel path={file.path} />
             <div className="relative flex h-5 min-w-14 shrink-0 items-center justify-end">
               <div className="transition-opacity group-hover/row:opacity-0">
                 <DiffStats

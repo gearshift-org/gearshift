@@ -2785,8 +2785,15 @@ export function AppShell() {
         <ProjectSidebar
           projects={projects}
           activeId={activeProjectId}
-          recents={recents.filter(
-            (r) => !projects.some((p) => p.path === r.path)
+          recents={recents.filter((r) =>
+            // In focus mode, open-but-unfocused projects stay listed so they
+            // can be re-added to the focus list.
+            focusedProjectIds.length > 0
+              ? !projects.some(
+                  (p) =>
+                    p.path === r.path && focusedProjectIds.includes(p.id)
+                )
+              : !projects.some((p) => p.path === r.path)
           )}
           onSelect={selectProject}
           onAdd={addProject}

@@ -7,6 +7,7 @@ export type ActionId =
   | "terminal.new"
   | "terminal.close"
   | "terminal.last"
+  | "terminal.copyPath"
   | "nav.back"
   | "nav.forward"
   | "settings.open"
@@ -71,6 +72,13 @@ export const ACTIONS: readonly ActionDef[] = [
     // Previously CmdOrCtrl+2 — now owned by sidebar.toggle, so unset by default.
     label: "Go to Last Terminal",
     defaultAccelerator: "",
+    scope: "renderer",
+  },
+  {
+    id: "terminal.copyPath",
+    label: "Copy Terminal Path",
+    description: "Copy the active terminal's current directory to the clipboard",
+    defaultAccelerator: "CmdOrCtrl+Shift+C",
     scope: "renderer",
   },
   {

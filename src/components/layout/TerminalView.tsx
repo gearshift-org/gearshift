@@ -1104,7 +1104,8 @@ export function TerminalView({
       // Cmd-based clipboard / selection shortcuts. Ctrl shortcuts should remain
       // available to terminal TUIs (for example OpenCode uses Ctrl+A/Ctrl+F).
       if (meta && !ctrl && !alt) {
-        if (key === "c" && term.hasSelection()) {
+        // Cmd+Shift+C is the global copy-terminal-path shortcut — let it bubble.
+        if (key === "c" && !shift && term.hasSelection()) {
           e.preventDefault()
           const sel = trimTerminalSelection(term.getSelection())
           if (sel) void navigator.clipboard.writeText(sel)
@@ -1130,7 +1131,8 @@ export function TerminalView({
       // Keep Ctrl+C/Ctrl+V conveniences, but only for copy/paste. Other Ctrl
       // combinations pass through to the PTY.
       if (ctrl && !meta && !alt) {
-        if (key === "c" && term.hasSelection()) {
+        // Ctrl+Shift+C bubbles to the global copy-terminal-path shortcut.
+        if (key === "c" && !shift && term.hasSelection()) {
           e.preventDefault()
           const sel = trimTerminalSelection(term.getSelection())
           if (sel) void navigator.clipboard.writeText(sel)

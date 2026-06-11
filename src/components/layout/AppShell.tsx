@@ -2619,6 +2619,7 @@ export function AppShell() {
     (direction?: "horizontal" | "vertical") => void
   >(() => undefined)
   const goToLastTerminalRef = useRef<() => void>(() => undefined)
+  const copyActiveTerminalPathRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     addTerminalRef.current = addTerminal
@@ -2648,6 +2649,22 @@ export function AppShell() {
       if (active?.kind === "terminal") {
         void splitTerminalPane(activeTabId, direction)
       }
+    }
+    copyActiveTerminalPathRef.current = () => {
+      const active = activeProject?.tabs.find((t) => t.id === activeTabId)
+      if (active?.kind !== "terminal") return
+      const pane =
+        active.panes.find((pp) => pp.id === active.activePaneId) ??
+        active.panes[0]
+      if (!pane) return
+      void window.term.getCwd(pane.sessionId).then(async (cwd) => {
+        if (!cwd) {
+          toast.error("Couldn't read the terminal's current path")
+          return
+        }
+        await navigator.clipboard.writeText(cwd)
+        toast.success("Path copied to clipboard")
+      })
     }
     closeTabRef.current = closeTab
   })
@@ -2718,6 +2735,10 @@ export function AppShell() {
         case "terminal.last":
           e.preventDefault()
           goToLastTerminalRef.current()
+          break
+        case "terminal.copyPath":
+          e.preventDefault()
+          copyActiveTerminalPathRef.current()
           break
         case "nav.back":
           // Skip in real text fields so Cmd+Shift+Arrow keeps extending the

@@ -2656,7 +2656,7 @@ export function AppShell() {
       const pane =
         active.panes.find((pp) => pp.id === active.activePaneId) ??
         active.panes[0]
-      if (!pane) return
+      if (!pane?.sessionId) return
       void window.term.getCwd(pane.sessionId).then(async (cwd) => {
         if (!cwd) {
           toast.error("Couldn't read the terminal's current path")

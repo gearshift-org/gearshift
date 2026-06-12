@@ -42,6 +42,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SummarizeMenu } from "./SummarizeMenu"
 import {
   Tooltip,
   TooltipContent,
@@ -130,6 +131,7 @@ type Props = {
   }) => void
   onCommitWithAi?: () => void
   canCommitWithAi?: boolean
+  onSummarizeHistory?: (agent: string) => void
   topRightActions?: React.ReactNode
 }
 
@@ -145,6 +147,7 @@ export function RightSidebar({
   onOpenCommit,
   onCommitWithAi,
   canCommitWithAi = false,
+  onSummarizeHistory,
   topRightActions,
 }: Props) {
   const [internalTab, setInternalTab] = useState<RightSidebarTab>("git")
@@ -977,8 +980,11 @@ export function RightSidebar({
               History
             </TabsTrigger>
           </TabsList>
-          {topRightActions && (
-            <div className="ml-auto flex items-center [-webkit-app-region:no-drag]">
+          {(onSummarizeHistory || topRightActions) && (
+            <div className="ml-auto flex items-center gap-0.5 [-webkit-app-region:no-drag]">
+              {onSummarizeHistory && (
+                <SummarizeMenu onSummarize={onSummarizeHistory} />
+              )}
               {topRightActions}
             </div>
           )}

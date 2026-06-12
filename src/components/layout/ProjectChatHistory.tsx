@@ -51,12 +51,15 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
-    const offAppend = window.term.history.onProjectAppended(projectId, (msg) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev
-        return [msg, ...prev]
-      })
-    })
+    const offAppend = window.term.history.onProjectAppended(
+      projectId,
+      (msg) => {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev
+          return [msg, ...prev]
+        })
+      }
+    )
     const offClear = window.term.history.onProjectCleared(projectId, () => {
       setMessages([])
     })
@@ -104,8 +107,10 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        <span>{messages.length} message{messages.length === 1 ? "" : "s"}</span>
+      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <span>
+          {messages.length} message{messages.length === 1 ? "" : "s"}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -136,7 +141,7 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
           <ul className="divide-y divide-border/60">
             {messages.map((m) => (
               <li key={m.id} className="group px-3 py-2">
-                <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <div className="flex items-center justify-between gap-2 text-[10px] tracking-wide text-muted-foreground uppercase">
                   <span>{m.agent ?? "user"}</span>
                   <div className="flex items-center gap-1.5">
                     <span>{formatTime(m.createdAt)}</span>
@@ -147,7 +152,7 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
                             type="button"
                             onClick={() => void deleteMessage(m.id)}
                             aria-label="Delete history item"
-                            className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
+                            className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus:opacity-100"
                           >
                             <Trash2 className="size-3" />
                           </button>
@@ -157,7 +162,7 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
                     </Tooltip>
                   </div>
                 </div>
-                <pre className="mt-1 whitespace-pre-wrap break-words font-sans text-xs leading-snug text-foreground/90">
+                <pre className="mt-1 font-sans text-xs leading-snug break-words whitespace-pre-wrap text-foreground/90">
                   {m.body}
                 </pre>
               </li>

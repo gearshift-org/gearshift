@@ -83,6 +83,7 @@ type Props = {
   }) => void
   onCommitWithAi?: () => void
   canCommitWithAi?: boolean
+  onSummarizeHistory?: (agent: string) => void
   rightSidebarTab?: RightSidebarTab
   onRightSidebarTabChange?: (tab: RightSidebarTab) => void
   activeTreeFilePath?: string
@@ -120,6 +121,7 @@ export function WorkspaceSplit({
   onOpenCommitTab,
   onCommitWithAi,
   canCommitWithAi = false,
+  onSummarizeHistory,
   rightSidebarTab,
   onRightSidebarTabChange,
   activeTreeFilePath,
@@ -376,6 +378,7 @@ export function WorkspaceSplit({
             onOpenCommit={onOpenCommitTab}
             onCommitWithAi={onCommitWithAi}
             canCommitWithAi={canCommitWithAi}
+            onSummarizeHistory={onSummarizeHistory}
             topRightActions={sidebarTopActions}
           />
         </div>

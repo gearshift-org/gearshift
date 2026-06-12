@@ -10,6 +10,7 @@ import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
 import { UpdateButton } from "./UpdateButton"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
+import { SummarizeMenu } from "./SummarizeMenu"
 import { HistoryNavButtons } from "./HistoryNavButtons"
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
@@ -1023,6 +1024,80 @@ export function AppShell() {
     }, 120)
   }, [activeProjectId, lastAgentTerminals, navigateToProject])
 
+  // History tab "Summarize": send the user's last prompts to a terminal
+  // running the chosen agent and ask it for a recap. Unlike Commit with AI
+  // (which reuses the remembered last agent terminal), this targets the
+  // picked agent — spinning up a fresh terminal for it when none is running.
+  const summarizeHistory = useCallback(
+    (agent: string) => {
+      const project = projectsRef.current.find((p) => p.id === activeProjectId)
+      if (!project) return
+      void window.git.log(project.path, 10).then(async (res) => {
+        if (!res.ok || res.commits.length === 0) {
+          toast.error("No commits to summarize")
+          return
+        }
+        // Commits are newest-first; recap reads better oldest-first. Keep the
+        // prompt single-line — raw newlines written to the PTY would submit
+        // each line separately in agent TUIs.
+        const ordered = [...res.commits].reverse()
+        const list = ordered
+          .map(
+            (c, i) =>
+              `${i + 1}) ${c.subject.replace(/\s+/g, " ").trim()} (${c.relativeDate})`
+          )
+          .join(" ")
+        const prompt = `Recap what was worked on in this project based on the last ${ordered.length} git commits (listed oldest first below). Write it for a human catching up: group related commits into themes instead of listing them one-by-one, use plain conversational language, lead with the main things accomplished, and keep it brief (a short intro plus a handful of grouped bullets). Do not make any code changes. The commits: ${list}`
+
+        window.focus()
+        void window.appWindow?.focus?.()
+
+        // Target a terminal already running the picked agent.
+        for (const tab of project.tabs) {
+          if (tab.kind !== "terminal") continue
+          const pane = tab.panes.find(
+            (pp) =>
+              pp.agentStatus?.running &&
+              pp.agentStatus.agentName === agent &&
+              pp.sessionId
+          )
+          if (pane?.sessionId) {
+            const sessionId = pane.sessionId
+            setProjects((prev) =>
+              prev.map((p) =>
+                p.id === project.id
+                  ? {
+                      ...p,
+                      activeTabId: tab.id,
+                      tabs: p.tabs.map((t) =>
+                        t.id === tab.id && t.kind === "terminal"
+                          ? { ...t, activePaneId: pane.id }
+                          : t
+                      ),
+                    }
+                  : p
+              )
+            )
+            navigateToProject(project.id, tab.id)
+            terminalFocusRequestNonceRef.current += 1
+            setTerminalFocusRequest({
+              tabId: tab.id,
+              paneId: pane.id,
+              nonce: terminalFocusRequestNonceRef.current,
+            })
+            window.setTimeout(() => writeAgentPrompt(sessionId, prompt), 120)
+            return
+          }
+        }
+
+        toast.error(
+          `Start a ${agent} terminal in this project first to summarize`
+        )
+      })
+    },
+    [activeProjectId, navigateToProject]
+  )
+
   useEffect(() => {
     if (!stateRestored) return
     saveActiveProjectId(activeProjectId)
@@ -1561,8 +1636,10 @@ export function AppShell() {
     })
   }
 
-  const addTerminal = async (agentName?: TerminalAgentName) => {
-    if (!activeProject) return
+  const addTerminal = async (
+    agentName?: TerminalAgentName
+  ): Promise<string | null> => {
+    if (!activeProject) return null
     const project = activeProject
     const tabId = makeId()
     const paneId = makeId()
@@ -1605,6 +1682,7 @@ export function AppShell() {
       const command = options ? `${baseCommand} ${options}` : baseCommand
       window.term.write(paneId, `${command}\r`)
     }
+    return paneId
   }
 
   /** Add a new terminal pane to an existing terminal tab (Cmd+D / split). */
@@ -2699,7 +2777,9 @@ export function AppShell() {
     )
     navigateToProject(activeProjectId)
   }
-  const addTerminalRef = useRef<() => void>(() => undefined)
+  const addTerminalRef = useRef<
+    (agentName?: TerminalAgentName) => Promise<string | null>
+  >(async () => null)
   const closeActiveTabRef = useRef<() => void>(() => undefined)
   const splitActiveTerminalRef = useRef<
     (direction?: "horizontal" | "vertical") => void
@@ -3010,6 +3090,9 @@ export function AppShell() {
                 cwd={activeProject?.path ?? null}
                 onOpenChanges={openChanges}
               />
+              {activeProject && (
+                <SummarizeMenu onSummarize={summarizeHistory} />
+              )}
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -3116,6 +3199,7 @@ export function AppShell() {
               onOpenCommitTab={openCommitTab}
               onCommitWithAi={commitWithAi}
               canCommitWithAi={!!resolvedLastAgentTerminal}
+              onSummarizeHistory={summarizeHistory}
               rightSidebarTab={rightSidebarTab}
               onRightSidebarTabChange={setRightSidebarTab}
               activeTreeFilePath={activeTreeFilePath}

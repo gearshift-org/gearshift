@@ -88,6 +88,22 @@ const termApi = {
       ipcRenderer.removeListener(channel, listener)
     }
   },
+  onCommandDone: (
+    cb: (info: {
+      sessionId: string
+      command: string
+      durationMs: number
+    }) => void
+  ) => {
+    const listener = (
+      _e: unknown,
+      info: { sessionId: string; command: string; durationMs: number }
+    ) => cb(info)
+    ipcRenderer.on("term:commandDone", listener)
+    return () => {
+      ipcRenderer.removeListener("term:commandDone", listener)
+    }
+  },
   onData: (id: string, cb: (chunk: string) => void) => {
     const channel = `term:data:${id}`
     const listener = (_e: unknown, chunk: string) => cb(chunk)

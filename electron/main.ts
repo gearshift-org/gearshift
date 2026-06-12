@@ -277,6 +277,8 @@ function wireSessionEvents(client: DaemonClient, sessionId: string) {
     }
     sessionOwners.delete(sessionId)
     sessionProjects.delete(sessionId)
+    sessionLastEnter.delete(sessionId)
+    runningShellCommands.delete(sessionId)
     inputCapture.dispose(sessionId)
   })
 }
@@ -422,31 +424,37 @@ function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
   return undefined
 }
 
+async function listProcessChildren(): Promise<
+  Map<number, Array<{ pid: number; command: string }>>
+> {
+  const { stdout } = await execFileP("/bin/ps", [
+    "-axo",
+    "pid=,ppid=,command=",
+  ])
+  const childrenByParent = new Map<
+    number,
+    Array<{ pid: number; command: string }>
+  >()
+
+  for (const line of stdout.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
+    if (!match) continue
+    const pid = Number(match[1])
+    const ppid = Number(match[2])
+    const command = match[3]?.trim() ?? ""
+    if (!pid || !ppid || !command) continue
+    const children = childrenByParent.get(ppid) ?? []
+    children.push({ pid, command })
+    childrenByParent.set(ppid, children)
+  }
+  return childrenByParent
+}
+
 async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
   if (process.platform === "win32") return { running: false }
 
   try {
-    const { stdout } = await execFileP("/bin/ps", [
-      "-axo",
-      "pid=,ppid=,command=",
-    ])
-    const childrenByParent = new Map<
-      number,
-      Array<{ pid: number; command: string }>
-    >()
-
-    for (const line of stdout.split("\n")) {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
-      if (!match) continue
-      const pid = Number(match[1])
-      const ppid = Number(match[2])
-      const command = match[3]?.trim() ?? ""
-      if (!pid || !ppid || !command) continue
-      const children = childrenByParent.get(ppid) ?? []
-      children.push({ pid, command })
-      childrenByParent.set(ppid, children)
-    }
-
+    const childrenByParent = await listProcessChildren()
     const queue = [...(childrenByParent.get(rootPid) ?? [])]
     const seen = new Set<number>()
     while (queue.length > 0) {
@@ -463,6 +471,88 @@ async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
 
   return { running: false }
 }
+
+// Shell command completion tracking: poll the process tree and, when a
+// non-agent foreground command that ran for at least MIN_NOTIFY_COMMAND_MS
+// finishes, tell the owning renderer so it can show a desktop notification.
+const MIN_NOTIFY_COMMAND_MS = 5000
+const COMMAND_POLL_INTERVAL_MS = 1500
+const runningShellCommands = new Map<
+  string,
+  { startedAt: number; command: string; notify: boolean }
+>()
+// sessionId → time of the user's last Enter keypress. A command only arms a
+// completion notification when the user submitted it manually just before it
+// started — programmatic/agent-spawned processes stay silent.
+const sessionLastEnter = new Map<string, number>()
+const MANUAL_SUBMIT_WINDOW_MS = 3000
+let pollingShellCommands = false
+
+async function pollShellCommands() {
+  if (process.platform === "win32") return
+  if (!daemonClient || sessionOwners.size === 0) {
+    runningShellCommands.clear()
+    return
+  }
+  if (pollingShellCommands) return
+  pollingShellCommands = true
+  try {
+    const childrenByParent = await listProcessChildren()
+    for (const sessionId of sessionOwners.keys()) {
+      const pid = daemonClient?.getPid(sessionId)
+      if (!pid) {
+        runningShellCommands.delete(sessionId)
+        continue
+      }
+      const queue = [...(childrenByParent.get(pid) ?? [])]
+      const seen = new Set<number>()
+      let firstCommand: string | null = null
+      let agent = false
+      while (queue.length > 0) {
+        const proc = queue.shift()!
+        if (seen.has(proc.pid)) continue
+        seen.add(proc.pid)
+        if (!firstCommand) firstCommand = proc.command
+        if (supportedAgentName(proc.command)) agent = true
+        queue.push(...(childrenByParent.get(proc.pid) ?? []))
+      }
+
+      const current = runningShellCommands.get(sessionId)
+      if (firstCommand) {
+        if (!current) {
+          const lastEnter = sessionLastEnter.get(sessionId) ?? 0
+          const manuallySubmitted =
+            Date.now() - lastEnter <= MANUAL_SUBMIT_WINDOW_MS
+          runningShellCommands.set(sessionId, {
+            startedAt: Date.now(),
+            command: firstCommand,
+            notify: manuallySubmitted && !agent,
+          })
+        } else if (agent) {
+          // An agent launched mid-command (or was detected late) — agent
+          // lifecycle hooks own notifications for this session.
+          current.notify = false
+        }
+      } else if (current) {
+        runningShellCommands.delete(sessionId)
+        const durationMs = Date.now() - current.startedAt
+        if (current.notify && durationMs >= MIN_NOTIFY_COMMAND_MS) {
+          getOwnerWebContents(sessionId)?.send("term:commandDone", {
+            sessionId,
+            command: current.command,
+            durationMs,
+          })
+        }
+      }
+    }
+  } catch {
+    // Process inspection is best-effort.
+  } finally {
+    pollingShellCommands = false
+  }
+}
+
+setInterval(() => void pollShellCommands(), COMMAND_POLL_INTERVAL_MS)
 
 type WindowState = {
   width: number
@@ -2836,6 +2926,9 @@ app.whenReady().then(async () => {
 
   ipcMain.on("term:write", (_e, id: string, data: string) => {
     daemonClient?.write(id, data)
+    if (data.includes("\r") || data.includes("\n")) {
+      sessionLastEnter.set(id, Date.now())
+    }
     void captureInput(id, data)
   })
 
@@ -2892,6 +2985,8 @@ app.whenReady().then(async () => {
     daemonClient?.kill(id)
     sessionOwners.delete(id)
     sessionProjects.delete(id)
+    sessionLastEnter.delete(id)
+    runningShellCommands.delete(id)
     inputCapture.dispose(id)
   })
 

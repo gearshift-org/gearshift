@@ -87,6 +87,12 @@ if (process.platform === "win32") {
 
 if (VITE_DEV_SERVER_URL) {
   app.setPath("userData", path.join(app.getPath("appData"), "gearshift-dev"))
+  // If vite is killed hard (SIGKILL) it can't clean up this child process,
+  // leaving an orphan that holds the single-instance lock. Quit when our
+  // parent disappears (ppid becomes 1).
+  setInterval(() => {
+    if (process.ppid === 1) app.exit(0)
+  }, 2000).unref()
 } else {
   // Use the bundle id as the userData folder name so cleanup tools can
   // correlate leftover state to the app.

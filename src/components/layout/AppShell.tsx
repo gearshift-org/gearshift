@@ -1814,14 +1814,53 @@ export function AppShell() {
         tab.activePaneId === paneId &&
         isAppVisibleAndFocused()
       if (viewingTerminal) return
-      if (typeof Notification === "undefined") return
       playAgentCompleteSound()
       const seconds = Math.round(durationMs / 1000)
       const shortCommand =
         command.length > 60 ? `${command.slice(0, 59)}…` : command
+      const terminalName = tabDisplayName(tab)
+
+      if (isAppVisibleAndFocused()) {
+        toast.custom((id) => (
+          <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
+            <button
+              type="button"
+              onClick={() => openAgentDoneTarget(project.id, tabId, paneId, id)}
+              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+            >
+              <ProjectAvatar
+                name={project.name}
+                path={project.path}
+                className="size-10 shrink-0 rounded-md text-sm"
+              />
+              <span className="flex min-w-0 flex-col justify-center gap-0.5 pr-6">
+                <span className="truncate text-xs font-medium">
+                  {shortCommand}
+                </span>
+                <span className="flex min-w-0 items-baseline gap-1 text-[11px] text-muted-foreground">
+                  <span className="shrink-0">Finished in {seconds}s</span>
+                  <span className="shrink-0">·</span>
+                  <span className="min-w-0 truncate">{terminalName}</span>
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label="Close notification"
+              onClick={() => toast.dismiss(id)}
+              className="absolute top-1.5 right-1.5 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))
+        return
+      }
+
+      if (typeof Notification === "undefined") return
       try {
         const notification = new Notification(project.name || "GearShift", {
-          body: `${shortCommand}\nFinished in ${seconds}s · ${tabDisplayName(tab)}`,
+          body: `${shortCommand}\nFinished in ${seconds}s · ${terminalName}`,
           silent: true,
         })
         notification.onclick = () => {

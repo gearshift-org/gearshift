@@ -16,7 +16,7 @@
         "@tanstack/query-sync-storage-persister": "^5.100.13",
         "@tanstack/react-query": "^5.100.13",
         "@tanstack/react-query-persist-client": "^5.100.13",
-        "@xterm/addon-web-links": "0.13.0-beta.285",
+        "@xterm/addon-web-links": "0.13.0-beta.226",
         "codemirror": "^6.0.2",
         "drizzle-orm": "^0.45.2",
         "electron-log": "^5.4.4",
@@ -44,10 +44,10 @@
         "@types/react": "^19.2.14",
         "@types/react-dom": "^19.2.3",
         "@vitejs/plugin-react": "^5.2.0",
-        "@xterm/addon-fit": "0.12.0-beta.285",
-        "@xterm/addon-search": "0.17.0-beta.285",
-        "@xterm/addon-webgl": "0.20.0-beta.284",
-        "@xterm/xterm": "6.1.0-beta.285",
+        "@xterm/addon-fit": "0.12.0-beta.220",
+        "@xterm/addon-search": "0.17.0-beta.220",
+        "@xterm/addon-webgl": "0.20.0-beta.219",
+        "@xterm/xterm": "6.1.0-beta.276",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cmdk": "^1.1.1",
@@ -720,15 +720,15 @@
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.13", "", {}, "sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw=="],
 
-    "@xterm/addon-fit": ["@xterm/addon-fit@0.12.0-beta.285", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.285" } }, "sha512-rSVi0nMbK+9sgL1QXmJlv3nWvktj0AZeRd52yVzyNhl5mxxEkvxiwFJZlcEBRg27ipeWVAs1PeuCz0A9QnNnAQ=="],
+    "@xterm/addon-fit": ["@xterm/addon-fit@0.12.0-beta.220", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.220" } }, "sha512-lTiEjsdJBYTvIdA8USs90j+pu7/9oCQEh8JYBDJoRxzzAcvk4V1GlEA++Ztspbfk4nSh2HVxwJvdeTD6ffAQlg=="],
 
-    "@xterm/addon-search": ["@xterm/addon-search@0.17.0-beta.285", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.285" } }, "sha512-cGjvwxsCnzlLbDWhMaHF9ZxTbYt6foAvUlURe63XyonXR2DVYH6/sr4YoUhM4S5tUMtdIhPxJhtQ8uF6r+ch3g=="],
+    "@xterm/addon-search": ["@xterm/addon-search@0.17.0-beta.220", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.220" } }, "sha512-2QwmGiZ8sn1ISYLuHIt0heUYN0wR6d+AWFZRGsekXbLCvRw/qjclCSKsDsIO1bTMBjey5K1MeZbse6kTKx+kDg=="],
 
-    "@xterm/addon-web-links": ["@xterm/addon-web-links@0.13.0-beta.285", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.285" } }, "sha512-deEjcrV/LQFM031l6Jop2mVK79RJru6SlNCjtFXb0Ex5GwIcPZCGW4VdZYMU5toQ3mMDR6yrzWDsb9SFtDrMeA=="],
+    "@xterm/addon-web-links": ["@xterm/addon-web-links@0.13.0-beta.226", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.226" } }, "sha512-9xAuNmp1l89Dl0J2+6PxRSRdzcZwdUQsac2CKXauVf3lexzTyDYLmkK1ryBlo+ZqieiIpZQTBhur0JEqPMfDnA=="],
 
-    "@xterm/addon-webgl": ["@xterm/addon-webgl@0.20.0-beta.284", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.285" } }, "sha512-tzkUiEfdpHCY8mXCbuIaP9V67QDfBJvDr9jdxs5jjxNCIQvw+NCoKD97y5sUrQhrIlr7xrDGniPgPYThQ/1FWg=="],
+    "@xterm/addon-webgl": ["@xterm/addon-webgl@0.20.0-beta.219", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.220" } }, "sha512-IaAcDDP0lhHIdYJuTFKZIMsRqlN8iR5U8lW9MiTK4mUAjettqZN2z/tkSsl4yV3GZ9/siOZofDl+GO1TK7y7ww=="],
 
-    "@xterm/xterm": ["@xterm/xterm@6.1.0-beta.285", "", {}, "sha512-S3K58tepMkbpWRBzOGKd0In6AVvt9QPAnNs8DJ8rPUPODYtsCYWAtINHKYtC2OpXcE5EBKM35dl+Dgv03OoE/w=="],
+    "@xterm/xterm": ["@xterm/xterm@6.1.0-beta.276", "", {}, "sha512-H+0HOgbtOnNZ8fO4L5V6U3Q8rNpBD40KhwiSM++BiD+ssOWzP/Q3iLZeczByoEU/6MbwPM6lk4e81hS7jfVWzA=="],
 
     "abbrev": ["abbrev@4.0.0", "", {}, "sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA=="],
 

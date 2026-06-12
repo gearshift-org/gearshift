@@ -13,7 +13,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Focus, GitBranch, PanelLeft, Settings, X } from "lucide-react"
+import { Focus, GitBranch, PanelLeft, Search, Settings, X } from "lucide-react"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { Input } from "@/components/ui/input"
 import { HistoryNavButtons } from "./HistoryNavButtons"
 import {
   ContextMenu,
@@ -314,11 +315,20 @@ export function ProjectSidebar({
   onExitFocus,
 }: Props) {
   const [isFileDragOver, setIsFileDragOver] = useState(false)
+  const [filter, setFilter] = useState("")
   const focusedSet = new Set(focusedProjectIds)
   const isFocusMode = projects.some((p) => focusedSet.has(p.id))
-  const visibleProjects = isFocusMode
+  const focusVisibleProjects = isFocusMode
     ? projects.filter((p) => focusedSet.has(p.id))
     : projects
+  const normalizedFilter = filter.trim().toLowerCase()
+  const visibleProjects = normalizedFilter
+    ? focusVisibleProjects.filter(
+        (p) =>
+          p.name.toLowerCase().includes(normalizedFilter) ||
+          p.path.toLowerCase().includes(normalizedFilter)
+      )
+    : focusVisibleProjects
 
   // Only animate rows when focus mode is toggled — not on initial page load.
   const prevFocusModeRef = useRef(isFocusMode)
@@ -403,6 +413,35 @@ export function ProjectSidebar({
             <TooltipContent>Collapse sidebar</TooltipContent>
           </Tooltip>
         )}
+      </div>
+      <div className="shrink-0 px-3 pb-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault()
+                setFilter("")
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Filter projects"
+            aria-label="Filter projects"
+            className="h-7 pl-7 text-xs md:text-xs"
+          />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => setFilter("")}
+              aria-label="Clear filter"
+              className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-3 pb-3">
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>

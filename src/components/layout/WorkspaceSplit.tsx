@@ -21,7 +21,6 @@ import type {
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
-const SIDEBAR_OVERLAY_TRANSITION_MS = 200
 const SIDEBAR_WIDTH_TRANSITION_MS = 200
 const TERMINAL_RESIZE_SETTLE_MS = 120
 
@@ -37,10 +36,6 @@ type Props = {
   sidebarTopActions?: ReactNode
   workspaceTabs: ReactNode
   sidebarOpen?: boolean
-  // The sidebar should behave as a slide-over overlay (edge-reveal mode).
-  sidebarOverlayMode?: boolean
-  // The overlay is currently revealed. Ignored unless `sidebarOverlayMode`.
-  sidebarOverlayVisible?: boolean
   onTerminalTitleChange?: (tabId: string, paneId: string, title: string) => void
   onTerminalAgentStatusChange?: (
     tabId: string,
@@ -106,8 +101,6 @@ export function WorkspaceSplit({
   sidebarTopActions,
   workspaceTabs,
   sidebarOpen = true,
-  sidebarOverlayMode = false,
-  sidebarOverlayVisible = false,
   onTerminalTitleChange,
   onTerminalAgentStatusChange,
   terminalFocusRequest,
@@ -140,7 +133,6 @@ export function WorkspaceSplit({
     const stored = loadSidebarWidth()
     return stored ? clampWidth(stored) : SIDEBAR_DEFAULT_PX
   })
-  const [overlayShadowVisible, setOverlayShadowVisible] = useState(false)
   useEffect(
     () =>
       store.onReady(() => {
@@ -253,25 +245,6 @@ export function WorkspaceSplit({
   }
 
   const activeProjectHasTabs = !!activeProject?.tabs.length
-  // Overlay mode keeps the panel mounted at all times and slides it in/out
-  // with a transform transition. Animating from the element's current position
-  // (rather than swapping enter/exit keyframes on mount) keeps the motion
-  // interruptible and free of the remount flash the keyframe approach had.
-  const sidebarIsOverlay = sidebarOverlayMode && !sidebarOpen
-  const showSidebar = sidebarOpen || sidebarIsOverlay
-
-  useEffect(() => {
-    if (!sidebarIsOverlay || !sidebarOverlayVisible) {
-      setOverlayShadowVisible(false)
-      return
-    }
-
-    const id = window.setTimeout(
-      () => setOverlayShadowVisible(true),
-      SIDEBAR_OVERLAY_TRANSITION_MS
-    )
-    return () => window.clearTimeout(id)
-  }, [sidebarIsOverlay, sidebarOverlayVisible])
 
   const workspaceSection = (
     <div className="relative flex h-full flex-col">
@@ -344,29 +317,21 @@ export function WorkspaceSplit({
       >
         <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
       </div>
+      {/* Keep the sidebar mounted at its full width and slide it off-screen on
+          collapse via a negative margin, so its contents never reflow — same
+          mechanism (and timing) as the left project sidebar in AppShell. */}
       <div
         ref={sidebarPanelRef}
         style={{
-          width: showSidebar ? sidebarWidth : 0,
-          transform: sidebarIsOverlay
-            ? sidebarOverlayVisible
-              ? "translateX(0)"
-              : "translateX(100%)"
-            : undefined,
+          width: sidebarWidth,
+          marginRight: sidebarOpen ? 0 : -sidebarWidth,
         }}
         className={cn(
-          "h-full overflow-hidden",
-          sidebarIsOverlay
-            ? "absolute inset-y-0 right-0 z-[180] shrink-0 border-l border-border bg-background transition-transform duration-200 ease-out [-webkit-app-region:no-drag] [&_*]:[-webkit-app-region:no-drag]"
-            : "relative shrink-0",
-          sidebarIsOverlay && overlayShadowVisible && "shadow-2xl",
-          !sidebarIsOverlay &&
-            !isDragging &&
-            "transition-[width] duration-200 ease-out",
-          sidebarIsOverlay && !sidebarOverlayVisible && "pointer-events-none",
-          !sidebarIsOverlay && !showSidebar && "pointer-events-none"
+          "relative h-full shrink-0 overflow-hidden",
+          !isDragging && "transition-[margin-right] duration-200 ease-in-out",
+          !sidebarOpen && "pointer-events-none"
         )}
-        aria-hidden={sidebarIsOverlay ? !sidebarOverlayVisible : !showSidebar}
+        aria-hidden={!sidebarOpen}
       >
         <div
           ref={sidebarContentRef}

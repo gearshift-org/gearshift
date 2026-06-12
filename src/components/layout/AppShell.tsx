@@ -55,7 +55,6 @@ import {
   loadProjects,
   loadProjectSidebarOpen,
   loadRecentProjects,
-  loadRightSidebarEdgeReveal,
   loadRightSidebarTab,
   loadSidebarOpen,
   pushRecentPaletteFile,
@@ -76,7 +75,6 @@ import {
   type LastAgentTerminal,
   type LastAgentTerminalsByProject,
   type PaletteRecents,
-  RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
   type RecentProject,
   type RightSidebarTab,
   type StoredProject,
@@ -157,8 +155,6 @@ function makeId() {
   return crypto.randomUUID()
 }
 
-const SIDEBAR_REVEAL_OUTSIDE_LIMIT = 500
-const RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS = 200
 // Must match the fixed width of ProjectSidebar so the collapse/expand margin
 // animation slides it fully off-screen without reflowing its contents.
 const PROJECT_SIDEBAR_WIDTH = 248
@@ -276,10 +272,6 @@ function findProjectAgentTerminal(
     if (pane) return lastAgentTerminalFromPane(project, tab.id, pane.id)
   }
   return null
-}
-
-function isModifierKey(key: string): boolean {
-  return ["Alt", "Control", "Meta", "Shift"].includes(key)
 }
 
 function basename(p: string) {
@@ -482,9 +474,6 @@ export function AppShell() {
     loadPaletteRecents()
   )
   const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen())
-  const [rightSidebarEdgeReveal, setRightSidebarEdgeReveal] = useState(() =>
-    loadRightSidebarEdgeReveal()
-  )
   const [autoHideTitleBar, setAutoHideTitleBar] = useState(() =>
     loadAutoHideTitleBar()
   )
@@ -494,7 +483,6 @@ export function AppShell() {
   const [focusedProjectIds, setFocusedProjectIds] = useState<string[]>(() =>
     loadFocusedProjectIds()
   )
-  const [rightSidebarOverlayOpen, setRightSidebarOverlayOpen] = useState(false)
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>(() =>
     loadRightSidebarTab()
   )
@@ -542,7 +530,6 @@ export function AppShell() {
         setRecents(loadRecentProjects())
         setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
-        setRightSidebarEdgeReveal(loadRightSidebarEdgeReveal())
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         setFocusedProjectIds(loadFocusedProjectIds())
@@ -592,36 +579,6 @@ export function AppShell() {
   const windowFocusedRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true
   )
-  const lastMouseRef = useRef({ x: -1, y: -1 })
-  const edgeEnteredAtRef = useRef({ right: 0 })
-  const edgeRevealTimersRef = useRef<{ right: number | null }>({ right: null })
-  const pinRightSidebarTimerRef = useRef<number | null>(null)
-  const modifierKeyHeldRef = useRef(false)
-  const modifierRevealPauseUntilRef = useRef(0)
-  const resetEdgeRevealTracking = useCallback(() => {
-    edgeEnteredAtRef.current = { right: 0 }
-    if (edgeRevealTimersRef.current.right != null) {
-      window.clearTimeout(edgeRevealTimersRef.current.right)
-    }
-    edgeRevealTimersRef.current = { right: null }
-  }, [])
-  const closeRightSidebarOverlay = useCallback(() => {
-    if (pinRightSidebarTimerRef.current != null) {
-      window.clearTimeout(pinRightSidebarTimerRef.current)
-      pinRightSidebarTimerRef.current = null
-    }
-    resetEdgeRevealTracking()
-    setRightSidebarOverlayOpen(false)
-  }, [resetEdgeRevealTracking])
-
-  const clearPinRightSidebarTimer = useCallback(() => {
-    if (pinRightSidebarTimerRef.current == null) return
-    window.clearTimeout(pinRightSidebarTimerRef.current)
-    pinRightSidebarTimerRef.current = null
-  }, [])
-
-  useEffect(() => clearPinRightSidebarTimer, [clearPinRightSidebarTimer])
-
   useEffect(() => {
     projectsRef.current = projects
   }, [projects])
@@ -648,20 +605,6 @@ export function AppShell() {
     focusedProjectIdsRef.current = focusedProjectIds
     saveFocusedProjectIds(focusedProjectIds)
   }, [focusedProjectIds])
-  useEffect(() => {
-    const onEdgeRevealChange = (event: Event) => {
-      const enabled = (event as CustomEvent<boolean>).detail
-      setRightSidebarEdgeReveal(enabled)
-      if (!enabled) setRightSidebarOverlayOpen(false)
-    }
-    window.addEventListener(RIGHT_SIDEBAR_EDGE_REVEAL_EVENT, onEdgeRevealChange)
-    return () => {
-      window.removeEventListener(
-        RIGHT_SIDEBAR_EDGE_REVEAL_EVENT,
-        onEdgeRevealChange
-      )
-    }
-  }, [])
   useEffect(() => {
     const onAutoHideTitleBarChange = (event: Event) => {
       setAutoHideTitleBar((event as CustomEvent<boolean>).detail)
@@ -694,37 +637,14 @@ export function AppShell() {
       : (restoredProjectId ?? projects[0]?.id)) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
-  const showRightOverlay = !sidebarOpen && rightSidebarOverlayOpen
 
   const openRightSidebar = useCallback(() => {
-    clearPinRightSidebarTimer()
-    if (!sidebarOpen && rightSidebarEdgeReveal && activeProject) {
-      setRightSidebarOverlayOpen(true)
-      pinRightSidebarTimerRef.current = window.setTimeout(() => {
-        pinRightSidebarTimerRef.current = null
-        setSidebarOpen(true)
-        setRightSidebarOverlayOpen(false)
-      }, RIGHT_SIDEBAR_OVERLAY_TRANSITION_MS)
-      return
-    }
-    setRightSidebarOverlayOpen(false)
     setSidebarOpen(true)
-  }, [
-    activeProject,
-    clearPinRightSidebarTimer,
-    rightSidebarEdgeReveal,
-    sidebarOpen,
-  ])
+  }, [])
 
   const toggleRightSidebar = useCallback(() => {
-    clearPinRightSidebarTimer()
-    if (sidebarOpen) {
-      setRightSidebarOverlayOpen(false)
-      setSidebarOpen(false)
-      return
-    }
-    openRightSidebar()
-  }, [clearPinRightSidebarTimer, openRightSidebar, sidebarOpen])
+    setSidebarOpen((v) => !v)
+  }, [])
 
   const toggleProjectSidebar = useCallback(() => {
     setProjectSidebarOpen((v) => !v)
@@ -738,12 +658,9 @@ export function AppShell() {
   useEffect(() => {
     const onFocus = () => {
       windowFocusedRef.current = true
-      resetEdgeRevealTracking()
     }
     const onBlur = () => {
       windowFocusedRef.current = false
-      closeRightSidebarOverlay()
-      lastMouseRef.current = { x: -1, y: -1 }
     }
     window.addEventListener("focus", onFocus)
     window.addEventListener("blur", onBlur)
@@ -755,139 +672,7 @@ export function AppShell() {
       offNativeFocus?.()
       offNativeBlur?.()
     }
-  }, [closeRightSidebarOverlay, resetEdgeRevealTracking])
-
-  useEffect(() => {
-    const pauseReveal = (ms: number) => {
-      modifierRevealPauseUntilRef.current = performance.now() + ms
-      resetEdgeRevealTracking()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isModifierKey(event.key)) {
-        modifierKeyHeldRef.current = true
-        pauseReveal(250)
-        return
-      }
-      if (event.metaKey || event.ctrlKey) pauseReveal(600)
-    }
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (isModifierKey(event.key)) {
-        modifierKeyHeldRef.current = false
-        pauseReveal(250)
-        return
-      }
-      if (event.metaKey || event.ctrlKey) pauseReveal(600)
-    }
-    window.addEventListener("keydown", onKeyDown)
-    window.addEventListener("keyup", onKeyUp)
-    return () => {
-      window.removeEventListener("keydown", onKeyDown)
-      window.removeEventListener("keyup", onKeyUp)
-    }
-  }, [resetEdgeRevealTracking])
-
-  useEffect(() => {
-    if (!showRightOverlay) return
-    let cancelled = false
-    const closeIfCursorIsFarOutside = async () => {
-      const pointer = await window.appWindow
-        .pointerState(SIDEBAR_REVEAL_OUTSIDE_LIMIT)
-        .catch(() => null)
-      if (cancelled || !pointer?.ok) return
-      if (pointer.nearWindow) return
-      closeRightSidebarOverlay()
-    }
-    void closeIfCursorIsFarOutside()
-    const id = window.setInterval(closeIfCursorIsFarOutside, 80)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [closeRightSidebarOverlay, showRightOverlay])
-
-  useEffect(() => {
-    if (!rightSidebarEdgeReveal || sidebarOpen || !activeProject) {
-      resetEdgeRevealTracking()
-      return
-    }
-
-    const EDGE = 6
-    const HOT_BUFFER = 30
-    const REVEAL_DWELL_MS = 50
-
-    const revealRightEdge = () => {
-      if (!windowFocusedRef.current) return
-      const modifierActive =
-        modifierKeyHeldRef.current ||
-        performance.now() < modifierRevealPauseUntilRef.current
-      if (modifierActive) return
-      const latest = lastMouseRef.current
-      if (latest.x < window.innerWidth - EDGE) return
-      setRightSidebarOverlayOpen(true)
-    }
-
-    const onMouseMove = (event: MouseEvent) => {
-      const clientX = event.clientX
-      const clientY = event.clientY
-      const now = performance.now()
-      if (!windowFocusedRef.current) {
-        resetEdgeRevealTracking()
-        return
-      }
-
-      const last = lastMouseRef.current
-      if (clientX === last.x && clientY === last.y) return
-      last.x = clientX
-      last.y = clientY
-
-      const modifierActive =
-        modifierKeyHeldRef.current ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.shiftKey ||
-        now < modifierRevealPauseUntilRef.current
-      if (modifierActive) {
-        resetEdgeRevealTracking()
-        return
-      }
-
-      const inRightEdge = clientX >= window.innerWidth - EDGE
-      if (!inRightEdge) {
-        edgeEnteredAtRef.current.right = 0
-        if (edgeRevealTimersRef.current.right != null) {
-          window.clearTimeout(edgeRevealTimersRef.current.right)
-          edgeRevealTimersRef.current.right = null
-        }
-      } else if (edgeEnteredAtRef.current.right === 0) {
-        edgeEnteredAtRef.current.right = now
-        edgeRevealTimersRef.current.right = window.setTimeout(() => {
-          edgeRevealTimersRef.current.right = null
-          revealRightEdge()
-        }, REVEAL_DWELL_MS)
-      }
-
-      const rightIntent =
-        inRightEdge && now - edgeEnteredAtRef.current.right >= REVEAL_DWELL_MS
-      if (rightIntent) {
-        setRightSidebarOverlayOpen(true)
-      } else if (clientX < window.innerWidth - 340 - HOT_BUFFER) {
-        closeRightSidebarOverlay()
-      }
-    }
-
-    window.addEventListener("mousemove", onMouseMove)
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove)
-      resetEdgeRevealTracking()
-    }
-  }, [
-    activeProject,
-    closeRightSidebarOverlay,
-    resetEdgeRevealTracking,
-    rightSidebarEdgeReveal,
-    sidebarOpen,
-  ])
+  }, [])
 
   const activeTabId = (() => {
     if (!activeProject) return ""
@@ -3246,15 +3031,6 @@ export function AppShell() {
               activeProjectId={activeProjectId}
               activeTabId={activeTabId}
               sidebarOpen={sidebarOpen}
-              sidebarOverlayMode={
-                rightSidebarEdgeReveal && !sidebarOpen && !!activeProject
-              }
-              sidebarOverlayVisible={
-                rightSidebarEdgeReveal &&
-                !sidebarOpen &&
-                !!activeProject &&
-                rightSidebarOverlayOpen
-              }
               titleBar={titleBar}
               hideTitleBar={true}
               sidebarTopActions={sidebarTopActions}

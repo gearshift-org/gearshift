@@ -12,7 +12,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "preview": "vite preview",
     "electron:build": "bun run build && electron-builder",
     "dist": "rm -rf release/mac-arm64 release/mac release/builder-*.yaml release/builder-*.yml && CSC_IDENTITY_AUTO_DISCOVERY=false bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir --config.mac.identity=null --config.mac.notarize=false",

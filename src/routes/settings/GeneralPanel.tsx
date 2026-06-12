@@ -1,12 +1,7 @@
 import * as React from "react"
-import { Bot, PanelRight, PanelTop } from "lucide-react"
+import { Bot, PanelTop } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import {
-  loadAutoHideTitleBar,
-  loadRightSidebarEdgeReveal,
-  saveAutoHideTitleBar,
-  saveRightSidebarEdgeReveal,
-} from "@/lib/projects"
+import { loadAutoHideTitleBar, saveAutoHideTitleBar } from "@/lib/projects"
 import {
   DEFAULT_AI_COMMIT_PROMPT,
   useAiCommitPrompt,
@@ -66,9 +61,6 @@ function SettingToggle({
 }
 
 export function GeneralPanel() {
-  const [edgeReveal, setEdgeReveal] = React.useState(() =>
-    loadRightSidebarEdgeReveal()
-  )
   const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
     loadAutoHideTitleBar()
   )
@@ -81,16 +73,10 @@ export function GeneralPanel() {
   React.useEffect(
     () =>
       store.onReady(() => {
-        setEdgeReveal(loadRightSidebarEdgeReveal())
         setAutoHideTitleBar(loadAutoHideTitleBar())
       }),
     []
   )
-
-  const updateEdgeReveal = (enabled: boolean) => {
-    setEdgeReveal(enabled)
-    saveRightSidebarEdgeReveal(enabled)
-  }
 
   const updateAutoHideTitleBar = (enabled: boolean) => {
     setAutoHideTitleBar(enabled)
@@ -113,13 +99,6 @@ export function GeneralPanel() {
           description="Hide the title bar and traffic lights after a short delay. Hover the top edge to slide it back down."
           checked={autoHideTitleBar}
           onChange={updateAutoHideTitleBar}
-        />
-        <SettingToggle
-          icon={PanelRight}
-          label="Right sidebar edge reveal"
-          description="When the right sidebar is hidden, move your mouse to the right edge to open it."
-          checked={edgeReveal}
-          onChange={updateEdgeReveal}
         />
       </div>
 

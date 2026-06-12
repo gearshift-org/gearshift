@@ -10,6 +10,17 @@ import {
 
 const PENDING_DATA_CAP = 256 * 1024
 
+// Coalesce PTY output before handing it to data handlers (which forward it to
+// the renderer over IPC). A busy agent (Codex, Claude Code) makes node-pty
+// emit hundreds of small chunks per second; forwarding each as its own IPC
+// message floods the renderer's event loop and makes the whole UI (resizes,
+// sidebar toggles) janky while the agent works. The first chunk after an idle
+// gap flushes immediately so interactive echo stays instant; sustained streams
+// collapse to one message per interval.
+const DATA_FLUSH_INTERVAL_MS = 16
+// Safety valve: don't let a single batch grow unbounded under extreme output.
+const DATA_FLUSH_MAX_BYTES = 256 * 1024
+
 export interface OpenOptions {
   shell: string
   args: string[]
@@ -33,6 +44,10 @@ interface SessionHandle {
   pendingExit: { exitCode: number; signal?: number } | null
   snapshotChunks: string[]
   snapshotBytes: number
+  batchChunks: string[]
+  batchBytes: number
+  batchTimer: NodeJS.Timeout | null
+  lastFlushAt: number
 }
 
 export interface AttachResult {
@@ -193,13 +208,16 @@ export class DaemonClient {
         if (s.dataHandlers.size === 0) {
           this.bufferPendingData(s, msg.data)
         } else {
-          for (const h of s.dataHandlers) h(msg.data)
+          this.queueData(s, msg.data)
         }
         return
       }
       case "exit": {
         const s = this.sessions.get(msg.sessionId)
         if (!s) return
+        // Deliver any coalesced output before the exit notification so the
+        // terminal renders the final bytes ahead of "[process exited]".
+        this.flushData(s)
         if (s.exitHandlers.size === 0) {
           s.pendingExit = { exitCode: msg.exitCode, signal: msg.signal }
         } else {
@@ -251,7 +269,52 @@ export class DaemonClient {
       pendingExit: null,
       snapshotChunks: [],
       snapshotBytes: 0,
+      batchChunks: [],
+      batchBytes: 0,
+      batchTimer: null,
+      lastFlushAt: 0,
     }
+  }
+
+  private queueData(s: SessionHandle, chunk: string): void {
+    s.batchChunks.push(chunk)
+    s.batchBytes += chunk.length
+    if (
+      s.batchBytes >= DATA_FLUSH_MAX_BYTES ||
+      Date.now() - s.lastFlushAt >= DATA_FLUSH_INTERVAL_MS
+    ) {
+      this.flushData(s)
+      return
+    }
+    if (!s.batchTimer) {
+      s.batchTimer = setTimeout(
+        () => this.flushData(s),
+        DATA_FLUSH_INTERVAL_MS,
+      )
+    }
+  }
+
+  private flushData(s: SessionHandle): void {
+    if (s.batchTimer) {
+      clearTimeout(s.batchTimer)
+      s.batchTimer = null
+    }
+    if (s.batchChunks.length === 0) return
+    const data =
+      s.batchChunks.length === 1 ? s.batchChunks[0] : s.batchChunks.join("")
+    s.batchChunks = []
+    s.batchBytes = 0
+    s.lastFlushAt = Date.now()
+    for (const h of s.dataHandlers) h(data)
+  }
+
+  private clearBatch(s: SessionHandle): void {
+    if (s.batchTimer) {
+      clearTimeout(s.batchTimer)
+      s.batchTimer = null
+    }
+    s.batchChunks = []
+    s.batchBytes = 0
   }
 
   private bufferPendingData(s: SessionHandle, chunk: string): void {
@@ -276,6 +339,7 @@ export class DaemonClient {
     this.socket = null
     this.connectPromise = null
     for (const s of this.sessions.values()) {
+      this.clearBatch(s)
       for (const h of s.exitHandlers) h({ exitCode: -1 })
     }
     this.sessions.clear()
@@ -374,6 +438,8 @@ export class DaemonClient {
   }
 
   kill(sessionId: string): void {
+    const s = this.sessions.get(sessionId)
+    if (s) this.clearBatch(s)
     this.send({ type: "close", sessionId })
     this.sessions.delete(sessionId)
   }
@@ -389,8 +455,12 @@ export class DaemonClient {
     // is appended to both). The caller is about to render the snapshot, so
     // drop pendingData here — otherwise the next onData() flush would replay
     // those bytes a second time and the terminal would render duplicates.
+    // Same for the coalescing batch: anything queued there is already in
+    // snapshotChunks, so flushing it after the snapshot renders would
+    // duplicate it too.
     s.pendingData = []
     s.pendingDataBytes = 0
+    this.clearBatch(s)
     return s.snapshotChunks.join("")
   }
 

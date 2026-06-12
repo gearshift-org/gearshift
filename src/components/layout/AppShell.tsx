@@ -2359,6 +2359,15 @@ export function AppShell() {
 
   const setTerminalTitle = (tabId: string, paneId: string, title: string) => {
     setProjects((prev) => {
+      // Bail without touching state when nothing changed — title events can
+      // arrive at TUI repaint rate, and each state update here re-renders the
+      // whole shell and rewrites the persisted snapshot.
+      const tab = prev
+        .flatMap((p) => p.tabs)
+        .find((t) => t.id === tabId)
+      if (tab?.kind !== "terminal") return prev
+      const pane = tab.panes.find((pp) => pp.id === paneId)
+      if (!pane || pane.autoTitle === title) return prev
       const next = prev.map((p) =>
         p.tabs.some((t) => t.id === tabId)
           ? {

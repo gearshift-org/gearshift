@@ -18,7 +18,7 @@ import { THEMES, type ThemeId, useTheme } from "@/components/theme-provider"
 import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
-import { agentActivityTitleSignal } from "./terminalName"
+import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type { TerminalAgentStatus } from "./types"
@@ -1307,8 +1307,16 @@ export function TerminalView({
     let offData: (() => void) | null = null
     let pendingLiveData = ""
     let liveDataRaf: number | undefined
+    let liveDataFallbackTimer: number | undefined
     const flushLiveData = () => {
-      liveDataRaf = undefined
+      if (liveDataRaf !== undefined) {
+        cancelAnimationFrame(liveDataRaf)
+        liveDataRaf = undefined
+      }
+      if (liveDataFallbackTimer !== undefined) {
+        window.clearTimeout(liveDataFallbackTimer)
+        liveDataFallbackTimer = undefined
+      }
       if (!pendingLiveData) return
       const chunk = pendingLiveData
       pendingLiveData = ""
@@ -1326,6 +1334,10 @@ export function TerminalView({
       pendingLiveData += chunk
       if (liveDataRaf === undefined) {
         liveDataRaf = requestAnimationFrame(flushLiveData)
+        // rAF stops while the window is hidden/occluded (macOS), which would
+        // let pendingLiveData grow without bound under a streaming agent and
+        // then land as one giant write. The timeout keeps draining regardless.
+        liveDataFallbackTimer = window.setTimeout(flushLiveData, 250)
       }
     }
     void window.term.snapshot(sessionId).then((snap) => {
@@ -1380,9 +1392,19 @@ export function TerminalView({
       }
       window.term.write(sessionId, d)
     })
+    let lastEmittedTitle: string | undefined
     const titleSub = term.onTitleChange((t) => {
       const trimmed = t.trim()
-      onTitleChangeRef.current?.(trimmed)
+      // TUIs re-set the window title on every repaint, and busy agents animate
+      // a leading spinner glyph that the displayed name strips anyway. Emit
+      // the display-normalized title, and only when it actually changes —
+      // otherwise a working agent (Codex, Claude) churns AppShell state and
+      // state persistence at repaint rate, which makes the whole UI laggy.
+      const displayTitle = formatAutoTitle(trimmed) ?? ""
+      if (displayTitle !== lastEmittedTitle) {
+        lastEmittedTitle = displayTitle
+        onTitleChangeRef.current?.(displayTitle)
+      }
       const titleSignal = agentActivityTitleSignal(trimmed)
       if (!titleSignal) return
 
@@ -1488,6 +1510,9 @@ export function TerminalView({
       if (resizeTimer) window.clearTimeout(resizeTimer)
       if (pendingPtyResizeTimer) window.clearTimeout(pendingPtyResizeTimer)
       if (liveDataRaf !== undefined) cancelAnimationFrame(liveDataRaf)
+      if (liveDataFallbackTimer !== undefined) {
+        window.clearTimeout(liveDataFallbackTimer)
+      }
       for (const timer of startupFitTimers) window.clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
       if (agentWorkingTimerRef.current) {

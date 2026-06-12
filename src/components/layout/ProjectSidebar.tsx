@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   DndContext,
@@ -13,7 +13,16 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Focus, GitBranch, PanelLeft, Search, Settings, X } from "lucide-react"
+import {
+  Focus,
+  GitBranch,
+  PanelLeft,
+  Pin,
+  PinOff,
+  Search,
+  Settings,
+  X,
+} from "lucide-react"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -22,6 +31,7 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
+import { store } from "@/lib/store"
 import { HistoryNavButtons } from "./HistoryNavButtons"
 import {
   ContextMenu,
@@ -33,7 +43,9 @@ import {
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   clearProjectAvatarImagePath,
+  loadPinnedProjectPaths,
   randomizeProjectColor,
+  savePinnedProjectPaths,
   setProjectAvatarImagePath,
   type RecentProject,
 } from "@/lib/projects"
@@ -90,6 +102,8 @@ type RowProps = {
   animate: boolean
   onFocusProject?: (id: string) => void
   onRemoveFromFocus?: (id: string) => void
+  isPinned: boolean
+  onTogglePin: (path: string) => void
 }
 
 function ProjectSidebarRow({
@@ -110,6 +124,8 @@ function ProjectSidebarRow({
   animate,
   onFocusProject,
   onRemoveFromFocus,
+  isPinned,
+  onTogglePin,
 }: RowProps) {
   const [, setColorVersion] = useState(0)
   const {
@@ -252,6 +268,14 @@ function ProjectSidebarRow({
           Remove Other Projects
         </ContextMenuItem>
         <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onTogglePin(p.path)}>
+          {isPinned ? (
+            <PinOff className="size-3.5" />
+          ) : (
+            <Pin className="size-3.5" />
+          )}
+          {isPinned ? "Unpin Project" : "Pin Project"}
+        </ContextMenuItem>
         <ContextMenuItem
           onClick={() =>
             isFocusMode ? onRemoveFromFocus?.(p.id) : onFocusProject?.(p.id)
@@ -316,19 +340,43 @@ export function ProjectSidebar({
 }: Props) {
   const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [filter, setFilter] = useState("")
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
+    loadPinnedProjectPaths()
+  )
+  useEffect(
+    () => store.onReady(() => setPinnedPaths(loadPinnedProjectPaths())),
+    []
+  )
+  const togglePin = (path: string) => {
+    setPinnedPaths((prev) => {
+      const next = prev.includes(path)
+        ? prev.filter((p) => p !== path)
+        : [...prev, path]
+      savePinnedProjectPaths(next)
+      return next
+    })
+  }
   const focusedSet = new Set(focusedProjectIds)
   const isFocusMode = projects.some((p) => focusedSet.has(p.id))
   const focusVisibleProjects = isFocusMode
     ? projects.filter((p) => focusedSet.has(p.id))
     : projects
   const normalizedFilter = filter.trim().toLowerCase()
-  const visibleProjects = normalizedFilter
+  const filteredProjects = normalizedFilter
     ? focusVisibleProjects.filter(
         (p) =>
           p.name.toLowerCase().includes(normalizedFilter) ||
           p.path.toLowerCase().includes(normalizedFilter)
       )
     : focusVisibleProjects
+  // Pinned projects form their own group above the rest; order within each
+  // group still follows the master (drag-ordered) project order.
+  const pinnedSet = new Set(pinnedPaths)
+  const pinnedProjects = filteredProjects.filter((p) => pinnedSet.has(p.path))
+  const unpinnedProjects = filteredProjects.filter(
+    (p) => !pinnedSet.has(p.path)
+  )
+  const visibleProjects = [...pinnedProjects, ...unpinnedProjects]
 
   // Only animate rows when focus mode is toggled — not on initial page load.
   const prevFocusModeRef = useRef(isFocusMode)
@@ -449,27 +497,40 @@ export function ProjectSidebar({
             items={visibleProjects.map((p) => p.id)}
             strategy={verticalListSortingStrategy}
           >
+            {pinnedProjects.length > 0 && (
+              <div className="px-2 pt-1 pb-0.5 text-xs font-medium text-muted-foreground/70">
+                Pinned
+              </div>
+            )}
             {visibleProjects.map((p, i) => (
-              <ProjectSidebarRow
-                key={`${p.id}-${isFocusMode}`}
-                index={i}
-                project={p}
-                total={projects.length}
-                isActive={p.id === activeId}
-                canClose={!!onClose}
-                hasItemsBelow={i < visibleProjects.length - 1}
-                onSelect={onSelect}
-                onClose={onClose}
-                onCloseAllTerminals={onCloseAllTerminals}
-                onCloseOthers={onCloseOthers}
-                onCloseToRight={onCloseToRight}
-                onOpenInVSCode={onOpenInVSCode}
-                onRevealInFinder={onRevealInFinder}
-                isFocusMode={isFocusMode}
-                animate={animateFocus}
-                onFocusProject={onFocusProject}
-                onRemoveFromFocus={onRemoveFromFocus}
-              />
+              <Fragment key={`${p.id}-${isFocusMode}`}>
+                {pinnedProjects.length > 0 && i === pinnedProjects.length && (
+                  <div className="px-2 pt-2 pb-0.5 text-xs font-medium text-muted-foreground/70">
+                    Projects
+                  </div>
+                )}
+                <ProjectSidebarRow
+                  index={i}
+                  project={p}
+                  total={projects.length}
+                  isActive={p.id === activeId}
+                  canClose={!!onClose}
+                  hasItemsBelow={i < visibleProjects.length - 1}
+                  onSelect={onSelect}
+                  onClose={onClose}
+                  onCloseAllTerminals={onCloseAllTerminals}
+                  onCloseOthers={onCloseOthers}
+                  onCloseToRight={onCloseToRight}
+                  onOpenInVSCode={onOpenInVSCode}
+                  onRevealInFinder={onRevealInFinder}
+                  isFocusMode={isFocusMode}
+                  animate={animateFocus}
+                  onFocusProject={onFocusProject}
+                  onRemoveFromFocus={onRemoveFromFocus}
+                  isPinned={pinnedSet.has(p.path)}
+                  onTogglePin={togglePin}
+                />
+              </Fragment>
             ))}
           </SortableContext>
         </DndContext>

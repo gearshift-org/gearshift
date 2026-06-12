@@ -424,6 +424,34 @@ export function saveFocusedProjectIds(ids: string[]): void {
   }
 }
 
+const PINNED_PROJECT_PATHS_KEY = "gearshift.pinnedProjectPaths"
+
+// Pinned projects are keyed by path (stable across sessions, like recents).
+export function loadPinnedProjectPaths(): string[] {
+  try {
+    const raw = store.get(PINNED_PROJECT_PATHS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((x) => typeof x === "string")
+      : []
+  } catch {
+    return []
+  }
+}
+
+export function savePinnedProjectPaths(paths: string[]): void {
+  try {
+    if (paths.length > 0) {
+      store.set(PINNED_PROJECT_PATHS_KEY, JSON.stringify(paths))
+    } else {
+      store.remove(PINNED_PROJECT_PATHS_KEY)
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 

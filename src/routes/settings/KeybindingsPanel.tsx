@@ -121,6 +121,7 @@ export function KeybindingsPanel() {
                       {editing ? (
                         <div className="flex flex-col gap-1">
                           <KeyCapture
+                            modifiersOnly={action.modifiersOnly}
                             onCancel={() => {
                               setEditingId(null)
                               setPendingPerRow((p) => {

@@ -4,6 +4,7 @@ export type ActionId =
   | "palette.open"
   | "terminal.split"
   | "terminal.splitVertical"
+  | "terminal.quickSplitHold"
   | "terminal.new"
   | "terminal.close"
   | "terminal.last"
@@ -21,12 +22,17 @@ export type ActionDef = {
   description?: string
   defaultAccelerator: string
   scope: Scope
+  // The binding is a modifier-only hold chord (e.g. "CmdOrCtrl+Alt") rather
+  // than a keystroke. Matched against held modifiers via matchesModifierChord,
+  // never against keydown actions.
+  modifiersOnly?: boolean
 }
 
 export const ACTIONS: readonly ActionDef[] = [
   {
     id: "sidebar.toggle",
-    label: "Toggle Sidebar",
+    label: "Toggle Right Sidebar",
+    description: "Show or hide the right sidebar (Git, Files, History)",
     defaultAccelerator: "CmdOrCtrl+2",
     scope: "renderer",
   },
@@ -54,6 +60,15 @@ export const ACTIONS: readonly ActionDef[] = [
     label: "Split Terminal Down",
     defaultAccelerator: "CmdOrCtrl+Shift+D",
     scope: "renderer",
+  },
+  {
+    id: "terminal.quickSplitHold",
+    label: "Quick Split (Hold + Click)",
+    description:
+      "Hold these modifiers to show split zones on terminal panes; click a zone to open a new terminal there",
+    defaultAccelerator: "CmdOrCtrl+Alt",
+    scope: "renderer",
+    modifiersOnly: true,
   },
   {
     id: "terminal.new",
@@ -165,8 +180,34 @@ export function parseAccelerator(acc: string): NormalizedAccelerator | null {
       key = canonicalKeyFromToken(p)
     }
   }
-  if (!key) return null
+  if (!key) {
+    // Modifier-only chord (hold bindings like "CmdOrCtrl+Alt"). Valid as long
+    // as at least one modifier is present; key stays "" so it can never match
+    // a keystroke in matchesAccelerator.
+    if (!cmdOrCtrl && !alt && !shift) return null
+    return { cmdOrCtrl, alt, shift, key: "" }
+  }
   return { cmdOrCtrl, alt, shift, key }
+}
+
+/**
+ * True when the event's held modifiers exactly match one of the modifier-only
+ * accelerators (accelerators with a key part never match). Used for hold
+ * chords like quick-split, where arming is driven by modifier state alone.
+ */
+export function matchesModifierChord(
+  accelerators: readonly string[],
+  e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }
+): boolean {
+  return accelerators.some((acc) => {
+    const n = parseAccelerator(acc)
+    if (!n || n.key) return false
+    return (
+      n.cmdOrCtrl === (e.metaKey || e.ctrlKey) &&
+      n.alt === e.altKey &&
+      n.shift === e.shiftKey
+    )
+  })
 }
 
 // Build a canonical "CmdOrCtrl+Shift+K" string from a KeyboardEvent.
@@ -225,6 +266,7 @@ export function prettyAccelerator(acc: string): string[] {
   if (n.cmdOrCtrl) out.push(isMac ? "⌘" : "Ctrl")
   if (n.alt) out.push(isMac ? "⌥" : "Alt")
   if (n.shift) out.push(isMac ? "⇧" : "Shift")
-  out.push(ARROW_SYMBOLS[n.key] ?? n.key)
+  // Modifier-only chords have no key part.
+  if (n.key) out.push(ARROW_SYMBOLS[n.key] ?? n.key)
   return out
 }

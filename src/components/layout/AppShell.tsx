@@ -27,6 +27,7 @@ import {
 import { paneDisplayName, tabDisplayName } from "./terminalName"
 import {
   ensureLayout,
+  insertBeside,
   moveLeafBeside,
   orderedPaneIds,
   removeLeaf,
@@ -1746,6 +1747,55 @@ export function AppShell() {
     [activeProjectId, resolvedTheme]
   )
 
+  /**
+   * Quick split: spawn a fresh terminal beside a specific pane on the clicked
+   * side. Used by the hold-modifiers-and-click split zones (terminal.quickSplitHold).
+   */
+  const quickSplitPane = useCallback(
+    async (tabId: string, targetPaneId: string, zone: DropZone) => {
+      if (zone === "center") return
+      const project = projectsRef.current.find((p) => p.id === activeProjectId)
+      const tab = project?.tabs.find((t) => t.id === tabId)
+      if (!project || !tab || tab.kind !== "terminal") return
+      const { id: paneId } = await window.term.create({
+        cwd: project.path,
+        theme: resolvedTheme,
+        projectId: project.id,
+      })
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id
+            ? {
+                ...p,
+                tabs: p.tabs.map((t) => {
+                  if (t.id !== tabId || t.kind !== "terminal") return t
+                  const base = ensureLayout(
+                    t.layout,
+                    t.panes.map((pp) => pp.id)
+                  )
+                  return {
+                    ...t,
+                    panes: [...t.panes, { id: paneId, sessionId: paneId }],
+                    activePaneId: paneId,
+                    layout: insertBeside(
+                      base,
+                      targetPaneId,
+                      paneId,
+                      zone === "left" || zone === "right"
+                        ? "horizontal"
+                        : "vertical",
+                      zone === "left" || zone === "top"
+                    ),
+                  }
+                }),
+              }
+            : p
+        )
+      )
+    },
+    [activeProjectId, resolvedTheme]
+  )
+
   /** Close a single pane within a terminal tab. Closes the tab if it was the last. */
   const closePane = useCallback(
     async (tabId: string, paneId: string) => {
@@ -3223,6 +3273,9 @@ export function AppShell() {
               onTerminalFocusChange={handleTerminalFocusChange}
               onRenamePane={renamePane}
               onDropPane={dropPane}
+              onQuickSplitPane={(tabId, targetPaneId, zone) =>
+                void quickSplitPane(tabId, targetPaneId, zone)
+              }
               onTerminalLayoutChange={setTerminalLayout}
               onExtractPaneToTab={extractPaneToTab}
               onOpenDiffTab={openDiffTab}

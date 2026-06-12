@@ -155,7 +155,7 @@ export function swapLeaves(
  * sibling; otherwise a nested split is created. `before` places the new leaf
  * ahead of the target (left/top) rather than after it (right/bottom).
  */
-function insertBeside(
+export function insertBeside(
   node: TerminalLayout,
   targetPaneId: string,
   newPaneId: string,

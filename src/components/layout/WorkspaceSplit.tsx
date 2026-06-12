@@ -72,6 +72,11 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onQuickSplitPane?: (
+    tabId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
   onTerminalLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
@@ -114,6 +119,7 @@ export function WorkspaceSplit({
   onTerminalFocusChange,
   onRenamePane,
   onDropPane,
+  onQuickSplitPane,
   onTerminalLayoutChange,
   onExtractPaneToTab,
   onOpenDiffTab,
@@ -296,6 +302,7 @@ export function WorkspaceSplit({
               onTerminalFocusChange={onTerminalFocusChange}
               onRenamePane={onRenamePane}
               onDropPane={onDropPane}
+              onQuickSplitPane={onQuickSplitPane}
               onLayoutChange={onTerminalLayoutChange}
               onExtractPaneToTab={onExtractPaneToTab}
               onOpenFile={onOpenFileTab}

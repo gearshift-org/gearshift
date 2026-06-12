@@ -23,6 +23,7 @@ import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import { cn } from "@/lib/utils"
 import { KeyChip } from "@/components/keybindings/KeyChip"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
+import { matchesModifierChord } from "@/lib/keybindings/registry"
 import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import { CommitDiff } from "./CommitDiff"
@@ -96,6 +97,11 @@ type Props = {
   onDropPane?: (
     tabId: string,
     movingPaneId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
+  onQuickSplitPane?: (
+    tabId: string,
     targetPaneId: string,
     zone: DropZone
   ) => void
@@ -282,6 +288,44 @@ function PaneDropZone({
   )
 }
 
+/**
+ * Clickable split zones shown while the quick-split modifier chord is held
+ * (terminal.quickSplitHold). Reuses the drag-and-drop zone geometry, minus the
+ * center swap zone — clicking an edge spawns a new terminal on that side.
+ */
+function QuickSplitOverlay({ onPick }: { onPick: (zone: DropZone) => void }) {
+  const [hovered, setHovered] = useState<DropZone | null>(null)
+  const zones = DROP_ZONES.filter((z) => z.zone !== "center")
+  const preview = zones.find((z) => z.zone === hovered)?.preview
+  return (
+    // Container is click-transparent; only the edge zones take pointer events,
+    // so the pane center still reaches the terminal while the chord is held.
+    <div className="pointer-events-none absolute inset-0 z-40">
+      {zones.map((z) => (
+        <div
+          key={z.zone}
+          className={cn("pointer-events-auto absolute cursor-copy", z.hit)}
+          onMouseEnter={() => setHovered(z.zone)}
+          onMouseLeave={() => setHovered((h) => (h === z.zone ? null : h))}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            onPick(z.zone)
+          }}
+        />
+      ))}
+      {preview ? (
+        <div
+          className={cn(
+            "pointer-events-none absolute rounded-sm bg-foreground/15 ring-2 ring-foreground/50 ring-inset",
+            preview
+          )}
+        />
+      ) : null}
+    </div>
+  )
+}
+
 function TerminalTabContent({
   tab,
   cwd,
@@ -296,6 +340,7 @@ function TerminalTabContent({
   onTerminalFocusChange,
   onRenamePane,
   onDropPane,
+  onQuickSplitPane,
   onLayoutChange,
   onExtractPaneToTab,
 }: {
@@ -329,6 +374,11 @@ function TerminalTabContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onQuickSplitPane?: (
+    tabId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
   onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
 }) {
@@ -353,6 +403,29 @@ function TerminalTabContent({
   useEffect(() => {
     if (!isActive) setFocusedTerminalPaneId(null)
   }, [isActive])
+
+  // Quick split: arm clickable split zones while the configured modifier chord
+  // (terminal.quickSplitHold, default Cmd+Option) is held. Modifier state is
+  // read from every keydown/keyup so releasing any part of the chord disarms;
+  // visibility gating (active tab, handler present) is derived at render.
+  const { bindings: keyBindings } = useKeybindings()
+  const quickSplitChord = keyBindings["terminal.quickSplitHold"]
+  const [quickSplitChordHeld, setQuickSplitChordHeld] = useState(false)
+  useEffect(() => {
+    const update = (e: KeyboardEvent) =>
+      setQuickSplitChordHeld(matchesModifierChord(quickSplitChord, e))
+    const disarm = () => setQuickSplitChordHeld(false)
+    window.addEventListener("keydown", update)
+    window.addEventListener("keyup", update)
+    window.addEventListener("blur", disarm)
+    return () => {
+      window.removeEventListener("keydown", update)
+      window.removeEventListener("keyup", update)
+      window.removeEventListener("blur", disarm)
+    }
+  }, [quickSplitChord])
+  const quickSplitArmed =
+    quickSplitChordHeld && isActive && !!onQuickSplitPane
 
   const handleTerminalFocusChange = useCallback(
     (paneId: string, focused: boolean) => {
@@ -467,6 +540,11 @@ function TerminalTabContent({
           enabled={draggingPaneId !== null && draggingPaneId !== paneId}
         >
           {renderTerminal(pane)}
+          {quickSplitArmed && draggingPaneId === null && !pane.pendingStart ? (
+            <QuickSplitOverlay
+              onPick={(zone) => onQuickSplitPane?.(tab.id, paneId, zone)}
+            />
+          ) : null}
         </PaneDropZone>
         {activePane ? (
           <div className="pointer-events-none absolute inset-0 z-30 box-border border-2 border-ring" />
@@ -590,6 +668,7 @@ function PaneContent({
   onTerminalFocusChange,
   onRenamePane,
   onDropPane,
+  onQuickSplitPane,
   onLayoutChange,
   onExtractPaneToTab,
   onOpenFile,
@@ -628,6 +707,11 @@ function PaneContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onQuickSplitPane?: (
+    tabId: string,
+    targetPaneId: string,
+    zone: DropZone
+  ) => void
   onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenFile?: (path: string) => void
@@ -660,6 +744,7 @@ function PaneContent({
         onTerminalFocusChange={onTerminalFocusChange}
         onRenamePane={onRenamePane}
         onDropPane={onDropPane}
+        onQuickSplitPane={onQuickSplitPane}
         onLayoutChange={onLayoutChange}
         onExtractPaneToTab={onExtractPaneToTab}
       />
@@ -714,6 +799,7 @@ export function WorkspacePane({
   onTerminalFocusChange,
   onRenamePane,
   onDropPane,
+  onQuickSplitPane,
   onLayoutChange,
   onExtractPaneToTab,
   onOpenFile,
@@ -917,6 +1003,7 @@ export function WorkspacePane({
                 onTerminalFocusChange={onTerminalFocusChange}
                 onRenamePane={onRenamePane}
                 onDropPane={onDropPane}
+        onQuickSplitPane={onQuickSplitPane}
                 onLayoutChange={onLayoutChange}
                 onExtractPaneToTab={onExtractPaneToTab}
                 onOpenFile={onOpenFile}

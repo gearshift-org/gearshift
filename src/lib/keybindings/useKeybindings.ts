@@ -29,8 +29,11 @@ function readOverrides(): Overrides {
     if (!parsed || typeof parsed !== "object") return {}
     const out: Overrides = {}
     for (const a of ACTIONS) {
-      const accelerators = normalizeAccelerators(parsed[a.id])
-      if (accelerators.length > 0) out[a.id] = accelerators
+      // A present-but-empty entry means "explicitly no shortcut" — keep it as
+      // an override so removing an action's last binding actually sticks
+      // instead of falling back to the default.
+      if (!(a.id in parsed)) continue
+      out[a.id] = normalizeAccelerators(parsed[a.id])
     }
     return out
   } catch {

@@ -7,11 +7,19 @@ import { Button } from "@/components/ui/button"
 
 type Props = {
   initial?: string
+  // Capture a modifier-only hold chord (e.g. "CmdOrCtrl+Alt") instead of a
+  // keystroke. Press the modifiers together, then Enter/Save to confirm.
+  modifiersOnly?: boolean
   onCommit: (accelerator: string) => void
   onCancel: () => void
 }
 
-export function KeyCapture({ initial, onCommit, onCancel }: Props) {
+export function KeyCapture({
+  initial,
+  modifiersOnly = false,
+  onCommit,
+  onCancel,
+}: Props) {
   const [captured, setCaptured] = React.useState<string | null>(initial ?? null)
   const [hint, setHint] = React.useState<string | null>(null)
   const ref = React.useRef<HTMLInputElement | null>(null)
@@ -29,6 +37,24 @@ export function KeyCapture({ initial, onCommit, onCancel }: Props) {
     }
     if (e.key === "Enter") {
       if (captured) onCommit(captured)
+      return
+    }
+    if (modifiersOnly) {
+      const parts: string[] = []
+      if (e.metaKey || e.ctrlKey) parts.push("CmdOrCtrl")
+      if (e.altKey) parts.push("Alt")
+      if (e.shiftKey) parts.push("Shift")
+      if (!parts.includes("CmdOrCtrl")) {
+        setHint("Must include Cmd or Ctrl")
+        return
+      }
+      if (parts.length < 2) {
+        // A single modifier (bare Cmd) would arm on every shortcut.
+        setHint("Hold a second modifier (e.g. Option)")
+        return
+      }
+      setHint(null)
+      setCaptured(parts.join("+"))
       return
     }
     const acc = formatAccelerator(e.nativeEvent)
@@ -49,7 +75,9 @@ export function KeyCapture({ initial, onCommit, onCancel }: Props) {
         data-keycapture="true"
         onKeyDown={handleKeyDown}
         value={captured ?? ""}
-        placeholder="Press a key combination…"
+        placeholder={
+          modifiersOnly ? "Hold modifiers together…" : "Press a key combination…"
+        }
         className="h-7 w-48 rounded-md border border-ring bg-background px-2 font-mono text-xs text-foreground ring-2 ring-ring/40 outline-none"
       />
       <span className="text-[11px] text-muted-foreground">

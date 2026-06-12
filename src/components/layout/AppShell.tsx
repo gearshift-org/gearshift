@@ -1181,6 +1181,28 @@ export function AppShell() {
     []
   )
 
+  // The focus-change handler below only fires when the terminal gains focus,
+  // so a completion that lands while the user is already viewing the pane (or
+  // a tab switch without clicking into the terminal) would leave the done/
+  // attention indicator stuck. Clear it whenever the flagged pane is the one
+  // being viewed with the app focused.
+  useEffect(() => {
+    const clearIfViewing = () => {
+      if (!isAppVisibleAndFocused()) return
+      if (!activeProject || !activeTabId) return
+      const tab = activeProject.tabs.find((t) => t.id === activeTabId)
+      if (tab?.kind !== "terminal") return
+      const pane = tab.panes.find((pp) => pp.id === tab.activePaneId)
+      if (!pane) return
+      if (pane.agentStatus?.completed || pane.agentStatus?.needsAttention) {
+        dismissViewedTerminalNotifications(activeProject.id, tab.id, pane.id)
+      }
+    }
+    clearIfViewing()
+    window.addEventListener("focus", clearIfViewing)
+    return () => window.removeEventListener("focus", clearIfViewing)
+  }, [activeProject, activeTabId, dismissViewedTerminalNotifications])
+
   const handleTerminalFocusChange = useCallback(
     (tabId: string, paneId: string, focused: boolean) => {
       if (!focused) return

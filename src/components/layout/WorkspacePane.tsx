@@ -447,6 +447,13 @@ function TerminalTabContent({
     if (!pane) return null
     const activePane =
       isActive && tab.activePaneId === paneId && focusedTerminalPaneId === paneId
+    // Pulse the pane border instead of a header dot when the agent finished or
+    // needs attention. Driven by the same status flags as the sidebar dots, so
+    // it clears the same way (viewing the pane with the app focused).
+    const agentWorking = pane.agentStatus?.working
+    const agentNeedsAttention = !agentWorking && pane.agentStatus?.needsAttention
+    const agentDone =
+      !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
     return (
       <div className="relative flex h-full flex-col">
         <HeaderDropZone
@@ -463,6 +470,15 @@ function TerminalTabContent({
         </PaneDropZone>
         {activePane ? (
           <div className="pointer-events-none absolute inset-0 z-30 box-border border-2 border-ring" />
+        ) : agentNeedsAttention || agentDone ? (
+          <div
+            className={cn(
+              "gs-agent-pulse-border pointer-events-none absolute inset-0 z-30",
+              agentNeedsAttention
+                ? "gs-agent-pulse-attention"
+                : "gs-agent-pulse-done"
+            )}
+          />
         ) : null}
       </div>
     )

@@ -11,8 +11,6 @@ import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
 // AgentSpinner kept for when the header busy spinner is restored.
 // import { AgentSpinner } from "./AgentSpinner"
-import { AgentAttention } from "./AgentAttention"
-import { AgentDone } from "./AgentDone"
 import { AgentIcon } from "./AgentIcon"
 import type { TerminalPane } from "./types"
 
@@ -107,15 +105,9 @@ export function PaneHeader({
         <AgentIcon agent={pane.agentStatus?.agentName} className="mr-1 size-3.5" />
       ) : null}
       {/* Busy spinner hidden for now — the scanning border above already
-          signals "agent working". Keep the code for easy restore. */}
-      {/* {agentWorking ? (
-        <AgentSpinner className="mr-0.5" />
-      ) : agentNeedsAttention ? ( */}
-      {agentNeedsAttention ? (
-        <AgentAttention className="mr-0.5" />
-      ) : agentDone ? (
-        <AgentDone className="mr-0.5" />
-      ) : null}
+          signals "agent working". Done/attention are signaled by the pulsing
+          pane border (see WorkspacePane.renderLeaf), not a header dot; the
+          dots still appear in the project sidebar and toasts. */}
       {editing ? (
         <input
           ref={inputRef}

@@ -81,8 +81,6 @@ type Props = {
     shortHash: string
     subject: string
   }) => void
-  onCommitWithAi?: () => void
-  canCommitWithAi?: boolean
   onSummarizeHistory?: (agent: string) => void
   rightSidebarTab?: RightSidebarTab
   onRightSidebarTabChange?: (tab: RightSidebarTab) => void
@@ -118,8 +116,6 @@ export function WorkspaceSplit({
   onOpenDiffTab,
   onOpenFileTab,
   onOpenCommitTab,
-  onCommitWithAi,
-  canCommitWithAi = false,
   onSummarizeHistory,
   rightSidebarTab,
   onRightSidebarTabChange,
@@ -348,8 +344,6 @@ export function WorkspaceSplit({
             onOpenDiff={onOpenDiffTab}
             onOpenFile={onOpenFileTab}
             onOpenCommit={onOpenCommitTab}
-            onCommitWithAi={onCommitWithAi}
-            canCommitWithAi={canCommitWithAi}
             onSummarizeHistory={onSummarizeHistory}
             topRightActions={sidebarTopActions}
           />

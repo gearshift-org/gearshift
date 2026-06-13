@@ -39,7 +39,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SummarizeMenu } from "./SummarizeMenu"
@@ -129,8 +128,6 @@ type Props = {
     shortHash: string
     subject: string
   }) => void
-  onCommitWithAi?: () => void
-  canCommitWithAi?: boolean
   onSummarizeHistory?: (agent: string) => void
   topRightActions?: React.ReactNode
 }
@@ -145,8 +142,6 @@ export function RightSidebar({
   onOpenDiff,
   onOpenFile,
   onOpenCommit,
-  onCommitWithAi,
-  canCommitWithAi = false,
   onSummarizeHistory,
   topRightActions,
 }: Props) {
@@ -712,7 +707,6 @@ export function RightSidebar({
   // open before the initial fetch resolves.
   const hasCommitMessage = commitMessage.trim().length > 0
   const canCommit = hasData && stagedFiles.length > 0 && hasCommitMessage
-  const useManualCommit = hasCommitMessage
 
   const switchBranch = useCallback(
     (branch: string) => {
@@ -1136,34 +1130,22 @@ export function RightSidebar({
                       <Button
                         variant="default"
                         size="sm"
-                        disabled={
-                          useManualCommit
-                            ? !canCommit || busy
-                            : !canCommitWithAi ||
-                              stagedFiles.length === 0 ||
-                              busy
-                        }
-                        onClick={() =>
-                          useManualCommit ? void commit() : onCommitWithAi?.()
-                        }
+                        disabled={!canCommit || busy}
+                        onClick={() => void commit()}
                         className="flex-1 rounded-r-none"
                       >
-                        {useManualCommit ? (
-                          committing === "commit" ? (
-                            <>
-                              <Loader2 className="size-3.5 animate-spin" />
-                              Committing…
-                            </>
-                          ) : committing === "push" ? (
-                            <>
-                              <Loader2 className="size-3.5 animate-spin" />
-                              Pushing…
-                            </>
-                          ) : (
-                            "Commit manually"
-                          )
+                        {committing === "commit" ? (
+                          <>
+                            <Loader2 className="size-3.5 animate-spin" />
+                            Committing…
+                          </>
+                        ) : committing === "push" ? (
+                          <>
+                            <Loader2 className="size-3.5 animate-spin" />
+                            Pushing…
+                          </>
                         ) : (
-                          "Commit with AI"
+                          "Commit"
                         )}
                       </Button>
                       <DropdownMenu>
@@ -1184,24 +1166,6 @@ export function RightSidebar({
                           align="end"
                           className="min-w-[180px]"
                         >
-                          <DropdownMenuItem
-                            disabled={
-                              !canCommitWithAi ||
-                              stagedFiles.length === 0 ||
-                              busy
-                            }
-                            onClick={onCommitWithAi}
-                          >
-                            Commit with AI
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            disabled={!canCommit || busy}
-                            onClick={() => void commit()}
-                          >
-                            Commit manually
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             disabled={!canCommit || busy}
                             onClick={() => void commit({ push: true })}

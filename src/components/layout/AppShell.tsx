@@ -43,7 +43,6 @@ import type {
   TerminalAgentName,
   TerminalAgentStatus,
   TerminalLayout,
-  TerminalPane,
   WorkspaceTab,
 } from "./types"
 import {
@@ -79,7 +78,6 @@ import {
   type RightSidebarTab,
   type StoredProject,
 } from "@/lib/projects"
-import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
 import { gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   AGENT_TERMINAL_LABELS,
@@ -192,26 +190,6 @@ function lastAgentTerminalFromPane(
   }
 }
 
-function rememberedAgentTerminalForProject(
-  map: LastAgentTerminalsByProject,
-  project: Project | undefined
-): LastAgentTerminal | null {
-  if (!project) return null
-  return (
-    map[project.id] ??
-    Object.values(map).find((target) => target.projectPath === project.path) ??
-    null
-  )
-}
-
-function paneHasActiveAgent(pane: TerminalPane): boolean {
-  return !!(
-    pane.agentStatus?.running ||
-    pane.agentStatus?.working ||
-    pane.agentStatus?.needsAttention
-  )
-}
-
 function agentStatusesEqual(
   a: TerminalAgentStatus | undefined,
   b: TerminalAgentStatus | undefined
@@ -227,51 +205,6 @@ function agentStatusesEqual(
     a?.agentSessionId === b?.agentSessionId &&
     a?.agentSessionTitle === b?.agentSessionTitle
   )
-}
-
-function findProjectAgentTerminal(
-  project: Project | undefined,
-  remembered: LastAgentTerminal | null
-): LastAgentTerminal | null {
-  if (!project) return null
-  if (
-    remembered &&
-    (remembered.projectId === project.id ||
-      remembered.projectPath === project.path)
-  ) {
-    const tab = project.tabs.find(
-      (t) => t.kind === "terminal" && t.id === remembered.tabId
-    )
-    const pane =
-      tab?.kind === "terminal"
-        ? tab.panes.find((pp) => pp.id === remembered.paneId)
-        : undefined
-    if (pane && paneHasActiveAgent(pane)) {
-      return lastAgentTerminalFromPane(
-        project,
-        remembered.tabId,
-        remembered.paneId,
-        remembered
-      )
-    }
-  }
-
-  const activeTab = project.tabs.find((t) => t.id === project.activeTabId)
-  if (activeTab?.kind === "terminal") {
-    const activePane = activeTab.panes.find(
-      (pane) => pane.id === activeTab.activePaneId
-    )
-    if (activePane && paneHasActiveAgent(activePane)) {
-      return lastAgentTerminalFromPane(project, activeTab.id, activePane.id)
-    }
-  }
-
-  for (const tab of project.tabs) {
-    if (tab.kind !== "terminal") continue
-    const pane = tab.panes.find(paneHasActiveAgent)
-    if (pane) return lastAgentTerminalFromPane(project, tab.id, pane.id)
-  }
-  return null
 }
 
 function basename(p: string) {
@@ -491,7 +424,9 @@ export function AppShell() {
     paneId: string
     nonce: number
   } | null>(null)
-  const [lastAgentTerminals, setLastAgentTerminals] =
+  // Persisted so it survives reloads, but only written (via rememberAgentTerminal)
+  // — nothing reads the value now that "Commit with AI" is gone.
+  const [, setLastAgentTerminals] =
     useState<LastAgentTerminalsByProject>(() => loadLastAgentTerminals())
   const [stateRestored, setStateRestored] = useState(() => store.isReady())
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
@@ -750,65 +685,6 @@ export function AppShell() {
     },
     []
   )
-
-  const resolvedLastAgentTerminal = useMemo(
-    () =>
-      findProjectAgentTerminal(
-        activeProject,
-        rememberedAgentTerminalForProject(lastAgentTerminals, activeProject)
-      ),
-    [activeProject, lastAgentTerminals]
-  )
-
-  const commitWithAi = useCallback(() => {
-    const project = projectsRef.current.find((p) => p.id === activeProjectId)
-    const target = findProjectAgentTerminal(
-      project,
-      rememberedAgentTerminalForProject(lastAgentTerminals, project)
-    )
-    if (!project || !target) {
-      toast.error("No coding agent terminal found for this project")
-      return
-    }
-
-    window.focus()
-    void window.appWindow?.focus?.()
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === target.projectId
-          ? {
-              ...p,
-              activeTabId: target.tabId,
-              tabs: p.tabs.map((t) =>
-                t.id === target.tabId && t.kind === "terminal"
-                  ? { ...t, activePaneId: target.paneId }
-                  : t
-              ),
-            }
-          : p
-      )
-    )
-    navigateToProject(target.projectId, target.tabId)
-    terminalFocusRequestNonceRef.current += 1
-    setTerminalFocusRequest({
-      tabId: target.tabId,
-      paneId: target.paneId,
-      nonce: terminalFocusRequestNonceRef.current,
-    })
-
-    window.setTimeout(() => {
-      const latestProject = projectsRef.current.find(
-        (p) => p.id === target.projectId
-      )
-      const latest = findProjectAgentTerminal(latestProject, target)
-      const sessionId = latest?.sessionId ?? target.sessionId
-      if (!sessionId) {
-        toast.error("Agent terminal is not running")
-        return
-      }
-      writeAgentPrompt(sessionId, loadAiCommitPrompt())
-    }, 120)
-  }, [activeProjectId, lastAgentTerminals, navigateToProject])
 
   // History tab "Summarize": send the user's last prompts to a terminal
   // running the chosen agent and ask it for a recap. Unlike Commit with AI
@@ -3068,8 +2944,6 @@ export function AppShell() {
               onOpenDiffTab={openDiffTab}
               onOpenFileTab={openFileTab}
               onOpenCommitTab={openCommitTab}
-              onCommitWithAi={commitWithAi}
-              canCommitWithAi={!!resolvedLastAgentTerminal}
               onSummarizeHistory={summarizeHistory}
               rightSidebarTab={rightSidebarTab}
               onRightSidebarTabChange={setRightSidebarTab}

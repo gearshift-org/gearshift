@@ -1012,8 +1012,11 @@ async function projectCommandEnv(cwd: string): Promise<NodeJS.ProcessEnv> {
 // Convert a git remote URL (SSH or HTTPS) to its GitHub web URL, e.g.
 // `git@github.com:owner/repo.git` → `https://github.com/owner/repo`.
 function githubRemoteToWebUrl(remote: string): string | null {
+  // Allow an optional "user@" prefix in HTTPS remotes (e.g.
+  // https://octocat@github.com/owner/repo.git), which git writes when the URL
+  // carries an embedded username.
   const match = remote.match(
-    /^(?:https:\/\/|git@|ssh:\/\/git@)github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?\/?$/
+    /^(?:https:\/\/(?:[^@/]+@)?|git@|ssh:\/\/git@)github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?\/?$/
   )
   return match ? `https://github.com/${match[1]}` : null
 }

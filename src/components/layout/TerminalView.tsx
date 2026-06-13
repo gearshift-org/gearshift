@@ -19,7 +19,6 @@ import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
-import { loadAiCommitPrompt } from "@/lib/aiCommitPrompt"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type { TerminalAgentStatus } from "./types"
 import {
@@ -628,6 +627,12 @@ export function TerminalView({
     "hidden"
   )
   const commitDismissedRef = useRef(false)
+  // Mirror commitUi into a ref so the terminal's one-time key/input handlers can
+  // read the current value without being re-attached on every state change.
+  const commitUiRef = useRef(commitUi)
+  useEffect(() => {
+    commitUiRef.current = commitUi
+  }, [commitUi])
   const queryClient = useQueryClient()
   const { data: gitData } = useQuery({
     queryKey: gitQueryKey(cwd ?? null),
@@ -794,19 +799,22 @@ export function TerminalView({
   }, [gitData])
 
   const commitChanges = useCallback(() => {
-    const prompt = loadAiCommitPrompt().trim()
-    if (!prompt) return
     // Start the exit animation right away so the pill slides out smoothly on
-    // click. The prompt + Enter are still written on the submit delay in the
-    // background, so the agent receives them just as before.
+    // click. The message + Enter are still written on the submit delay in the
+    // background, so the agent receives them just after.
     setCommitUi((s) => (s === "open" ? "closing" : s))
-    window.term.write(sessionId, prompt)
+    window.term.write(sessionId, "commit changes")
     window.setTimeout(() => {
       window.term.write(sessionId, "\r")
     }, AGENT_PROMPT_SUBMIT_DELAY_MS)
     const term = termRef.current
     if (term) safeTerminalFocus(term)
   }, [sessionId])
+  // Ref so the one-time terminal key handler can invoke the latest commitChanges.
+  const commitChangesRef = useRef(commitChanges)
+  useEffect(() => {
+    commitChangesRef.current = commitChanges
+  }, [commitChanges])
 
   const clearAgentWorking = useCallback(() => {
     if (agentWorkingTimerRef.current) {
@@ -1191,6 +1199,20 @@ export function TerminalView({
         return false
       }
 
+      // ⌘⏎ — submit the floating "commit changes" affordance while it's showing.
+      if (
+        meta &&
+        !ctrl &&
+        !alt &&
+        !shift &&
+        key === "enter" &&
+        commitUiRef.current === "open"
+      ) {
+        e.preventDefault()
+        commitChangesRef.current()
+        return false
+      }
+
       // ⇧⏎ / ⌘⇧⏎ — insert newline in TUI prompts (Claude Code, Codex,
       // OpenCode, pi). Terminals send CR (\r) on Enter, so send the active
       // modified-Enter sequence instead of a normal Enter.
@@ -1363,6 +1385,14 @@ export function TerminalView({
 
     const inputSub = term.onData((d) => {
       if (replayingSnapshot) return
+      // The moment the user types into the terminal, retire the floating commit
+      // affordance — they're driving the session themselves. (commitChanges
+      // writes via window.term.write, which bypasses onData, so triggering the
+      // commit doesn't dismiss itself here.)
+      if (commitUiRef.current === "open") {
+        commitDismissedRef.current = true
+        setCommitUi("closing")
+      }
       const current = agentStatusRef.current
       if (current.running) {
         const now = Date.now()
@@ -1987,6 +2017,9 @@ export function TerminalView({
               >
                 <GitCommitVertical data-icon="inline-start" />
                 Commit changes
+                <kbd className="ml-1 rounded border border-current/25 px-1 text-[10px] leading-none opacity-70">
+                  ⌘⏎
+                </kbd>
               </Button>
               <Button
                 type="button"

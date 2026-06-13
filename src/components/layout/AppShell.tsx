@@ -2727,6 +2727,17 @@ export function AppShell() {
         })
         return
       }
+      if (
+        e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "z" || e.key === "Z") &&
+        !isTextEditingTarget(target)
+      ) {
+        e.preventDefault()
+        return
+      }
       // Let focused controls/editors handle their own shortcuts first. For
       // example, CodeMirror's Mod+S save binding calls preventDefault(), so the
       // sidebar shortcut should not also run while the editor handles saving.

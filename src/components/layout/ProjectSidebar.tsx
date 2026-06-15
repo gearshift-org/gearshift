@@ -226,6 +226,7 @@ function ProjectSidebarRow({
             ? "bg-sidebar-accent text-foreground"
             : "text-foreground hover:bg-sidebar-accent/70",
           hasWorkingAgent && "gs-agent-project-scan",
+          !hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && "pr-7",
           isDragging && "opacity-80 shadow-lg"
         )}
         {...attributes}
@@ -243,15 +244,6 @@ function ProjectSidebarRow({
             </span>
             {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
             {hasAttentionAgent && <AgentAttention className="shrink-0" />}
-            {!hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && (
-              <span
-                aria-label="Coding agent done"
-                title="Coding agent done"
-                className="relative grid size-2.5 shrink-0 place-items-center"
-              >
-                <span className="gs-status-bounce relative size-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_1px_rgba(255,255,255,0.35)] dark:shadow-[0_0_0_1px_rgba(0,0,0,0.45)]" />
-              </span>
-            )}
           </div>
           <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-muted-foreground">
             <span className="truncate">{subtitle ?? " "}</span>
@@ -266,6 +258,13 @@ function ProjectSidebarRow({
             )}
           </span>
         </div>
+        {!hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && (
+          <span
+            aria-label="Coding agent done"
+            title="Coding agent done"
+            className="gs-agent-pulse-border gs-agent-pulse-done pointer-events-none absolute inset-0 rounded-md"
+          />
+        )}
         {canClose && (
           <button
             type="button"

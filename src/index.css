@@ -904,10 +904,10 @@
   animation: gs-agent-project-scan 1.1s linear infinite;
 }
 
-/* Pulsing pane border shown when an agent finished (emerald) or is blocked
-   waiting on the user (amber). Replaces the header dot on terminal panes; the
-   dots remain in the project sidebar and toasts. Inset box-shadow instead of a
-   real border so it overlays the pane without shifting layout. */
+/* Pulsing border shown when an agent finished (emerald) or is blocked waiting
+   on the user (amber). Used by terminal panes and completed project rows.
+   Inset box-shadow instead of a real border so it overlays without shifting
+   layout. */
 @keyframes gs-agent-pulse-border {
   0%,
   100% {

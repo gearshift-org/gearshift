@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   DndContext,
@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import {
+  ChevronDown,
   Focus,
   GitBranch,
   PanelLeft,
@@ -82,6 +83,39 @@ type Props = {
   onFocusProject?: (id: string) => void
   onRemoveFromFocus?: (id: string) => void
   onExitFocus?: () => void
+}
+
+type SidebarGroupHeaderProps = {
+  label: string
+  count: number
+  isOpen: boolean
+  onToggle: () => void
+}
+
+function SidebarGroupHeader({
+  label,
+  count,
+  isOpen,
+  onToggle,
+}: SidebarGroupHeaderProps) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      className="flex h-8 w-full shrink-0 items-center justify-between rounded-md px-2 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+    >
+      <span className="truncate">
+        {label} <span className="text-muted-foreground/60">{count}</span>
+      </span>
+      <ChevronDown
+        className={cn(
+          "size-3.5 shrink-0 transition-transform",
+          !isOpen && "-rotate-90"
+        )}
+      />
+    </button>
+  )
 }
 
 type RowProps = {
@@ -183,7 +217,7 @@ function ProjectSidebarRow({
         style={style}
         onClick={() => onSelect(p.id)}
         className={cn(
-          "group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
+          "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
           animate &&
             "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
@@ -340,6 +374,8 @@ export function ProjectSidebar({
 }: Props) {
   const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [filter, setFilter] = useState("")
+  const [pinnedOpen, setPinnedOpen] = useState(true)
+  const [projectsOpen, setProjectsOpen] = useState(true)
   const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
     loadPinnedProjectPaths()
   )
@@ -376,7 +412,10 @@ export function ProjectSidebar({
   const unpinnedProjects = filteredProjects.filter(
     (p) => !pinnedSet.has(p.path)
   )
-  const visibleProjects = [...pinnedProjects, ...unpinnedProjects]
+  const visibleProjects = [
+    ...(pinnedOpen ? pinnedProjects : []),
+    ...(projectsOpen ? unpinnedProjects : []),
+  ]
 
   // Only animate rows when focus mode is toggled — not on initial page load.
   const prevFocusModeRef = useRef(isFocusMode)
@@ -498,40 +537,74 @@ export function ProjectSidebar({
             strategy={verticalListSortingStrategy}
           >
             {pinnedProjects.length > 0 && (
-              <div className="px-2 pt-1 pb-0.5 text-xs font-medium text-muted-foreground/70">
-                Pinned
-              </div>
-            )}
-            {visibleProjects.map((p, i) => (
-              <Fragment key={`${p.id}-${isFocusMode}`}>
-                {pinnedProjects.length > 0 && i === pinnedProjects.length && (
-                  <div className="px-2 pt-2 pb-0.5 text-xs font-medium text-muted-foreground/70">
-                    Projects
-                  </div>
-                )}
-                <ProjectSidebarRow
-                  index={i}
-                  project={p}
-                  total={projects.length}
-                  isActive={p.id === activeId}
-                  canClose={!!onClose}
-                  hasItemsBelow={i < visibleProjects.length - 1}
-                  onSelect={onSelect}
-                  onClose={onClose}
-                  onCloseAllTerminals={onCloseAllTerminals}
-                  onCloseOthers={onCloseOthers}
-                  onCloseToRight={onCloseToRight}
-                  onOpenInVSCode={onOpenInVSCode}
-                  onRevealInFinder={onRevealInFinder}
-                  isFocusMode={isFocusMode}
-                  animate={animateFocus}
-                  onFocusProject={onFocusProject}
-                  onRemoveFromFocus={onRemoveFromFocus}
-                  isPinned={pinnedSet.has(p.path)}
-                  onTogglePin={togglePin}
+              <>
+                <SidebarGroupHeader
+                  label="Pinned"
+                  count={pinnedProjects.length}
+                  isOpen={pinnedOpen}
+                  onToggle={() => setPinnedOpen((open) => !open)}
                 />
-              </Fragment>
-            ))}
+                {pinnedOpen &&
+                  pinnedProjects.map((p, i) => (
+                    <ProjectSidebarRow
+                      key={`${p.id}-${isFocusMode}`}
+                      index={i}
+                      project={p}
+                      total={projects.length}
+                      isActive={p.id === activeId}
+                      canClose={!!onClose}
+                      hasItemsBelow={i < visibleProjects.length - 1}
+                      onSelect={onSelect}
+                      onClose={onClose}
+                      onCloseAllTerminals={onCloseAllTerminals}
+                      onCloseOthers={onCloseOthers}
+                      onCloseToRight={onCloseToRight}
+                      onOpenInVSCode={onOpenInVSCode}
+                      onRevealInFinder={onRevealInFinder}
+                      isFocusMode={isFocusMode}
+                      animate={animateFocus}
+                      onFocusProject={onFocusProject}
+                      onRemoveFromFocus={onRemoveFromFocus}
+                      isPinned={true}
+                      onTogglePin={togglePin}
+                    />
+                  ))}
+              </>
+            )}
+            <SidebarGroupHeader
+              label="Projects"
+              count={unpinnedProjects.length}
+              isOpen={projectsOpen}
+              onToggle={() => setProjectsOpen((open) => !open)}
+            />
+            {projectsOpen &&
+              unpinnedProjects.map((p, i) => {
+                const visibleIndex = (pinnedOpen ? pinnedProjects.length : 0) + i
+                return (
+                  <ProjectSidebarRow
+                    key={`${p.id}-${isFocusMode}`}
+                    index={visibleIndex}
+                    project={p}
+                    total={projects.length}
+                    isActive={p.id === activeId}
+                    canClose={!!onClose}
+                    hasItemsBelow={visibleIndex < visibleProjects.length - 1}
+                    onSelect={onSelect}
+                    onClose={onClose}
+                    onCloseAllTerminals={onCloseAllTerminals}
+                    onCloseOthers={onCloseOthers}
+                    onCloseToRight={onCloseToRight}
+                    onOpenInVSCode={onOpenInVSCode}
+                    onRevealInFinder={onRevealInFinder}
+                    isFocusMode={isFocusMode}
+                    animate={animateFocus}
+                    onFocusProject={onFocusProject}
+                    onRemoveFromFocus={onRemoveFromFocus}
+                    isPinned={false}
+                    onTogglePin={togglePin}
+                  />
+                )
+              })}
           </SortableContext>
         </DndContext>
         {isFocusMode && (

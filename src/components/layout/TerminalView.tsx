@@ -20,7 +20,7 @@ import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { TerminalAgentStatus } from "./types"
+import type { TerminalAgentName, TerminalAgentStatus } from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -519,14 +519,39 @@ function renderItermImage(term: Terminal, raw: string): boolean {
   return true
 }
 
+function pasteText(
+  term: Terminal,
+  sessionId: string,
+  text: string,
+  agentName?: TerminalAgentName
+) {
+  if (!text) return
+
+  if (agentName === "pi") {
+    // Pi treats pasted returns like submit. Convert pasted line breaks to the
+    // same modified Enter sequence used by Shift+Enter so multiline prompts
+    // stay in the composer instead of submitting each line.
+    const normalized = text.replace(/\r\n?/g, "\n").replace(/\n+$/g, "")
+    if (normalized) {
+      window.term.write(
+        sessionId,
+        normalized.split("\n").join("\x1b[13;2u")
+      )
+    }
+    return
+  }
+
+  term.paste(text)
+}
+
 async function pasteClipboard(
   term: Terminal,
   sessionId: string,
-  isAgentInput: boolean
+  agentName?: TerminalAgentName
 ) {
   try {
     if (await window.clipboardApi.hasImage()) {
-      if (isAgentInput) {
+      if (agentName) {
         // Agent CLIs (Claude Code, Codex, …) handle image paste themselves
         // when they receive Ctrl+V (0x16). Matches Ghostty/VS Code.
         window.term.write(sessionId, "\x16")
@@ -541,8 +566,7 @@ async function pasteClipboard(
   } catch {
     // fall through to text paste
   }
-  const text = await navigator.clipboard.readText()
-  if (text) term.paste(text)
+  pasteText(term, sessionId, await navigator.clipboard.readText(), agentName)
   safeTerminalFocus(term)
 }
 
@@ -1121,7 +1145,7 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId, !!agentStatusRef.current.running)
+          void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
           return false
         }
         if (key === "a") {
@@ -1148,7 +1172,7 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId, !!agentStatusRef.current.running)
+          void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
           return false
         }
       }
@@ -1921,7 +1945,7 @@ export function TerminalView({
   const pasteFromClipboard = async () => {
     const term = termRef.current
     if (!term) return
-    await pasteClipboard(term, sessionId, !!agentStatusRef.current.running)
+    await pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
   }
 
   const selectAll = () => {

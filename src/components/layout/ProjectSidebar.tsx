@@ -45,8 +45,10 @@ import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   clearProjectAvatarImagePath,
   loadPinnedProjectPaths,
+  loadProjectSidebarGroupOpen,
   randomizeProjectColor,
   savePinnedProjectPaths,
+  saveProjectSidebarGroupOpen,
   setProjectAvatarImagePath,
   type RecentProject,
 } from "@/lib/projects"
@@ -374,15 +376,28 @@ export function ProjectSidebar({
 }: Props) {
   const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [filter, setFilter] = useState("")
-  const [pinnedOpen, setPinnedOpen] = useState(true)
-  const [projectsOpen, setProjectsOpen] = useState(true)
+  const [pinnedOpen, setPinnedOpen] = useState(
+    () => loadProjectSidebarGroupOpen().pinned
+  )
+  const [projectsOpen, setProjectsOpen] = useState(
+    () => loadProjectSidebarGroupOpen().projects
+  )
   const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
     loadPinnedProjectPaths()
   )
   useEffect(
-    () => store.onReady(() => setPinnedPaths(loadPinnedProjectPaths())),
+    () =>
+      store.onReady(() => {
+        const groupOpen = loadProjectSidebarGroupOpen()
+        setPinnedOpen(groupOpen.pinned)
+        setProjectsOpen(groupOpen.projects)
+        setPinnedPaths(loadPinnedProjectPaths())
+      }),
     []
   )
+  useEffect(() => {
+    saveProjectSidebarGroupOpen({ pinned: pinnedOpen, projects: projectsOpen })
+  }, [pinnedOpen, projectsOpen])
   const togglePin = (path: string) => {
     setPinnedPaths((prev) => {
       const next = prev.includes(path)

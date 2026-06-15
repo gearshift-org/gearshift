@@ -424,6 +424,48 @@ export function saveFocusedProjectIds(ids: string[]): void {
   }
 }
 
+const PROJECT_SIDEBAR_GROUP_OPEN_KEY = "gearshift.projectSidebarGroupOpen"
+
+export type ProjectSidebarGroupOpenState = {
+  pinned: boolean
+  projects: boolean
+}
+
+const DEFAULT_PROJECT_SIDEBAR_GROUP_OPEN: ProjectSidebarGroupOpenState = {
+  pinned: true,
+  projects: true,
+}
+
+export function loadProjectSidebarGroupOpen(): ProjectSidebarGroupOpenState {
+  try {
+    const raw = store.get(PROJECT_SIDEBAR_GROUP_OPEN_KEY)
+    if (!raw) return DEFAULT_PROJECT_SIDEBAR_GROUP_OPEN
+    const parsed = JSON.parse(raw)
+    return {
+      pinned:
+        typeof parsed?.pinned === "boolean"
+          ? parsed.pinned
+          : DEFAULT_PROJECT_SIDEBAR_GROUP_OPEN.pinned,
+      projects:
+        typeof parsed?.projects === "boolean"
+          ? parsed.projects
+          : DEFAULT_PROJECT_SIDEBAR_GROUP_OPEN.projects,
+    }
+  } catch {
+    return DEFAULT_PROJECT_SIDEBAR_GROUP_OPEN
+  }
+}
+
+export function saveProjectSidebarGroupOpen(
+  state: ProjectSidebarGroupOpenState
+): void {
+  try {
+    store.set(PROJECT_SIDEBAR_GROUP_OPEN_KEY, JSON.stringify(state))
+  } catch {
+    // ignore
+  }
+}
+
 const PINNED_PROJECT_PATHS_KEY = "gearshift.pinnedProjectPaths"
 
 // Pinned projects are keyed by path (stable across sessions, like recents).

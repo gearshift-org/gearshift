@@ -2310,8 +2310,9 @@ export function AppShell() {
         }
       }
 
+      const historySessionId = fallbackPane?.sessionId ?? paneId
       void window.term.history
-        .list(paneId)
+        .list(historySessionId)
         .then((rows) => promptPreview(latestPromptBody(rows)))
         .catch(() => null)
         .then(showCompletionNotification)

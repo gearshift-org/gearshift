@@ -934,10 +934,8 @@ export function TerminalView({
       scrollback: 5000,
       // Keep a small scrollbar gutter so terminal scrollback is visible.
       scrollbar: { width: 8 },
-      // Prevent xterm from reflowing scrollback when a split narrows the pane.
-      // Old full-screen agent screens (Claude, etc.) cannot repaint after the
-      // agent is stopped, so reflow turns box UI into diagonal fragments.
-      windowsPty: { backend: "winpty", buildNumber: 1 },
+      // Let xterm reflow normal scrollback when the pane changes width, so
+      // plain terminal output (ssh, logs, shell commands) fits after resizing.
       theme: themeObj,
       allowProposedApi: true,
       linkHandler: {

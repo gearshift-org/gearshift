@@ -2866,15 +2866,17 @@ export function AppShell() {
           // When the project sidebar is collapsed the workspace meets the window's
           // left edge, so the top bar reclaims the traffic-light gap and hosts the
           // expand control.
-          const topBarLeading = expandProjectSidebarButton ? (
+          const topBarLeading = (
             <>
-              <div className="w-[84px] shrink-0 self-stretch" />
-              {expandProjectSidebarButton}
-              <HistoryNavButtons className="pl-0.5" />
+              {projectSidebarCollapsed && (
+                <>
+                  <div className="w-[84px] shrink-0 self-stretch" />
+                  {expandProjectSidebarButton}
+                  <HistoryNavButtons className="pl-0.5" />
+                </>
+              )}
               <UpdateButton />
               {activeProject && (
-                // Project switcher standing in for the hidden sidebar — lets the
-                // user switch projects (or add one) without expanding it.
                 <div className="flex min-w-0 items-center pr-2 pl-1.5">
                   <ProjectSwitcher
                     projects={switcherProjects}
@@ -2885,7 +2887,7 @@ export function AppShell() {
                 </div>
               )}
             </>
-          ) : undefined
+          )
           if (!activeProject) {
             return (
               <>

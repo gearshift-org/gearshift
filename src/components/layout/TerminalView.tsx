@@ -6,7 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from "react"
-import { ChevronDown, ChevronUp, GitCommitVertical, X } from "lucide-react"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
@@ -2037,11 +2037,10 @@ export function TerminalView({
           </Button>
         )}
         {commitUi !== "hidden" && !showScrollToBottom && (
-          // Outer element owns the centering transform; the inner element owns
-          // the slide animation. Keeping them separate stops the exit keyframes
-          // from clobbering -translate-x-1/2 (which made the pill jump/flicker).
+          // Outer element owns the bottom-left placement; the inner element owns
+          // the slide animation so the exit keyframes do not move the anchor.
           <div
-            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+            className="absolute bottom-4 left-4 z-10"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.stopPropagation()}
           >
@@ -2067,9 +2066,8 @@ export function TerminalView({
                 aria-label="Commit changes with AI"
                 className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
               >
-                <GitCommitVertical data-icon="inline-start" />
                 Commit changes
-                <kbd className="ml-1 rounded border border-current/25 px-1 text-[10px] leading-none opacity-70">
+                <kbd className="ml-1 rounded border border-current/40 bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none opacity-100">
                   ⌘⏎
                 </kbd>
               </Button>

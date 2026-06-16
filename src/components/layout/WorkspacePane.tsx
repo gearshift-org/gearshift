@@ -521,8 +521,8 @@ function TerminalTabContent({
     const activePane =
       isActive && tab.activePaneId === paneId && focusedTerminalPaneId === paneId
     // Pulse the pane border instead of a header dot when the agent finished or
-    // needs attention. Driven by the same status flags as the sidebar dots, so
-    // it clears the same way (viewing the pane with the app focused).
+    // needs attention. Driven by the same status flags as the sidebar indicators,
+    // so it clears the same way (viewing the pane with the app focused).
     const agentWorking = pane.agentStatus?.working
     const agentNeedsAttention = !agentWorking && pane.agentStatus?.needsAttention
     const agentDone =

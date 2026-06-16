@@ -37,9 +37,7 @@ function ProjectAgentState({ project }: { project: Project }) {
 }
 
 /**
- * Compact project switcher shown in the top bar when the vertical project
- * sidebar is collapsed. Mirrors the sidebar's role — pick the active project
- * or add a new one — without taking up the full sidebar width.
+ * Compact project switcher shown in the top bar.
  */
 export function ProjectSwitcher({
   projects,

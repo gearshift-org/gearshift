@@ -210,6 +210,7 @@ function ProjectSidebarRow({
   const hasWorkingAgent = projectHasWorkingAgent(p)
   const hasAttentionAgent = !hasWorkingAgent && projectHasAttentionAgent(p)
   const hasDoneAgent = projectHasDoneAgent(p)
+  const hasCompletedAgent = !hasWorkingAgent && !hasAttentionAgent && hasDoneAgent
   const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
 
   return (
@@ -226,7 +227,7 @@ function ProjectSidebarRow({
             ? "bg-sidebar-accent text-foreground"
             : "text-foreground hover:bg-sidebar-accent/70",
           hasWorkingAgent && "gs-agent-project-scan",
-          !hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && "pr-7",
+          hasCompletedAgent && "pr-7",
           isDragging && "opacity-80 shadow-lg"
         )}
         {...attributes}
@@ -258,7 +259,7 @@ function ProjectSidebarRow({
             )}
           </span>
         </div>
-        {!hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && (
+        {hasCompletedAgent && (
           <span
             aria-label="Coding agent done"
             title="Coding agent done"

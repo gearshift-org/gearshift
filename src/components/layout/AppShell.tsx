@@ -2199,7 +2199,6 @@ export function AppShell() {
       targetProject &&
       targetTab?.kind === "terminal"
     ) {
-      const terminalName = tabDisplayName(targetTab)
       const elapsedTime =
         status.workStartedAt && status.completedAt
           ? formatDuration(status.completedAt - status.workStartedAt)
@@ -2292,11 +2291,8 @@ export function AppShell() {
               const notification = new Notification(
                 targetProject.name || "GearShift",
                 {
-                  // Title: project name. Body: terminal name, then the last
-                  // chat message on its own line.
-                  body: latestPrompt
-                    ? `${terminalName}\n${latestPrompt}`
-                    : terminalName,
+                  // Title: project name. Body: last chat message only.
+                  body: latestPrompt || undefined,
                   silent: true,
                 }
               )

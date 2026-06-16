@@ -287,6 +287,72 @@
   --sidebar-ring: #4078f2;
 }
 
+/* Light · Nebula Pandas — light lavender UI with lime accent */
+[data-theme="light-nebula-pandas"] {
+  --background: #f8f6ff;
+  --foreground: #27273a;
+  --card: #f8f6ff;
+  --card-foreground: #27273a;
+  --popover: #ffffff;
+  --popover-foreground: #27273a;
+  --secondary: #ede9f8;
+  --secondary-foreground: #27273a;
+  --muted: #ede9f8;
+  --muted-foreground: #6e7391;
+  --accent: #dff7d9;
+  --accent-foreground: #1f3b20;
+  --destructive: #d63f7a;
+  --border: #ddd8ee;
+  --input: #ede9f8;
+  --ring: #6bc75f;
+  --chart-1: #6bc75f;
+  --chart-2: #00b8a9;
+  --chart-3: #d63f7a;
+  --chart-4: #c4913d;
+  --chart-5: #9b7adc;
+  --sidebar: #f0edfa;
+  --sidebar-foreground: #27273a;
+  --sidebar-primary: #6bc75f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e2ddf1;
+  --sidebar-accent-foreground: #27273a;
+  --sidebar-border: #e5e0f2;
+  --sidebar-ring: #6bc75f;
+}
+
+/* Light · Night Owl — Light Owl's warm gray UI with teal accent */
+[data-theme="light-night-owl"] {
+  --background: #fbfbfb;
+  --foreground: #403f53;
+  --card: #fbfbfb;
+  --card-foreground: #403f53;
+  --popover: #ffffff;
+  --popover-foreground: #403f53;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #403f53;
+  --muted: #f0f0f0;
+  --muted-foreground: #6f7a8a;
+  --accent: #d3e8f8;
+  --accent-foreground: #403f53;
+  --destructive: #de3d3b;
+  --border: #d9d9d9;
+  --input: #f0f0f0;
+  --ring: #2aa298;
+  --chart-1: #2aa298;
+  --chart-2: #288ed7;
+  --chart-3: #d6438a;
+  --chart-4: #daaa01;
+  --chart-5: #08916a;
+  --sidebar: #f0f0f0;
+  --sidebar-foreground: #403f53;
+  --sidebar-primary: #2aa298;
+  --sidebar-primary-foreground: #f0f0f0;
+  --sidebar-accent: #e0e7ea;
+  --sidebar-accent-foreground: #403f53;
+  --sidebar-border: #d9d9d9;
+  --sidebar-ring: #2aa298;
+}
+
 /* Light · Claude — Claude app's warm cream UI with coral accent */
 [data-theme="light-claude"] {
   --background: #faf9f5;
@@ -472,6 +538,72 @@
   --sidebar-accent-foreground: #d7dae0;
   --sidebar-border: #181a1f;
   --sidebar-ring: #61afef;
+}
+
+/* Dark · Nebula Pandas — ChirtleLovesDolls' purple nebula UI with lime accent */
+[data-theme="dark-nebula-pandas"] {
+  --background: #27273a;
+  --foreground: #fcf6ff;
+  --card: #27273a;
+  --card-foreground: #fcf6ff;
+  --popover: #1f2330;
+  --popover-foreground: #fcf6ff;
+  --secondary: #1f2330;
+  --secondary-foreground: #d7d6df;
+  --muted: #2a2a46;
+  --muted-foreground: #919cb9;
+  --accent: #353551;
+  --accent-foreground: #fcf6ff;
+  --destructive: #e34f8c;
+  --border: #353551;
+  --input: #1f2330;
+  --ring: #97ee91;
+  --chart-1: #97ee91;
+  --chart-2: #24e8d8;
+  --chart-3: #e34f8c;
+  --chart-4: #f8c275;
+  --chart-5: #c7adfb;
+  --sidebar: #1f2330;
+  --sidebar-foreground: #919cb9;
+  --sidebar-primary: #97ee91;
+  --sidebar-primary-foreground: #0f1320;
+  --sidebar-accent: #353551;
+  --sidebar-accent-foreground: #fcf6ff;
+  --sidebar-border: #353551;
+  --sidebar-ring: #97ee91;
+}
+
+/* Dark · Night Owl — Sarah Drasner's deep blue UI with muted blue cursor */
+[data-theme="dark-night-owl"] {
+  --background: #011627;
+  --foreground: #d6deeb;
+  --card: #011627;
+  --card-foreground: #d6deeb;
+  --popover: #021c31;
+  --popover-foreground: #d6deeb;
+  --secondary: #0b2942;
+  --secondary-foreground: #c5d4e6;
+  --muted: #08243a;
+  --muted-foreground: #637777;
+  --accent: #0e3a53;
+  --accent-foreground: #d6deeb;
+  --destructive: #ef5350;
+  --border: #12314a;
+  --input: #0b2942;
+  --ring: #80a4c2;
+  --chart-1: #7fdbca;
+  --chart-2: #82aaff;
+  --chart-3: #c792ea;
+  --chart-4: #ecc48d;
+  --chart-5: #addb67;
+  --sidebar: #01111d;
+  --sidebar-foreground: #8aa7bd;
+  --sidebar-primary: #80a4c2;
+  --sidebar-primary-foreground: #011627;
+  --sidebar-accent: #0b2942;
+  --sidebar-accent-foreground: #d6deeb;
+  --sidebar-border: #0b2942;
+  --sidebar-ring: #80a4c2;
 }
 
 /* Dark · Claude — Claude app's warm near-black UI with coral accent */

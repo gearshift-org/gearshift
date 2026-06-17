@@ -413,9 +413,10 @@ const TERMINAL_PTY_RESIZE_THROTTLE_MS = 120
 const COLUMN_REFLOW_DEBOUNCE_LINES = 200
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
-const RECAP_IDLE_DELAY_MS = 30000
-// Recap box temporarily disabled; keep the code path intact for easy restore.
-const TERMINAL_RECAP_BOX_ENABLED = false
+const RECAP_IDLE_DELAY_MS = 15000
+const TERMINAL_RECAP_BOX_ENABLED = true
+// Floating commit affordance temporarily disabled; keep the code path intact.
+const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
 // Agents with authoritative lifecycle hooks (start/stop via the agent socket).
 // Their busy state is driven entirely by those hook events, so the title- and
 // output-activity heuristics must NOT mark them working — otherwise plain UI
@@ -813,6 +814,7 @@ export function TerminalView({
   // sidebar change counter (shared React Query cache, keyed by cwd) and refetches
   // so the count reflects whatever the agent just wrote.
   const maybeShowCommit = useCallback(() => {
+    if (!FLOATING_COMMIT_AFFORDANCE_ENABLED) return
     const dir = cwdRef.current
     if (!dir) return
     // Only offer to commit in terminals that actually have an agent. A plain
@@ -2003,9 +2005,9 @@ export function TerminalView({
         style={{ "--xterm-bg": themeObj.background } as CSSProperties}
       >
         <div ref={containerRef} className="terminal-fit-host" />
-        {TERMINAL_RECAP_BOX_ENABLED && recap && (
+        {TERMINAL_RECAP_BOX_ENABLED && recap && !showScrollToBottom && (
           <div
-            className="absolute top-6 left-1/2 z-10 w-[min(44rem,92%)] -translate-x-1/2"
+            className="absolute top-4 right-4 z-10 w-[min(30rem,84%)]"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.stopPropagation()}
           >
@@ -2036,7 +2038,9 @@ export function TerminalView({
             Scroll to bottom
           </Button>
         )}
-        {commitUi !== "hidden" && !showScrollToBottom && (
+        {FLOATING_COMMIT_AFFORDANCE_ENABLED &&
+          commitUi !== "hidden" &&
+          !showScrollToBottom && (
           // Outer element owns the bottom-left placement; the inner element owns
           // the slide animation so the exit keyframes do not move the anchor.
           <div

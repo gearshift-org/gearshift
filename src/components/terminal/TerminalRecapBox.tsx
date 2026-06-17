@@ -15,10 +15,9 @@ type Props = {
 }
 
 /**
- * Floating box shown at the top of a terminal pane after its coding agent
+ * Floating box shown in the top-right of a terminal pane after its coding agent
  * finishes (or needs attention) and the user has been idle on that terminal.
- * Recaps the last prompt the user sent. Clicking it dismisses the box and opens
- * the chat-history popover in the pane header (top-right). The X just closes it.
+ * Recaps the last prompt the user sent. Clicking it opens chat history.
  */
 export function TerminalRecapBox({ sessionId, message, kind, onClose }: Props) {
   const completed = kind === "completed"
@@ -40,21 +39,21 @@ export function TerminalRecapBox({ sessionId, message, kind, onClose }: Props) {
       onMouseDown={stop}
       onPointerDown={stop}
       className={cn(
-        "flex w-full animate-in flex-col gap-1.5 rounded-md border border-border bg-popover/95 px-3 py-2 text-left shadow-md backdrop-blur transition-colors duration-150 fade-in slide-in-from-top-2 hover:bg-accent/40",
+        "flex w-full animate-in flex-col gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-left text-foreground shadow-md transition-colors duration-150 fade-in slide-in-from-top-2 hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110",
       )}
     >
-      <div className="flex items-center gap-2 text-[11px] font-medium text-foreground">
+      <div className="flex items-center gap-2 text-[11px] font-medium text-current">
         {completed ? null : (
           <AgentAttention className="size-3.5" label={statusLabel} />
         )}
         <span>{statusLabel}</span>
         {message?.agent ? (
-          <span className="rounded-sm bg-foreground/10 px-1.5 py-px text-[10px] font-medium text-foreground">
+          <span className="rounded-sm bg-current/10 px-1.5 py-px text-[10px] font-medium text-current">
             {message.agent}
           </span>
         ) : null}
         {message ? (
-          <span className="text-[10px] font-normal text-muted-foreground">
+          <span className="text-[10px] font-normal text-current/65">
             {formatRelative(message.createdAt)}
           </span>
         ) : null}
@@ -75,17 +74,17 @@ export function TerminalRecapBox({ sessionId, message, kind, onClose }: Props) {
               onClose()
             }
           }}
-          className="ml-auto grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+          className="ml-auto grid size-5 shrink-0 place-items-center rounded-sm text-current/70 transition-colors hover:bg-current/15 hover:text-current"
         >
           <X className="size-3.5" />
         </span>
       </div>
       {message ? (
-        <p className="max-h-[min(50vh,24rem)] overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-foreground/80">
+        <p className="max-h-[min(50vh,24rem)] overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-current/80">
           {message.body}
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">View chat history</p>
+        <p className="text-xs text-current/65">View chat history</p>
       )}
     </button>
   )

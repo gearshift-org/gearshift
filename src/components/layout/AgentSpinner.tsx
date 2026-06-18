@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 
 const ORA_DOTS_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-const ORA_DOTS_INTERVAL_MS = 80
 
 type Props = {
   className?: string
@@ -13,25 +11,26 @@ export function AgentSpinner({
   className,
   label = "Coding agent working",
 }: Props) {
-  const [frame, setFrame] = useState(0)
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setFrame((current) => (current + 1) % ORA_DOTS_FRAMES.length)
-    }, ORA_DOTS_INTERVAL_MS)
-    return () => window.clearInterval(id)
-  }, [])
-
+  // The braille frames live in a vertical reel that's scrolled with a
+  // `transform: translateY` step animation (see .gs-agent-spinner in index.css).
+  // Transform animations run on the compositor thread, so the spinner keeps
+  // ticking even when the main thread is blocked (e.g. a terminal fit/reflow on
+  // project switch) — unlike a JS interval or a CSS `content` animation, which
+  // both freeze during main-thread work.
   return (
     <span
       aria-label={label}
       title={label}
       className={cn(
-        "gs-agent-spinner inline-grid size-[18px] shrink-0 place-items-center rounded-[5px] font-mono text-sm leading-none",
+        "gs-agent-spinner relative inline-block size-[18px] shrink-0 overflow-hidden rounded-[5px] text-center font-mono text-sm leading-none",
         className,
       )}
     >
-      {ORA_DOTS_FRAMES[frame]}
+      <span className="gs-agent-spinner-reel" aria-hidden>
+        {ORA_DOTS_FRAMES.map((frame, i) => (
+          <span key={i}>{frame}</span>
+        ))}
+      </span>
     </span>
   )
 }

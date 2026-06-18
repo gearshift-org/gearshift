@@ -226,18 +226,25 @@ function ProjectSidebarRow({
           isActive
             ? "bg-sidebar-accent text-foreground"
             : "text-foreground hover:bg-sidebar-accent/70",
-          hasWorkingAgent && "gs-agent-project-scan",
-          hasCompletedAgent && "pr-7",
           isDragging && "opacity-80 shadow-lg"
         )}
         {...attributes}
         {...listeners}
       >
-        <ProjectAvatar
-          name={p.name}
-          path={p.path}
-          className="size-6 rounded-sm text-[11px]"
-        />
+        <span className="relative grid shrink-0 place-items-center rounded-sm">
+          <ProjectAvatar
+            name={p.name}
+            path={p.path}
+            className="size-6 rounded-sm text-[11px]"
+          />
+          {hasCompletedAgent && (
+            <span
+              aria-label="Coding agent done"
+              title="Coding agent done"
+              className="gs-agent-done-dot pointer-events-none absolute -top-1 -right-1"
+            />
+          )}
+        </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm leading-tight font-medium">
@@ -259,13 +266,6 @@ function ProjectSidebarRow({
             )}
           </span>
         </div>
-        {hasCompletedAgent && (
-          <span
-            aria-label="Coding agent done"
-            title="Coding agent done"
-            className="gs-agent-pulse-border gs-agent-pulse-done pointer-events-none absolute inset-0 rounded-md"
-          />
-        )}
         {canClose && (
           <button
             type="button"

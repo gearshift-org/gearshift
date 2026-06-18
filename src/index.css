@@ -967,6 +967,32 @@
   filter: brightness(1.35) saturate(1.2);
 }
 
+/* The reel stacks all 10 braille glyphs vertically (each one box tall) and
+   scrolls up one glyph per step. translateY animates on the compositor thread,
+   so it never freezes during main-thread work. 10 frames over 0.8s = 80ms
+   each, matching the original cadence. translateY(-100%) = the full reel
+   height; steps(10) lands on each glyph in turn, then loops. */
+.gs-agent-spinner-reel {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  flex-direction: column;
+  animation: gs-agent-spinner-reel 0.8s steps(10) infinite;
+  will-change: transform;
+}
+
+.gs-agent-spinner-reel > span {
+  display: block;
+  height: 18px;
+  line-height: 18px;
+}
+
+@keyframes gs-agent-spinner-reel {
+  to {
+    transform: translateY(-100%);
+  }
+}
+
 @keyframes gs-agent-header-scan {
   0% {
     transform: translateX(-115%);
@@ -1066,21 +1092,54 @@
   --gs-pulse-color: oklch(69.6% 0.17 162.48); /* emerald-500, matches AgentDone */
 }
 
+/* Notification-style dot shown on the avatar's top-right when an agent finished.
+   Emerald to match AgentDone. The ::before ring "pings" outward to draw the eye. */
+@keyframes gs-agent-done-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.gs-agent-done-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: oklch(69.6% 0.17 162.48); /* emerald-500, matches AgentDone */
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+.gs-agent-done-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: oklch(69.6% 0.17 162.48);
+  animation: gs-agent-done-ping 1.4s ease-out infinite;
+}
+
 .gs-agent-pulse-attention {
   --gs-pulse-color: oklch(76.9% 0.188 70.08); /* amber-500, matches AgentAttention */
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gs-agent-spinner,
+  .gs-agent-spinner-reel,
   .gs-agent-header-scan,
   .gs-agent-project-scan::before,
-  .gs-agent-pulse-border {
+  .gs-agent-pulse-border,
+  .gs-agent-done-dot::before {
     animation: none;
   }
 }
 
 body.gs-sidebar-resizing .gs-agent-header-scan,
 body.gs-sidebar-resizing .gs-agent-project-scan::before,
-body.gs-sidebar-resizing .gs-agent-pulse-border {
+body.gs-sidebar-resizing .gs-agent-pulse-border,
+body.gs-sidebar-resizing .gs-agent-done-dot::before {
   animation-play-state: paused;
 }

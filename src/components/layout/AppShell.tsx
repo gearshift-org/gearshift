@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
 import { matchesAccelerator } from "@/lib/keybindings/registry"
@@ -631,21 +638,27 @@ export function AppShell() {
   const navigateToProject = useCallback(
     (id: string | null, tabId?: string) => {
       if (stateRestored) saveActiveProjectId(id ?? "")
-      if (!id) {
-        void navigate({ to: "/" })
-        return
-      }
-      if (tabId) {
-        void navigate({
-          to: "/projects/$projectId/tabs/$tabId",
-          params: { projectId: id, tabId },
-        })
-      } else {
-        void navigate({
-          to: "/projects/$projectId",
-          params: { projectId: id },
-        })
-      }
+      // Mark the switch as a non-urgent transition so React renders the new
+      // workspace tree (all the kept-alive terminals re-evaluating isActive)
+      // without blocking the main thread. Keeps sidebar animations like the
+      // agent spinner ticking smoothly mid-switch.
+      startTransition(() => {
+        if (!id) {
+          void navigate({ to: "/" })
+          return
+        }
+        if (tabId) {
+          void navigate({
+            to: "/projects/$projectId/tabs/$tabId",
+            params: { projectId: id, tabId },
+          })
+        } else {
+          void navigate({
+            to: "/projects/$projectId",
+            params: { projectId: id },
+          })
+        }
+      })
     },
     [navigate, stateRestored]
   )

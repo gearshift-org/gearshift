@@ -584,7 +584,7 @@ function TerminalTabContent({
     >
       {children.map((child, idx) => (
         <Fragment key={nodeKey(child)}>
-          {idx > 0 && <ResizableHandle />}
+          {idx > 0 && <ResizableHandle disableDoubleClick />}
           <ResizablePanel
             id={nodeKey(child)}
             minSize={10}

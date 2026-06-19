@@ -255,6 +255,11 @@ const appWindowApi = {
     ipcRenderer.on("window:focus", listener)
     return () => ipcRenderer.removeListener("window:focus", listener)
   },
+  // Bounce the macOS dock icon to draw attention while the app is in the
+  // background. "critical" bounces until the app is focused; "informational"
+  // bounces once. No-op on other platforms.
+  bounceDock: (type: "informational" | "critical" = "informational") =>
+    ipcRenderer.invoke("dock:bounce", type) as Promise<{ ok: boolean }>,
 }
 
 const fsApi = {

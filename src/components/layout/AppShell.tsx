@@ -2299,6 +2299,8 @@ export function AppShell() {
 
         if (!appVisibleAndFocused) {
           console.info("Agent complete: also showing desktop notification")
+          // Keep bouncing the dock until the user returns to the app.
+          window.appWindow?.bounceDock("critical").catch(() => null)
           if (typeof Notification !== "undefined") {
             try {
               const notification = new Notification(
@@ -2392,6 +2394,11 @@ export function AppShell() {
           onAutoClose: cleanupToast,
         }
       )
+
+      if (!appVisibleAndFocused) {
+        // Keep bouncing the dock until the user returns — input is required.
+        window.appWindow?.bounceDock("critical").catch(() => null)
+      }
 
       if (!appVisibleAndFocused && typeof Notification !== "undefined") {
         try {

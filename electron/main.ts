@@ -1504,6 +1504,23 @@ app.whenReady().then(async () => {
     return { ok: true }
   })
 
+  let dockBounceId: number | null = null
+  ipcMain.handle(
+    "dock:bounce",
+    (_event, type: "informational" | "critical" = "informational") => {
+      if (process.platform !== "darwin" || !app.dock) return { ok: false }
+      // Cancel any in-flight critical bounce so repeated notifications don't
+      // stack requests. A critical bounce auto-stops once the app is focused.
+      if (dockBounceId !== null) {
+        app.dock.cancelBounce(dockBounceId)
+        dockBounceId = null
+      }
+      const id = app.dock.bounce(type)
+      if (type === "critical") dockBounceId = id
+      return { ok: true }
+    }
+  )
+
   ipcMain.handle(
     "menu:showEditContext",
     (

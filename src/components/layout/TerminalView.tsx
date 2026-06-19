@@ -413,7 +413,7 @@ const TERMINAL_PTY_RESIZE_THROTTLE_MS = 120
 const COLUMN_REFLOW_DEBOUNCE_LINES = 200
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
-const RECAP_IDLE_DELAY_MS = 15000
+const RECAP_IDLE_DELAY_MS = 30000
 const TERMINAL_RECAP_BOX_ENABLED = true
 // Floating commit affordance temporarily disabled; keep the code path intact.
 const FLOATING_COMMIT_AFFORDANCE_ENABLED = false

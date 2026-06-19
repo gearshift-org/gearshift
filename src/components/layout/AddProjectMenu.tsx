@@ -135,7 +135,7 @@ export function AddProjectMenu({
     variant === "sidebar" ? (
       <DropdownMenuTrigger
         aria-label="Add project"
-        className="group/add flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors outline-none hover:bg-accent/40 hover:text-foreground"
+        className="group/add flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground"
       >
         <span className="grid size-4 shrink-0 place-items-center">
           <Plus className="size-3.5" />

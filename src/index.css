@@ -419,6 +419,39 @@
   --sidebar-ring: #3b78e7;
 }
 
+/* Light · Monokai Pro — Monokai Pro Light's warm cream UI with cyan accent */
+[data-theme="light-monokai-pro"] {
+  --background: #faf4f2;
+  --foreground: #29242a;
+  --card: #faf4f2;
+  --card-foreground: #29242a;
+  --popover: #fefaf9;
+  --popover-foreground: #29242a;
+  --secondary: #ede7e5;
+  --secondary-foreground: #29242a;
+  --muted: #ede7e5;
+  --muted-foreground: #706b6e;
+  --accent: #1c8ca8;
+  --accent-foreground: #ffffff;
+  --destructive: #e14775;
+  --border: #e0dad9;
+  --input: #ede7e5;
+  --ring: #1c8ca8;
+  --chart-1: #e14775;
+  --chart-2: #e16032;
+  --chart-3: #cc7a0a;
+  --chart-4: #269d69;
+  --chart-5: #1c8ca8;
+  --sidebar: #ede7e5;
+  --sidebar-foreground: #706b6e;
+  --sidebar-primary: #1c8ca8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e0dad9;
+  --sidebar-accent-foreground: #29242a;
+  --sidebar-border: #e0dad9;
+  --sidebar-ring: #1c8ca8;
+}
+
 /* Light · Claude — Claude app's warm cream UI with coral accent */
 [data-theme="light-claude"] {
   --background: #faf9f5;
@@ -736,6 +769,39 @@
   --sidebar-accent-foreground: #eeffff;
   --sidebar-border: #2c2c2c;
   --sidebar-ring: #82aaff;
+}
+
+/* Dark · Monokai Pro — Monokai Pro's muted plum UI with cyan accent */
+[data-theme="dark-monokai-pro"] {
+  --background: #2d2a2e;
+  --foreground: #fcfcfa;
+  --card: #2d2a2e;
+  --card-foreground: #fcfcfa;
+  --popover: #403e41;
+  --popover-foreground: #fcfcfa;
+  --secondary: #403e41;
+  --secondary-foreground: #fcfcfa;
+  --muted: #3a373b;
+  --muted-foreground: #939293;
+  --accent: #78dce8;
+  --accent-foreground: #2d2a2e;
+  --destructive: #ff6188;
+  --border: #403e41;
+  --input: #403e41;
+  --ring: #78dce8;
+  --chart-1: #ff6188;
+  --chart-2: #fc9867;
+  --chart-3: #ffd866;
+  --chart-4: #a9dc76;
+  --chart-5: #78dce8;
+  --sidebar: #221f22;
+  --sidebar-foreground: #939293;
+  --sidebar-primary: #78dce8;
+  --sidebar-primary-foreground: #2d2a2e;
+  --sidebar-accent: #403e41;
+  --sidebar-accent-foreground: #fcfcfa;
+  --sidebar-border: #19181a;
+  --sidebar-ring: #78dce8;
 }
 
 /* Dark · Claude — Claude app's warm near-black UI with coral accent */

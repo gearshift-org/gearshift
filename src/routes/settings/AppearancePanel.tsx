@@ -36,6 +36,7 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "light-night-owl": { bg: "#fbfbfb", fg: "#403f53", accent: "#2aa298" },
   "light-palenight": { bg: "#f7f7fb", fg: "#2f3354", accent: "#7e57c2" },
   "light-material-color": { bg: "#fafafa", fg: "#2e3235", accent: "#3b78e7" },
+  "light-monokai-pro": { bg: "#faf4f2", fg: "#29242a", accent: "#1c8ca8" },
   "light-claude": { bg: "#faf9f5", fg: "#3d3d3a", accent: "#d97757" },
   dark: { bg: "#191919", fg: "#d4d4d4", accent: "#007acc" },
   "dark-cool": { bg: "#171a1f", fg: "#d3d8e0", accent: "#4c8fd6" },
@@ -48,6 +49,7 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "dark-night-owl": { bg: "#011627", fg: "#d6deeb", accent: "#80a4c2" },
   "dark-palenight": { bg: "#292d3e", fg: "#bfc7d5", accent: "#7e57c2" },
   "dark-material-color": { bg: "#212121", fg: "#eeffff", accent: "#82aaff" },
+  "dark-monokai-pro": { bg: "#2d2a2e", fg: "#fcfcfa", accent: "#78dce8" },
   "dark-claude": { bg: "#262624", fg: "#c2c0b6", accent: "#d97757" },
 }
 

@@ -23,6 +23,7 @@ export const THEMES = {
   "light-night-owl": { label: "Night Owl", appearance: "light" },
   "light-palenight": { label: "Palenight", appearance: "light" },
   "light-material-color": { label: "Material Color", appearance: "light" },
+  "light-monokai-pro": { label: "Monokai Pro", appearance: "light" },
   "light-claude": { label: "Claude", appearance: "light" },
   dark: { label: "Default", appearance: "dark" },
   "dark-cool": { label: "Cool", appearance: "dark" },
@@ -35,6 +36,7 @@ export const THEMES = {
   "dark-night-owl": { label: "Night Owl", appearance: "dark" },
   "dark-palenight": { label: "Palenight", appearance: "dark" },
   "dark-material-color": { label: "Material Color", appearance: "dark" },
+  "dark-monokai-pro": { label: "Monokai Pro", appearance: "dark" },
   "dark-claude": { label: "Claude", appearance: "dark" },
 } as const satisfies Record<string, ThemeDefinition>
 

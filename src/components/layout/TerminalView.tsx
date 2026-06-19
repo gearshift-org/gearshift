@@ -257,6 +257,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
       selectionBackground: "#404040",
       selectionInactiveBackground: "#333333",
     },
+    "light-monokai-pro": {
+      background: "#faf4f2",
+      foreground: "#29242a",
+      cursor: "#1c8ca8",
+      selectionBackground: "#dcd4d2",
+      selectionForeground: "#29242a",
+      selectionInactiveBackground: "#ede7e5",
+    },
+    "dark-monokai-pro": {
+      background: "#2d2a2e",
+      foreground: "#fcfcfa",
+      cursor: "#78dce8",
+      selectionBackground: "#5b595c",
+      selectionInactiveBackground: "#403e41",
+    },
     "light-claude": {
       background: "#FDFDFC",
       foreground: "#3d3d3a",

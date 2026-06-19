@@ -21,6 +21,8 @@ export const THEMES = {
   "light-atom-one": { label: "Atom One", appearance: "light" },
   "light-nebula-pandas": { label: "Nebula Pandas", appearance: "light" },
   "light-night-owl": { label: "Night Owl", appearance: "light" },
+  "light-palenight": { label: "Palenight", appearance: "light" },
+  "light-material-color": { label: "Material Color", appearance: "light" },
   "light-claude": { label: "Claude", appearance: "light" },
   dark: { label: "Default", appearance: "dark" },
   "dark-cool": { label: "Cool", appearance: "dark" },
@@ -31,6 +33,8 @@ export const THEMES = {
   "dark-atom-one": { label: "Atom One", appearance: "dark" },
   "dark-nebula-pandas": { label: "Nebula Pandas", appearance: "dark" },
   "dark-night-owl": { label: "Night Owl", appearance: "dark" },
+  "dark-palenight": { label: "Palenight", appearance: "dark" },
+  "dark-material-color": { label: "Material Color", appearance: "dark" },
   "dark-claude": { label: "Claude", appearance: "dark" },
 } as const satisfies Record<string, ThemeDefinition>
 

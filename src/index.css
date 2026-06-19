@@ -353,6 +353,72 @@
   --sidebar-ring: #2aa298;
 }
 
+/* Light · Palenight — light companion to Material Palenight with purple accent */
+[data-theme="light-palenight"] {
+  --background: #f7f7fb;
+  --foreground: #2f3354;
+  --card: #f7f7fb;
+  --card-foreground: #2f3354;
+  --popover: #ffffff;
+  --popover-foreground: #2f3354;
+  --secondary: #ecedf5;
+  --secondary-foreground: #2f3354;
+  --muted: #ecedf5;
+  --muted-foreground: #6a6f93;
+  --accent: #7e57c2;
+  --accent-foreground: #ffffff;
+  --destructive: #e53757;
+  --border: #e0e1ee;
+  --input: #ecedf5;
+  --ring: #7e57c2;
+  --chart-1: #7e57c2;
+  --chart-2: #4876d6;
+  --chart-3: #e53757;
+  --chart-4: #c08b1f;
+  --chart-5: #5a9e3f;
+  --sidebar: #efeff6;
+  --sidebar-foreground: #2f3354;
+  --sidebar-primary: #7e57c2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4e2f2;
+  --sidebar-accent-foreground: #2f3354;
+  --sidebar-border: #e0e1ee;
+  --sidebar-ring: #7e57c2;
+}
+
+/* Light · Material Color — light companion to Material Color with green accent */
+[data-theme="light-material-color"] {
+  --background: #fafafa;
+  --foreground: #2e3235;
+  --card: #fafafa;
+  --card-foreground: #2e3235;
+  --popover: #ffffff;
+  --popover-foreground: #2e3235;
+  --secondary: #ececec;
+  --secondary-foreground: #2e3235;
+  --muted: #ececec;
+  --muted-foreground: #6a7679;
+  --accent: #3b78e7;
+  --accent-foreground: #ffffff;
+  --destructive: #e53757;
+  --border: #e0e0e0;
+  --input: #ececec;
+  --ring: #3b78e7;
+  --chart-1: #1faa4d;
+  --chart-2: #9750dd;
+  --chart-3: #e53757;
+  --chart-4: #c08b1f;
+  --chart-5: #3b78e7;
+  --sidebar: #f2f2f2;
+  --sidebar-foreground: #2e3235;
+  --sidebar-primary: #3b78e7;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4e4e4;
+  --sidebar-accent-foreground: #2e3235;
+  --sidebar-border: #e0e0e0;
+  --sidebar-ring: #3b78e7;
+}
+
 /* Light · Claude — Claude app's warm cream UI with coral accent */
 [data-theme="light-claude"] {
   --background: #faf9f5;
@@ -604,6 +670,72 @@
   --sidebar-accent-foreground: #d6deeb;
   --sidebar-border: #0b2942;
   --sidebar-ring: #80a4c2;
+}
+
+/* Dark · Palenight — Material Palenight's indigo UI with juicy purple accent */
+[data-theme="dark-palenight"] {
+  --background: #292d3e;
+  --foreground: #bfc7d5;
+  --card: #292d3e;
+  --card-foreground: #bfc7d5;
+  --popover: #31364a;
+  --popover-foreground: #bfc7d5;
+  --secondary: #31364a;
+  --secondary-foreground: #bfc7d5;
+  --muted: #313850;
+  --muted-foreground: #676e95;
+  --accent: #7e57c2;
+  --accent-foreground: #ffffff;
+  --destructive: #ff5370;
+  --border: #3a3f58;
+  --input: #313850;
+  --ring: #7e57c2;
+  --chart-1: #c792ea;
+  --chart-2: #82aaff;
+  --chart-3: #ff5572;
+  --chart-4: #ffcb6b;
+  --chart-5: #c3e88d;
+  --sidebar: #232635;
+  --sidebar-foreground: #8a8fb3;
+  --sidebar-primary: #7e57c2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #3a3f58;
+  --sidebar-accent-foreground: #bfc7d5;
+  --sidebar-border: #313850;
+  --sidebar-ring: #7e57c2;
+}
+
+/* Dark · Material Color — Material palette on neutral grey with green accent */
+[data-theme="dark-material-color"] {
+  --background: #212121;
+  --foreground: #eeffff;
+  --card: #212121;
+  --card-foreground: #eeffff;
+  --popover: #2a2a2a;
+  --popover-foreground: #eeffff;
+  --secondary: #333333;
+  --secondary-foreground: #eeffff;
+  --muted: #2c2c2c;
+  --muted-foreground: #8c9a9d;
+  --accent: #82aaff;
+  --accent-foreground: #11233f;
+  --destructive: #ff5370;
+  --border: #3a3a3a;
+  --input: #333333;
+  --ring: #82aaff;
+  --chart-1: #3ad45e;
+  --chart-2: #c792ea;
+  --chart-3: #ff5370;
+  --chart-4: #ffcb6b;
+  --chart-5: #c3e88d;
+  --sidebar: #1a1a1a;
+  --sidebar-foreground: #8c9a9d;
+  --sidebar-primary: #82aaff;
+  --sidebar-primary-foreground: #11233f;
+  --sidebar-accent: #333333;
+  --sidebar-accent-foreground: #eeffff;
+  --sidebar-border: #2c2c2c;
+  --sidebar-ring: #82aaff;
 }
 
 /* Dark · Claude — Claude app's warm near-black UI with coral accent */

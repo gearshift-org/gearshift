@@ -34,6 +34,8 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "light-atom-one": { bg: "#fafafa", fg: "#383a42", accent: "#4078f2" },
   "light-nebula-pandas": { bg: "#f8f6ff", fg: "#27273a", accent: "#6bc75f" },
   "light-night-owl": { bg: "#fbfbfb", fg: "#403f53", accent: "#2aa298" },
+  "light-palenight": { bg: "#f7f7fb", fg: "#2f3354", accent: "#7e57c2" },
+  "light-material-color": { bg: "#fafafa", fg: "#2e3235", accent: "#3b78e7" },
   "light-claude": { bg: "#faf9f5", fg: "#3d3d3a", accent: "#d97757" },
   dark: { bg: "#191919", fg: "#d4d4d4", accent: "#007acc" },
   "dark-cool": { bg: "#171a1f", fg: "#d3d8e0", accent: "#4c8fd6" },
@@ -44,6 +46,8 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "dark-atom-one": { bg: "#282c34", fg: "#abb2bf", accent: "#61afef" },
   "dark-nebula-pandas": { bg: "#27273a", fg: "#fcf6ff", accent: "#97ee91" },
   "dark-night-owl": { bg: "#011627", fg: "#d6deeb", accent: "#80a4c2" },
+  "dark-palenight": { bg: "#292d3e", fg: "#bfc7d5", accent: "#7e57c2" },
+  "dark-material-color": { bg: "#212121", fg: "#eeffff", accent: "#82aaff" },
   "dark-claude": { bg: "#262624", fg: "#c2c0b6", accent: "#d97757" },
 }
 

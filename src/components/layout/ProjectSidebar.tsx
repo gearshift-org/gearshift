@@ -253,7 +253,7 @@ function ProjectSidebarRow({
             {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
             {hasAttentionAgent && <AgentAttention className="shrink-0" />}
           </div>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-foreground/70">
             <span className="truncate">{subtitle ?? " "}</span>
             {changeCount > 0 && (
               <span

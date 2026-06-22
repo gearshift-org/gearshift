@@ -1160,9 +1160,13 @@
 }
 
 .gs-agent-spinner {
-  --agent-spinner: var(--ring);
+  /* Keep the theme's ring hue but pull it toward the foreground so the spinner
+     stays legible on muted/light themes where --ring is low-contrast. The mix
+     darkens on light themes and lightens on dark ones, so no brightness boost
+     (which washed out light themes) is needed. */
+  --agent-spinner: color-mix(in oklab, var(--ring) 60%, var(--foreground));
   color: var(--agent-spinner);
-  filter: brightness(1.35) saturate(1.2);
+  filter: saturate(1.15);
 }
 
 /* The reel stacks all 10 braille glyphs vertically (each one box tall) and

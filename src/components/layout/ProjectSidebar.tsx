@@ -259,10 +259,8 @@ function ProjectSidebarRow({
           <div className="flex min-w-0 items-center gap-1.5">
             <span
               className={cn(
-                "min-w-0 text-sm leading-tight font-medium",
-                compact
-                  ? "flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,#000_calc(100%-0.625rem),transparent)]"
-                  : "truncate"
+                "min-w-0 text-sm leading-tight font-medium truncate",
+                compact && "flex-1"
               )}
             >
               {p.name}
@@ -316,7 +314,7 @@ function ProjectSidebarRow({
             )
           }}
           aria-label={`${p.name} options`}
-          className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100"
+          className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 hover:[background-color:color-mix(in_oklab,var(--sidebar-accent),var(--foreground)_15%)]"
         >
           <EllipsisVertical className="size-3.5" />
         </button>

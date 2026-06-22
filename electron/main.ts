@@ -3069,6 +3069,10 @@ app.whenReady().then(async () => {
     }
   )
 
+  ipcMain.handle("term:history:latestByProject", async () => {
+    return chatDb.latestByProject()
+  })
+
   ipcMain.handle("term:history:delete", async (event, id: string) => {
     const msg = await chatDb.deleteMessage(id)
     if (!msg) return { ok: false }

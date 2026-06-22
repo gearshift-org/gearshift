@@ -136,6 +136,10 @@ const termApi = {
         projectId,
         limit
       ) as Promise<ChatHistoryMessage[]>,
+    latestByProject: () =>
+      ipcRenderer.invoke("term:history:latestByProject") as Promise<
+        Record<string, number>
+      >,
     delete: (id: string) =>
       ipcRenderer.invoke("term:history:delete", id) as Promise<{
         ok: boolean

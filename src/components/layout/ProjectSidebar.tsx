@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   DndContext,
   PointerSensor,
@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import {
+  ArrowDownUp,
   ChevronDown,
   EllipsisVertical,
   Focus,
@@ -42,6 +43,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   clearProjectAvatarImagePath,
@@ -49,10 +57,13 @@ import {
   loadCompactProjectSidebar,
   loadPinnedProjectPaths,
   loadProjectSidebarGroupOpen,
+  loadProjectSidebarSort,
   randomizeProjectColor,
   savePinnedProjectPaths,
   saveProjectSidebarGroupOpen,
+  saveProjectSidebarSort,
   setProjectAvatarImagePath,
+  type ProjectSortMode,
   type RecentProject,
 } from "@/lib/projects"
 import {
@@ -93,34 +104,83 @@ type Props = {
 
 type SidebarGroupHeaderProps = {
   label: string
-  count: number
   isOpen: boolean
   onToggle: () => void
+  action?: React.ReactNode
 }
 
 function SidebarGroupHeader({
   label,
-  count,
   isOpen,
   onToggle,
+  action,
 }: SidebarGroupHeaderProps) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
+    <div
+      role="button"
+      tabIndex={0}
       aria-expanded={isOpen}
-      className="flex h-8 w-full shrink-0 items-center justify-between rounded-sm px-2 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onToggle()
+        }
+      }}
+      className="group/group-header flex h-8 w-full shrink-0 cursor-pointer items-center justify-between gap-1 pr-1 pl-2 outline-none select-none"
     >
-      <span className="truncate">
-        {label} <span className="text-muted-foreground/60">{count}</span>
+      <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted-foreground/80 transition-colors group-hover/group-header:text-foreground">
+        <span className="truncate">{label}</span>
+        <ChevronDown
+          className={cn(
+            "size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover/group-header:opacity-100",
+            !isOpen && "-rotate-90"
+          )}
+        />
       </span>
-      <ChevronDown
-        className={cn(
-          "size-3.5 shrink-0 transition-transform",
-          !isOpen && "-rotate-90"
-        )}
-      />
-    </button>
+      {action && (
+        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          {action}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProjectSortMenu({
+  mode,
+  onChange,
+}: {
+  mode: ProjectSortMode
+  onChange: (mode: ProjectSortMode) => void
+}) {
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              aria-label="Sort projects"
+              className="grid size-5 place-items-center rounded-sm text-muted-foreground/80 transition-colors outline-none hover:text-foreground data-[popup-open]:text-foreground"
+            >
+              <ArrowDownUp className="size-3.5" />
+            </DropdownMenuTrigger>
+          }
+        />
+        <TooltipContent>Sort projects</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="min-w-[160px]">
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={(v) => onChange(v as ProjectSortMode)}
+        >
+          <DropdownMenuRadioItem value="manual">Manual</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="recent">
+            Most recent
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -145,6 +205,7 @@ type RowProps = {
   isPinned: boolean
   onTogglePin: (path: string) => void
   compact: boolean
+  dragDisabled: boolean
 }
 
 function ProjectSidebarRow({
@@ -168,6 +229,7 @@ function ProjectSidebarRow({
   isPinned,
   onTogglePin,
   compact,
+  dragDisabled,
 }: RowProps) {
   const [, setColorVersion] = useState(0)
   const {
@@ -177,7 +239,7 @@ function ProjectSidebarRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: p.id })
+  } = useSortable({ id: p.id, disabled: dragDisabled })
 
   const style = {
     // Lock dragging to the vertical axis so rows can't overflow sideways.
@@ -470,6 +532,9 @@ export function ProjectSidebar({
     loadPinnedProjectPaths()
   )
   const [compact, setCompact] = useState(() => loadCompactProjectSidebar())
+  const [sortMode, setSortMode] = useState<ProjectSortMode>(() =>
+    loadProjectSidebarSort()
+  )
   useEffect(
     () =>
       store.onReady(() => {
@@ -478,9 +543,42 @@ export function ProjectSidebar({
         setProjectsOpen(groupOpen.projects)
         setPinnedPaths(loadPinnedProjectPaths())
         setCompact(loadCompactProjectSidebar())
+        setSortMode(loadProjectSidebarSort())
       }),
     []
   )
+  const changeSortMode = (mode: ProjectSortMode) => {
+    setSortMode(mode)
+    saveProjectSidebarSort(mode)
+  }
+  // Most-recent sort: order projects by their latest chat-message timestamp.
+  // Only fetched while that mode is active; refetched periodically as a
+  // fallback (live updates below keep it current on each new message).
+  const queryClient = useQueryClient()
+  const latestByProjectKey = ["history", "latestByProject"]
+  const { data: latestByProject } = useQuery({
+    queryKey: latestByProjectKey,
+    queryFn: () => window.term.history.latestByProject(),
+    enabled: sortMode === "recent",
+    refetchInterval: sortMode === "recent" ? 60000 : false,
+  })
+  // Reorder instantly when a message is submitted in any project — mirror the
+  // History panel's live append subscription instead of waiting for a refetch.
+  const projectIdsKey = projects.map((p) => p.id).join(",")
+  useEffect(() => {
+    if (sortMode !== "recent") return
+    const ids = projectIdsKey ? projectIdsKey.split(",") : []
+    const offs = ids.map((id) =>
+      window.term.history.onProjectAppended(id, (msg) => {
+        queryClient.setQueryData<Record<string, number>>(
+          latestByProjectKey,
+          (prev) => ({ ...(prev ?? {}), [id]: msg.createdAt })
+        )
+      })
+    )
+    return () => offs.forEach((off) => off())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortMode, projectIdsKey, queryClient])
   useEffect(() => {
     const onChange = (e: Event) =>
       setCompact((e as CustomEvent<boolean>).detail)
@@ -513,13 +611,23 @@ export function ProjectSidebar({
           p.path.toLowerCase().includes(normalizedFilter)
       )
     : focusVisibleProjects
-  // Pinned projects form their own group above the rest; order within each
-  // group still follows the master (drag-ordered) project order.
+  // Pinned projects form their own group above the rest. In manual mode each
+  // group follows the master (drag-ordered) order; in recent mode each group
+  // is ordered by latest activity (projects with no chat history sort last,
+  // keeping their relative manual order via a stable sort).
+  const sortByMode = (list: Project[]) => {
+    if (sortMode !== "recent") return list
+    const ts = latestByProject ?? {}
+    return [...list].sort((a, b) => (ts[b.id] ?? 0) - (ts[a.id] ?? 0))
+  }
   const pinnedSet = new Set(pinnedPaths)
-  const pinnedProjects = filteredProjects.filter((p) => pinnedSet.has(p.path))
-  const unpinnedProjects = filteredProjects.filter(
-    (p) => !pinnedSet.has(p.path)
+  const pinnedProjects = sortByMode(
+    filteredProjects.filter((p) => pinnedSet.has(p.path))
   )
+  const unpinnedProjects = sortByMode(
+    filteredProjects.filter((p) => !pinnedSet.has(p.path))
+  )
+  const dragDisabled = sortMode !== "manual"
   const visibleProjects = [
     ...(pinnedOpen ? pinnedProjects : []),
     ...(projectsOpen ? unpinnedProjects : []),
@@ -671,7 +779,6 @@ export function ProjectSidebar({
               <>
                 <SidebarGroupHeader
                   label="Pinned"
-                  count={pinnedProjects.length}
                   isOpen={pinnedOpen}
                   onToggle={() => setPinnedOpen((open) => !open)}
                 />
@@ -699,15 +806,18 @@ export function ProjectSidebar({
                       isPinned={true}
                       onTogglePin={togglePin}
                       compact={compact}
+                      dragDisabled={dragDisabled}
                     />
                   ))}
               </>
             )}
             <SidebarGroupHeader
               label="Projects"
-              count={unpinnedProjects.length}
               isOpen={projectsOpen}
               onToggle={() => setProjectsOpen((open) => !open)}
+              action={
+                <ProjectSortMenu mode={sortMode} onChange={changeSortMode} />
+              }
             />
             {projectsOpen &&
               unpinnedProjects.map((p, i) => {
@@ -736,6 +846,7 @@ export function ProjectSidebar({
                     isPinned={false}
                     onTogglePin={togglePin}
                     compact={compact}
+                    dragDisabled={dragDisabled}
                   />
                 )
               })}

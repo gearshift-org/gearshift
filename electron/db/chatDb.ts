@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { app } from "electron"
 import { createClient, type Client } from "@libsql/client"
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql"
-import { and, asc, desc, eq, gte, lte, lt } from "drizzle-orm"
+import { and, asc, desc, eq, gte, isNotNull, lte, lt, sql } from "drizzle-orm"
 import { chatMessages } from "./schema"
 import { sanitizeChatHistoryBody } from "../redactSecrets"
 
@@ -84,6 +84,25 @@ export async function listForProject(
     .orderBy(desc(chatMessages.createdAt))
     .limit(limit)
   return rows.map(sanitizeMessage)
+}
+
+// Map of projectId → most-recent message timestamp (epoch ms). Used to sort
+// the project sidebar by recent activity.
+export async function latestByProject(): Promise<Record<string, number>> {
+  const handle = await ensureDb()
+  const rows = await handle
+    .select({
+      projectId: chatMessages.projectId,
+      latest: sql<number>`max(${chatMessages.createdAt})`,
+    })
+    .from(chatMessages)
+    .where(isNotNull(chatMessages.projectId))
+    .groupBy(chatMessages.projectId)
+  const map: Record<string, number> = {}
+  for (const row of rows) {
+    if (row.projectId) map[row.projectId] = Number(row.latest) || 0
+  }
+  return map
 }
 
 export async function listForSession(

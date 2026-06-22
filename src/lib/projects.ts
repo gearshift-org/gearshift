@@ -489,6 +489,28 @@ export function saveProjectSidebarGroupOpen(
   }
 }
 
+const PROJECT_SIDEBAR_SORT_KEY = "gearshift.projectSidebarSort"
+
+export type ProjectSortMode = "manual" | "recent"
+
+export function loadProjectSidebarSort(): ProjectSortMode {
+  try {
+    return store.get(PROJECT_SIDEBAR_SORT_KEY) === "recent"
+      ? "recent"
+      : "manual"
+  } catch {
+    return "manual"
+  }
+}
+
+export function saveProjectSidebarSort(mode: ProjectSortMode): void {
+  try {
+    store.set(PROJECT_SIDEBAR_SORT_KEY, mode)
+  } catch {
+    // ignore
+  }
+}
+
 const PINNED_PROJECT_PATHS_KEY = "gearshift.pinnedProjectPaths"
 
 // Pinned projects are keyed by path (stable across sessions, like recents).

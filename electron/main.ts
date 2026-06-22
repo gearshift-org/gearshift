@@ -3084,11 +3084,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "term:history:clearProject",
-    async (event, projectId: string) => {
-      await chatDb.clearForProject(projectId)
+    async (event, projectId: string, sinceMs?: number) => {
+      await chatDb.clearForProject(projectId, sinceMs)
       const sender = event.sender
       if (sender && !sender.isDestroyed()) {
-        sender.send(`term:history:projectCleared:${projectId}`)
+        sender.send(`term:history:projectCleared:${projectId}`, sinceMs)
       }
       return { ok: true }
     }

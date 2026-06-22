@@ -174,9 +174,21 @@ export async function clearForSession(sessionId: string): Promise<void> {
   await handle.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId))
 }
 
-export async function clearForProject(projectId: string): Promise<void> {
+// Clear a project's chat history. With `sinceMs`, only messages created at or
+// after that epoch-ms cutoff are removed; otherwise the whole project is wiped.
+export async function clearForProject(
+  projectId: string,
+  sinceMs?: number
+): Promise<void> {
   const handle = await ensureDb()
-  await handle.delete(chatMessages).where(eq(chatMessages.projectId, projectId))
+  const where =
+    sinceMs == null
+      ? eq(chatMessages.projectId, projectId)
+      : and(
+          eq(chatMessages.projectId, projectId),
+          gte(chatMessages.createdAt, sinceMs)
+        )
+  await handle.delete(chatMessages).where(where)
 }
 
 // Delete every message created before `cutoffMs` (epoch ms). Returns the

@@ -6,6 +6,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { SummarizeHistoryMenu } from "@/components/terminal/SummarizeHistoryMenu"
 import type { HistoryRange } from "@/lib/historySummary"
 import type { ChatHistoryMessage } from "../../../electron/preload"
@@ -14,6 +20,50 @@ type Props = {
   projectId: string | null
   reloadKey?: number
   onSummarize?: (range: HistoryRange) => void
+}
+
+type ClearRange = "today" | "this-week" | "last-30-days" | "all"
+
+const startOfToday = () => {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+// Each range resolves to the epoch-ms cutoff at/after which messages are
+// cleared. `all` returns undefined so the whole project is wiped.
+const CLEAR_RANGES: Record<
+  ClearRange,
+  { label: string; since: () => number | undefined }
+> = {
+  today: { label: "today", since: startOfToday },
+  "this-week": {
+    label: "this week",
+    since: () => {
+      const d = new Date(startOfToday())
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // Mon = start of week
+      return d.getTime()
+    },
+  },
+  "last-30-days": {
+    label: "the last 30 days",
+    since: () => startOfToday() - 30 * 24 * 60 * 60 * 1000,
+  },
+  all: { label: "all time", since: () => undefined },
+}
+
+const CLEAR_RANGE_ORDER: ClearRange[] = [
+  "today",
+  "this-week",
+  "last-30-days",
+  "all",
+]
+
+const CLEAR_RANGE_LABELS: Record<ClearRange, string> = {
+  today: "Today",
+  "this-week": "This week",
+  "last-30-days": "Last 30 days",
+  all: "All time",
 }
 
 function formatTime(ts: number): string {
@@ -67,9 +117,14 @@ export function ProjectChatHistoryPanel({
         })
       }
     )
-    const offClear = window.term.history.onProjectCleared(projectId, () => {
-      setMessages([])
-    })
+    const offClear = window.term.history.onProjectCleared(
+      projectId,
+      (sinceMs) => {
+        setMessages((prev) =>
+          sinceMs == null ? [] : prev.filter((m) => m.createdAt < sinceMs)
+        )
+      }
+    )
     const offDelete = window.term.history.onProjectDeleted(projectId, (id) => {
       setMessages((prev) => prev.filter((msg) => msg.id !== id))
     })
@@ -88,15 +143,16 @@ export function ProjectChatHistoryPanel({
     }
   }, [projectId, reloadKey])
 
-  const clearAll = async () => {
+  const clearHistory = async (range: ClearRange) => {
     if (!projectId) return
+    const { label, since } = CLEAR_RANGES[range]
     if (
       !window.confirm(
-        "Clear all chat history for this project? This cannot be undone."
+        `Clear chat history from ${label} for this project? This cannot be undone.`
       )
     )
       return
-    await window.term.history.clearProject(projectId)
+    await window.term.history.clearProject(projectId, since())
   }
 
   const deleteMessage = async (id: string) => {
@@ -126,22 +182,32 @@ export function ProjectChatHistoryPanel({
               className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
             />
           )}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  disabled={messages.length === 0}
-                  aria-label="Clear all chat history"
-                  className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground disabled:opacity-30"
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <DropdownMenuTrigger
+                    disabled={messages.length === 0}
+                    aria-label="Clear chat history"
+                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-foreground/10 hover:text-foreground disabled:opacity-30"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </DropdownMenuTrigger>
+                }
+              />
+              <TooltipContent>Clear chat history</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="min-w-[160px]">
+              {CLEAR_RANGE_ORDER.map((range) => (
+                <DropdownMenuItem
+                  key={range}
+                  onClick={() => void clearHistory(range)}
                 >
-                  <Trash2 className="size-3.5" />
-                </button>
-              }
-            />
-            <TooltipContent>Clear all chat history</TooltipContent>
-          </Tooltip>
+                  {CLEAR_RANGE_LABELS[range]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">

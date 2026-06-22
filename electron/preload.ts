@@ -144,8 +144,12 @@ const termApi = {
       ipcRenderer.invoke("term:history:clear", sessionId) as Promise<{
         ok: boolean
       }>,
-    clearProject: (projectId: string) =>
-      ipcRenderer.invoke("term:history:clearProject", projectId) as Promise<{
+    clearProject: (projectId: string, sinceMs?: number) =>
+      ipcRenderer.invoke(
+        "term:history:clearProject",
+        projectId,
+        sinceMs
+      ) as Promise<{
         ok: boolean
       }>,
     migrateProjectIds: (migrations: Array<{ from: string; to: string }>) =>
@@ -164,9 +168,9 @@ const termApi = {
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },
-    onProjectCleared: (projectId: string, cb: () => void) => {
+    onProjectCleared: (projectId: string, cb: (sinceMs?: number) => void) => {
       const channel = `term:history:projectCleared:${projectId}`
-      const listener = () => cb()
+      const listener = (_e: unknown, sinceMs?: number) => cb(sinceMs)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },

@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import {
   ChevronDown,
+  EllipsisVertical,
   Focus,
   GitBranch,
   PanelLeft,
@@ -256,7 +257,14 @@ function ProjectSidebarRow({
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm leading-tight font-medium">
+            <span
+              className={cn(
+                "min-w-0 text-sm leading-tight font-medium",
+                compact
+                  ? "flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,#000_calc(100%-1.25rem),transparent)]"
+                  : "truncate"
+              )}
+            >
               {p.name}
             </span>
             {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
@@ -280,34 +288,75 @@ function ProjectSidebarRow({
         {compact && changeCount > 0 && (
           <span
             title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
-            className={cn(
-              "absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums",
-              canClose && "group-hover:opacity-0"
-            )}
+            className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums transition-opacity group-hover:opacity-0"
           >
             <GitBranch className="size-3" />
             {changeCount}
           </span>
         )}
-        {canClose && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation()
-              onClose?.(p.id)
-            }}
-            aria-label={`Close ${p.name}`}
-            className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100"
-          >
-            <X className="size-3.5" />
-          </button>
-        )}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            // Reuse the existing right-click context menu: dispatch a synthetic
+            // contextmenu event on the trigger row so the same menu opens.
+            const trigger = e.currentTarget.parentElement
+            const rect = e.currentTarget.getBoundingClientRect()
+            trigger?.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                clientX: rect.right,
+                clientY: rect.bottom,
+              })
+            )
+          }}
+          aria-label={`${p.name} options`}
+          className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground focus-visible:opacity-100"
+        >
+          <EllipsisVertical className="size-3.5" />
+        </button>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
-        <ContextMenuItem onClick={() => onClose?.(p.id)} disabled={!canClose}>
+        {/* Primary per-project actions */}
+        <ContextMenuItem onClick={() => onTogglePin(p.path)}>
+          {isPinned ? (
+            <PinOff className="size-3.5" />
+          ) : (
+            <Pin className="size-3.5" />
+          )}
+          {isPinned ? "Unpin Project" : "Pin Project"}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() =>
+            isFocusMode ? onRemoveFromFocus?.(p.id) : onFocusProject?.(p.id)
+          }
+        >
+          <Focus className="size-3.5" />
+          {isFocusMode ? "Remove from Focus" : "Focus Mode"}
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={() => onClose?.(p.id)}
+          disabled={!canClose}
+        >
+          <X className="size-3.5" />
           Remove
         </ContextMenuItem>
+
+        {/* Appearance */}
+        <ContextMenuSeparator className="bg-foreground/15" />
+        <ContextMenuItem onClick={chooseAvatarImage}>
+          Choose Avatar Image…
+        </ContextMenuItem>
+        <ContextMenuItem onClick={clearAvatarImage}>
+          Remove Avatar Image
+        </ContextMenuItem>
+        <ContextMenuItem onClick={randomizeAvatarColor}>
+          Randomize Avatar Color
+        </ContextMenuItem>
+
+        {/* Bulk cleanup */}
+        <ContextMenuSeparator className="bg-foreground/15" />
         <ContextMenuItem
           onClick={() => onCloseAllTerminals?.(p.id)}
           disabled={!onCloseAllTerminals || terminalCount === 0}
@@ -326,36 +375,11 @@ function ProjectSidebarRow({
         >
           Remove Other Projects
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onTogglePin(p.path)}>
-          {isPinned ? (
-            <PinOff className="size-3.5" />
-          ) : (
-            <Pin className="size-3.5" />
-          )}
-          {isPinned ? "Unpin Project" : "Pin Project"}
-        </ContextMenuItem>
-        <ContextMenuItem
-          onClick={() =>
-            isFocusMode ? onRemoveFromFocus?.(p.id) : onFocusProject?.(p.id)
-          }
-        >
-          <Focus className="size-3.5" />
-          {isFocusMode ? "Remove from Focus" : "Focus Mode"}
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={chooseAvatarImage}>
-          Choose Avatar Image…
-        </ContextMenuItem>
-        <ContextMenuItem onClick={clearAvatarImage}>
-          Remove Avatar Image
-        </ContextMenuItem>
-        <ContextMenuItem onClick={randomizeAvatarColor}>
-          Randomize Avatar Color
-        </ContextMenuItem>
-        {(onOpenInVSCode || onRevealInFinder) && (
+
+        {/* Open externally — last */}
+        {(onRevealInFinder || onOpenInVSCode) && (
           <>
-            <ContextMenuSeparator />
+            <ContextMenuSeparator className="bg-foreground/15" />
             {onRevealInFinder && (
               <ContextMenuItem onClick={() => onRevealInFinder(p.id)}>
                 Reveal in Finder

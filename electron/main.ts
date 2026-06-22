@@ -3081,8 +3081,44 @@ app.whenReady().then(async () => {
     console.error("[pty-daemon] failed to start", err)
   }
 
+  startHistoryRetentionSweep()
   createWindow()
 })
+
+const HISTORY_RETENTION_ENABLED_STATE_KEY = "gearshift.historyRetentionEnabled"
+const HISTORY_RETENTION_DAYS_STATE_KEY = "gearshift.historyRetentionDays"
+const HISTORY_RETENTION_MIN_DAYS = 1
+const HISTORY_RETENTION_DEFAULT_DAYS = 30
+const HISTORY_RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+let historyRetentionTimer: NodeJS.Timeout | undefined
+
+async function pruneChatHistory(): Promise<void> {
+  try {
+    const state = await readState()
+    // Enabled by default: only an explicit "0" disables the sweep.
+    if (state[HISTORY_RETENTION_ENABLED_STATE_KEY] === "0") return
+    const raw = state[HISTORY_RETENTION_DAYS_STATE_KEY]
+    const parsed = raw == null ? NaN : Math.floor(Number(raw))
+    const days = Number.isFinite(parsed)
+      ? Math.max(HISTORY_RETENTION_MIN_DAYS, parsed)
+      : HISTORY_RETENTION_DEFAULT_DAYS
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    const removed = await chatDb.pruneOlderThan(cutoff)
+    if (removed > 0) {
+      console.log(`[history] pruned ${removed} message(s) older than ${days}d`)
+    }
+  } catch (err) {
+    console.error("[history] retention sweep failed", err)
+  }
+}
+
+function startHistoryRetentionSweep(): void {
+  void pruneChatHistory()
+  historyRetentionTimer = setInterval(() => {
+    void pruneChatHistory()
+  }, HISTORY_RETENTION_SWEEP_INTERVAL_MS)
+}
 
 app.on("before-quit", () => {
   closeAgentHookServer()
@@ -3095,6 +3131,10 @@ app.on("before-quit", () => {
   sessionOwners.clear()
   sessionProjects.clear()
   inputCapture.disposeAll()
+  if (historyRetentionTimer) {
+    clearInterval(historyRetentionTimer)
+    historyRetentionTimer = undefined
+  }
   void chatDb.closeDb()
 })
 

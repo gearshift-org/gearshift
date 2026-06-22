@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { app } from "electron"
 import { createClient, type Client } from "@libsql/client"
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql"
-import { desc, eq } from "drizzle-orm"
+import { desc, eq, lt } from "drizzle-orm"
 import { chatMessages } from "./schema"
 import { sanitizeChatHistoryBody } from "../redactSecrets"
 
@@ -133,6 +133,16 @@ export async function clearForSession(sessionId: string): Promise<void> {
 export async function clearForProject(projectId: string): Promise<void> {
   const handle = await ensureDb()
   await handle.delete(chatMessages).where(eq(chatMessages.projectId, projectId))
+}
+
+// Delete every message created before `cutoffMs` (epoch ms). Returns the
+// number of rows removed. Used by the retention sweep.
+export async function pruneOlderThan(cutoffMs: number): Promise<number> {
+  const handle = await ensureDb()
+  const res = await handle
+    .delete(chatMessages)
+    .where(lt(chatMessages.createdAt, cutoffMs))
+  return res.rowsAffected ?? 0
 }
 
 export async function migrateProjectIds(

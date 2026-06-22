@@ -957,7 +957,7 @@ export function RightSidebar({
               className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
               Git
-              {tab !== "git" && hasData && files.length > 0 && (
+              {hasData && files.length > 0 && (
                 <ChangeCountBadge count={files.length} />
               )}
             </TabsTrigger>
@@ -1003,9 +1003,6 @@ export function RightSidebar({
                   className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
                 >
                   Changes
-                  {hasData && files.length > 0 && (
-                    <ChangeCountBadge count={files.length} />
-                  )}
                 </TabsTrigger>
                 <TabsTrigger
                   value="commits"

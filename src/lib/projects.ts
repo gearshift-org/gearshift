@@ -496,6 +496,11 @@ export function savePinnedProjectPaths(paths: string[]): void {
 
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
+const HISTORY_RETENTION_ENABLED_KEY = "gearshift.historyRetentionEnabled"
+const HISTORY_RETENTION_DAYS_KEY = "gearshift.historyRetentionDays"
+
+export const HISTORY_RETENTION_DEFAULT_DAYS = 30
+export const HISTORY_RETENTION_MIN_DAYS = 1
 
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
 export type RightSidebarTab = "git" | "files" | "history"
@@ -536,6 +541,43 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
         })
       )
     }
+  } catch {
+    // ignore
+  }
+}
+
+export function loadHistoryRetentionEnabled(): boolean {
+  try {
+    // Enabled by default: only an explicit "0" disables it.
+    return store.get(HISTORY_RETENTION_ENABLED_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveHistoryRetentionEnabled(enabled: boolean): void {
+  try {
+    store.set(HISTORY_RETENTION_ENABLED_KEY, enabled ? "1" : "0")
+  } catch {
+    // ignore
+  }
+}
+
+export function loadHistoryRetentionDays(): number {
+  try {
+    const raw = store.get(HISTORY_RETENTION_DAYS_KEY)
+    const n = raw == null ? NaN : Math.floor(Number(raw))
+    if (!Number.isFinite(n)) return HISTORY_RETENTION_DEFAULT_DAYS
+    return Math.max(HISTORY_RETENTION_MIN_DAYS, n)
+  } catch {
+    return HISTORY_RETENTION_DEFAULT_DAYS
+  }
+}
+
+export function saveHistoryRetentionDays(days: number): void {
+  try {
+    const n = Math.max(HISTORY_RETENTION_MIN_DAYS, Math.floor(days))
+    store.set(HISTORY_RETENTION_DAYS_KEY, String(n))
   } catch {
     // ignore
   }

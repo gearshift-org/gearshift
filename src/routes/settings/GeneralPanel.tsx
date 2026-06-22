@@ -1,9 +1,19 @@
 import * as React from "react"
-import { PanelTop } from "lucide-react"
+import { PanelTop, History } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import { loadAutoHideTitleBar, saveAutoHideTitleBar } from "@/lib/projects"
+import {
+  loadAutoHideTitleBar,
+  saveAutoHideTitleBar,
+  loadHistoryRetentionEnabled,
+  saveHistoryRetentionEnabled,
+  loadHistoryRetentionDays,
+  saveHistoryRetentionDays,
+  HISTORY_RETENTION_DEFAULT_DAYS,
+  HISTORY_RETENTION_MIN_DAYS,
+} from "@/lib/projects"
 import { cn } from "@/lib/utils"
 import { store } from "@/lib/store"
+import { Input } from "@/components/ui/input"
 
 type SettingToggleProps = {
   icon: LucideIcon
@@ -59,10 +69,18 @@ export function GeneralPanel() {
   const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
     loadAutoHideTitleBar()
   )
+  const [retentionEnabled, setRetentionEnabled] = React.useState(() =>
+    loadHistoryRetentionEnabled()
+  )
+  const [retentionDays, setRetentionDays] = React.useState(() =>
+    String(loadHistoryRetentionDays())
+  )
   React.useEffect(
     () =>
       store.onReady(() => {
         setAutoHideTitleBar(loadAutoHideTitleBar())
+        setRetentionEnabled(loadHistoryRetentionEnabled())
+        setRetentionDays(String(loadHistoryRetentionDays()))
       }),
     []
   )
@@ -70,6 +88,21 @@ export function GeneralPanel() {
   const updateAutoHideTitleBar = (enabled: boolean) => {
     setAutoHideTitleBar(enabled)
     saveAutoHideTitleBar(enabled)
+  }
+
+  const updateRetentionEnabled = (enabled: boolean) => {
+    setRetentionEnabled(enabled)
+    saveHistoryRetentionEnabled(enabled)
+  }
+
+  const commitRetentionDays = (raw: string) => {
+    const parsed = Math.floor(Number(raw))
+    const next =
+      raw.trim() !== "" && Number.isFinite(parsed)
+        ? Math.max(HISTORY_RETENTION_MIN_DAYS, parsed)
+        : HISTORY_RETENTION_DEFAULT_DAYS
+    setRetentionDays(String(next))
+    saveHistoryRetentionDays(next)
   }
 
   return (
@@ -89,6 +122,34 @@ export function GeneralPanel() {
           checked={autoHideTitleBar}
           onChange={updateAutoHideTitleBar}
         />
+        <SettingToggle
+          icon={History}
+          label="Auto-delete chat history"
+          description="Automatically prune stored chat messages older than the chosen number of days."
+          checked={retentionEnabled}
+          onChange={updateRetentionEnabled}
+        />
+        {retentionEnabled ? (
+          <div className="flex items-center gap-3 px-4 py-3 pl-11">
+            <label
+              htmlFor="history-retention-days"
+              className="min-w-0 flex-1 text-sm text-foreground"
+            >
+              Keep messages for
+            </label>
+            <Input
+              id="history-retention-days"
+              inputMode="numeric"
+              value={retentionDays}
+              onChange={(e) =>
+                setRetentionDays(e.target.value.replace(/\D/g, ""))
+              }
+              onBlur={(e) => commitRetentionDays(e.target.value)}
+              className="w-14 text-right"
+            />
+            <span className="text-sm text-muted-foreground">days</span>
+          </div>
+        ) : null}
       </div>
     </div>
   )

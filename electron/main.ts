@@ -41,6 +41,12 @@ import {
   type TerminalAgentName,
 } from "./agentHooks"
 import { getAgentSessionTitle } from "./agentSessionTitle"
+import {
+  startHistoryServer,
+  closeHistoryServer,
+  getHistoryServerPort,
+  type HistoryServerProject,
+} from "./historyServer"
 
 type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 
@@ -301,6 +307,34 @@ interface StoredProjectShape {
   tabs?: StoredTabShape[]
 }
 
+// Sync read of the persisted project list (id/name/path) for the local history
+// server's id → name enrichment. Reads the state file directly to stay sync and
+// side-effect free; called only on the rare HTTP request.
+function historyServerProjects(): HistoryServerProject[] {
+  try {
+    const raw = readFileSync(stateFilePath(), "utf8")
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const projectsRaw = parsed["gearshift.projects"]
+    if (typeof projectsRaw !== "string") return []
+    const projects = JSON.parse(projectsRaw) as unknown
+    if (!Array.isArray(projects)) return []
+    return projects
+      .filter(
+        (p): p is { id: string; name?: string; path?: string } =>
+          !!p &&
+          typeof p === "object" &&
+          typeof (p as { id?: unknown }).id === "string"
+      )
+      .map((p) => ({
+        id: p.id,
+        ...(typeof p.name === "string" ? { name: p.name } : {}),
+        ...(typeof p.path === "string" ? { path: p.path } : {}),
+      }))
+  } catch {
+    return []
+  }
+}
+
 async function collectPersistedSessionIds(): Promise<Set<string>> {
   const state = await readState()
   const raw = state["gearshift.projects"]
@@ -433,10 +467,7 @@ function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
 async function listProcessChildren(): Promise<
   Map<number, Array<{ pid: number; command: string }>>
 > {
-  const { stdout } = await execFileP("/bin/ps", [
-    "-axo",
-    "pid=,ppid=,command=",
-  ])
+  const { stdout } = await execFileP("/bin/ps", ["-axo", "pid=,ppid=,command="])
   const childrenByParent = new Map<
     number,
     Array<{ pid: number; command: string }>
@@ -1426,6 +1457,8 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.warn("[agent-hooks] socket server failed", err)
   }
+  // Local, loopback-only HTTP API that serves chat history to agents/tools.
+  void startHistoryServer({ getProjects: historyServerProjects })
   // Writing hook configs / plugins / extensions is pure file I/O across
   // several agent dirs and was previously blocking window creation. Run it in
   // the background — agents launched before it finishes will simply miss the
@@ -2950,13 +2983,18 @@ app.whenReady().then(async () => {
     return daemonClient?.snapshot(id) ?? ""
   })
 
-  ipcMain.on("term:write", (_e, id: string, data: string) => {
-    daemonClient?.write(id, data)
-    if (data.includes("\r") || data.includes("\n")) {
-      sessionLastEnter.set(id, Date.now())
+  ipcMain.on(
+    "term:write",
+    (_e, id: string, data: string, skipCapture?: boolean) => {
+      daemonClient?.write(id, data)
+      if (data.includes("\r") || data.includes("\n")) {
+        sessionLastEnter.set(id, Date.now())
+      }
+      // App-injected writes (e.g. summarize prompts) pass skipCapture to keep
+      // them out of the user's chat history.
+      if (!skipCapture) void captureInput(id, data)
     }
-    void captureInput(id, data)
-  })
+  )
 
   ipcMain.on("term:resize", (_e, id: string, cols: number, rows: number) => {
     try {
@@ -3015,6 +3053,10 @@ app.whenReady().then(async () => {
     runningShellCommands.delete(id)
     inputCapture.dispose(id)
   })
+
+  ipcMain.handle("history:serverInfo", () => ({
+    port: getHistoryServerPort(),
+  }))
 
   ipcMain.handle("term:history:list", async (_e, sessionId: string) => {
     return chatDb.listForSession(sessionId)
@@ -3122,6 +3164,7 @@ function startHistoryRetentionSweep(): void {
 
 app.on("before-quit", () => {
   closeAgentHookServer()
+  closeHistoryServer()
   cliOpenServer?.close()
   cliOpenServer = null
   // Sessions outlive Electron. Just detach the client; the daemon keeps

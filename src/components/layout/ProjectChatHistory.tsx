@@ -6,11 +6,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { SummarizeHistoryMenu } from "@/components/terminal/SummarizeHistoryMenu"
+import type { HistoryRange } from "@/lib/historySummary"
 import type { ChatHistoryMessage } from "../../../electron/preload"
 
 type Props = {
   projectId: string | null
   reloadKey?: number
+  onSummarize?: (range: HistoryRange) => void
 }
 
 function formatTime(ts: number): string {
@@ -31,7 +34,11 @@ function formatTime(ts: number): string {
   })
 }
 
-export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
+export function ProjectChatHistoryPanel({
+  projectId,
+  reloadKey = 0,
+  onSummarize,
+}: Props) {
   const [messages, setMessages] = useState<ChatHistoryMessage[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -111,22 +118,31 @@ export function ProjectChatHistoryPanel({ projectId, reloadKey = 0 }: Props) {
         <span>
           {messages.length} message{messages.length === 1 ? "" : "s"}
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={clearAll}
-                disabled={messages.length === 0}
-                aria-label="Clear all chat history"
-                className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground disabled:opacity-30"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            }
-          />
-          <TooltipContent>Clear all chat history</TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-0.5">
+          {onSummarize && (
+            <SummarizeHistoryMenu
+              onSelect={onSummarize}
+              disabled={messages.length === 0}
+              className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            />
+          )}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  disabled={messages.length === 0}
+                  aria-label="Clear all chat history"
+                  className="grid size-5 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground disabled:opacity-30"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>Clear all chat history</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         {loading && messages.length === 0 ? (

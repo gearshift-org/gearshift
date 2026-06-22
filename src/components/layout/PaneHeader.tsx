@@ -7,8 +7,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { toast } from "sonner"
 import { paneDisplayName } from "./terminalName"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
+import { SummarizeHistoryMenu } from "@/components/terminal/SummarizeHistoryMenu"
+import {
+  summarizeHistoryToAgent,
+  type HistoryRange,
+} from "@/lib/historySummary"
 // AgentSpinner kept for when the header busy spinner is restored.
 // import { AgentSpinner } from "./AgentSpinner"
 import { AgentIcon } from "./AgentIcon"
@@ -26,7 +32,6 @@ type Props = {
   onSplitHorizontal: () => void
   onSplitVertical: () => void
 }
-
 
 export function PaneHeader({
   pane,
@@ -71,6 +76,19 @@ export function PaneHeader({
   }
   const cancel = () => setEditing(false)
 
+  // Summarize this terminal's own conversation into its running agent.
+  const handleSummarize = (range: HistoryRange) => {
+    if (!pane.agentStatus?.running || !pane.sessionId) {
+      toast.error("This terminal needs a running agent to summarize")
+      return
+    }
+    void summarizeHistoryToAgent({
+      sessionId: pane.sessionId,
+      scope: { sessionId: pane.sessionId },
+      range,
+    })
+  }
+
   const agentWorking = pane.agentStatus?.working
   const agentNeedsAttention = pane.agentStatus?.needsAttention
   const agentDone =
@@ -95,14 +113,17 @@ export function PaneHeader({
       }}
       className={cn(
         "relative flex h-[34px] shrink-0 cursor-default items-center gap-0.5 overflow-hidden border-b border-border bg-background px-3 text-xs text-foreground/80 select-none",
-        isActive && "bg-muted/60 text-foreground",
+        isActive && "bg-muted/60 text-foreground"
       )}
     >
       {agentWorking ? (
         <span className="gs-agent-header-scan pointer-events-none absolute top-0 left-0 h-0.5 w-1/2" />
       ) : null}
       {agentActive ? (
-        <AgentIcon agent={pane.agentStatus?.agentName} className="mr-1 size-3.5" />
+        <AgentIcon
+          agent={pane.agentStatus?.agentName}
+          className="mr-1 size-3.5"
+        />
       ) : null}
       {/* Busy spinner hidden for now — the scanning border above already
           signals "agent working". Done/attention are signaled by the pulsing
@@ -122,7 +143,7 @@ export function PaneHeader({
             else if (e.key === "Escape") cancel()
           }}
           onBlur={commit}
-          className="h-5 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 font-mono text-[11px] text-foreground outline-none ring-1 ring-ring/40"
+          className="h-5 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 font-mono text-[11px] text-foreground ring-1 ring-ring/40 outline-none"
         />
       ) : (
         // The name span is the ONLY drag handle. Buttons sit outside the
@@ -131,13 +152,16 @@ export function PaneHeader({
         <span
           {...attributes}
           {...listeners}
-          className="min-w-0 flex-1 truncate cursor-grab active:cursor-grabbing"
+          className="min-w-0 flex-1 cursor-grab truncate active:cursor-grabbing"
         >
           {paneDisplayName(pane, index)}
         </span>
       )}
       {pane.sessionId && !editing ? (
-        <TerminalHistoryButton sessionId={pane.sessionId} />
+        <>
+          <SummarizeHistoryMenu onSelect={handleSummarize} stopPropagation />
+          <TerminalHistoryButton sessionId={pane.sessionId} />
+        </>
       ) : null}
       {showSplit && !editing ? (
         <>

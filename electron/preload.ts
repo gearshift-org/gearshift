@@ -47,7 +47,8 @@ const termApi = {
     }>,
   snapshot: (id: string) =>
     ipcRenderer.invoke("term:snapshot", id) as Promise<string>,
-  write: (id: string, data: string) => ipcRenderer.send("term:write", id, data),
+  write: (id: string, data: string, skipCapture?: boolean) =>
+    ipcRenderer.send("term:write", id, data, skipCapture),
   resize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send("term:resize", id, cols, rows),
   kill: (id: string) => ipcRenderer.send("term:kill", id),
@@ -123,6 +124,8 @@ const termApi = {
     return () => ipcRenderer.removeListener(channel, listener)
   },
   history: {
+    serverInfo: () =>
+      ipcRenderer.invoke("history:serverInfo") as Promise<{ port: number }>,
     list: (sessionId: string) =>
       ipcRenderer.invoke("term:history:list", sessionId) as Promise<
         ChatHistoryMessage[]

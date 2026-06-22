@@ -61,6 +61,7 @@ import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { ChangeCountBadge } from "./ChangeCountBadge"
 import { FilesTree } from "./FilesTree"
 import { ProjectChatHistoryPanel } from "./ProjectChatHistory"
+import type { HistoryRange } from "@/lib/historySummary"
 import { setPathDragData } from "@/lib/pathDrag"
 import type { RightSidebarTab } from "@/lib/projects"
 import {
@@ -82,6 +83,9 @@ import {
   type CommitInfo,
 } from "@/lib/gitStatusQuery"
 
+// Commit-summarize menu is hidden for now (chat-history summary lives on the
+// History tab). Flip to true to bring it back.
+const SHOW_COMMIT_SUMMARIZE: boolean = false
 const REFRESH_DEBOUNCE_MS = 350
 const POLL_INTERVAL_MS = 4000
 const POLL_INTERVAL_LARGE_MS = 10000
@@ -129,6 +133,7 @@ type Props = {
     subject: string
   }) => void
   onSummarizeHistory?: (agent: string) => void
+  onSummarizeChat?: (range: HistoryRange) => void
   topRightActions?: React.ReactNode
 }
 
@@ -143,6 +148,7 @@ export function RightSidebar({
   onOpenFile,
   onOpenCommit,
   onSummarizeHistory,
+  onSummarizeChat,
   topRightActions,
 }: Props) {
   const [internalTab, setInternalTab] = useState<RightSidebarTab>("git")
@@ -974,9 +980,11 @@ export function RightSidebar({
               History
             </TabsTrigger>
           </TabsList>
-          {(onSummarizeHistory || topRightActions) && (
+          {topRightActions && (
             <div className="ml-auto flex items-center gap-0.5 [-webkit-app-region:no-drag]">
-              {onSummarizeHistory && (
+              {/* Summarize-commits menu hidden for now; chat-history summary
+                  lives on the History tab itself. */}
+              {SHOW_COMMIT_SUMMARIZE && onSummarizeHistory && (
                 <SummarizeMenu onSummarize={onSummarizeHistory} />
               )}
               {topRightActions}
@@ -997,34 +1005,34 @@ export function RightSidebar({
                 parent tab. Keep the triggers/content below for when Commits
                 and PRs are re-enabled. */}
             {false && (
-            <div className="flex h-[34px] shrink-0 items-center border-b border-border/60 px-3">
-              <TabsList
-                variant="line"
-                className="h-full gap-1 bg-transparent p-0"
-              >
-                <TabsTrigger
-                  value="changes"
-                  className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 hover:text-foreground data-active:!text-foreground after:!bottom-0"
+              <div className="flex h-[34px] shrink-0 items-center border-b border-border/60 px-3">
+                <TabsList
+                  variant="line"
+                  className="h-full gap-1 bg-transparent p-0"
                 >
-                  Changes
-                </TabsTrigger>
-                <TabsTrigger
-                  value="commits"
-                  className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 hover:text-foreground data-active:!text-foreground after:!bottom-0"
-                >
-                  Commits
-                </TabsTrigger>
-                <TabsTrigger
-                  value="prs"
-                  className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 hover:text-foreground data-active:!text-foreground after:!bottom-0"
-                >
-                  PRs
-                  {pullRequests.length > 0 && (
-                    <ChangeCountBadge count={pullRequests.length} />
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </div>
+                  <TabsTrigger
+                    value="changes"
+                    className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 after:!bottom-0 hover:text-foreground data-active:!text-foreground"
+                  >
+                    Changes
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="commits"
+                    className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 after:!bottom-0 hover:text-foreground data-active:!text-foreground"
+                  >
+                    Commits
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="prs"
+                    className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 after:!bottom-0 hover:text-foreground data-active:!text-foreground"
+                  >
+                    PRs
+                    {pullRequests.length > 0 && (
+                      <ChangeCountBadge count={pullRequests.length} />
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
             )}
             <TabsContent
               value="changes"
@@ -1283,40 +1291,40 @@ export function RightSidebar({
             </TabsContent>
             {false && (
               <>
-            <TabsContent
-              value="prs"
-              keepMounted
-              className="min-h-0 flex-1 overflow-hidden"
-            >
-              <PullRequestsPanel
-                cwd={cwd}
-                notRepo={notRepo}
-                loading={pullRequestsQuery.isLoading}
-                error={currentActionError ?? pullRequestsError}
-                ghAvailable={pullRequestsGhAvailable}
-                pullRequests={pullRequests}
-                hasChanges={files.length > 0}
-                checkingOutNumber={checkingOutPrNumber}
-                onCheckout={(pr) => void checkoutPullRequestBranch(pr)}
-              />
-            </TabsContent>
-            <TabsContent
-              value="commits"
-              keepMounted
-              className="min-h-0 flex-1 overflow-hidden"
-            >
-              <CommitHistoryPanel
-                cwd={cwd}
-                notRepo={notRepo}
-                loading={commitsQuery.isLoading}
-                error={commitsError}
-                commits={commits}
-                hasNextPage={commitsQuery.hasNextPage}
-                isFetchingNextPage={commitsQuery.isFetchingNextPage}
-                onLoadMore={() => void commitsQuery.fetchNextPage()}
-                onOpen={onOpenCommit}
-              />
-            </TabsContent>
+                <TabsContent
+                  value="prs"
+                  keepMounted
+                  className="min-h-0 flex-1 overflow-hidden"
+                >
+                  <PullRequestsPanel
+                    cwd={cwd}
+                    notRepo={notRepo}
+                    loading={pullRequestsQuery.isLoading}
+                    error={currentActionError ?? pullRequestsError}
+                    ghAvailable={pullRequestsGhAvailable}
+                    pullRequests={pullRequests}
+                    hasChanges={files.length > 0}
+                    checkingOutNumber={checkingOutPrNumber}
+                    onCheckout={(pr) => void checkoutPullRequestBranch(pr)}
+                  />
+                </TabsContent>
+                <TabsContent
+                  value="commits"
+                  keepMounted
+                  className="min-h-0 flex-1 overflow-hidden"
+                >
+                  <CommitHistoryPanel
+                    cwd={cwd}
+                    notRepo={notRepo}
+                    loading={commitsQuery.isLoading}
+                    error={commitsError}
+                    commits={commits}
+                    hasNextPage={commitsQuery.hasNextPage}
+                    isFetchingNextPage={commitsQuery.isFetchingNextPage}
+                    onLoadMore={() => void commitsQuery.fetchNextPage()}
+                    onOpen={onOpenCommit}
+                  />
+                </TabsContent>
               </>
             )}
           </Tabs>
@@ -1343,7 +1351,10 @@ export function RightSidebar({
           keepMounted
           className="min-h-0 flex-1 overflow-hidden"
         >
-          <ProjectChatHistoryPanel projectId={projectId ?? null} />
+          <ProjectChatHistoryPanel
+            projectId={projectId ?? null}
+            onSummarize={onSummarizeChat}
+          />
         </TabsContent>
       </Tabs>
     </div>

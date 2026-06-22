@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { app } from "electron"
 import { createClient, type Client } from "@libsql/client"
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql"
-import { desc, eq, lt } from "drizzle-orm"
+import { and, asc, desc, eq, gte, lte, lt } from "drizzle-orm"
 import { chatMessages } from "./schema"
 import { sanitizeChatHistoryBody } from "../redactSecrets"
 
@@ -95,6 +95,50 @@ export async function listForSession(
     .from(chatMessages)
     .where(eq(chatMessages.sessionId, sessionId))
     .orderBy(desc(chatMessages.createdAt))
+  return rows.map(sanitizeMessage)
+}
+
+export type HistoryQuery = {
+  projectId?: string
+  sessionId?: string
+  /** Epoch ms, inclusive lower bound on created_at. */
+  since?: number
+  /** Epoch ms, inclusive upper bound on created_at. */
+  until?: number
+  /** Defaults to 50, hard-capped at 500. */
+  limit?: number
+  /** Order by created_at. Defaults to "desc" (newest first). */
+  order?: "asc" | "desc"
+}
+
+const HISTORY_DEFAULT_LIMIT = 50
+const HISTORY_MAX_LIMIT = 500
+
+// Unified read used by the local history HTTP API. Filters are all optional and
+// combined with AND; an empty query returns the most recent messages across
+// every project. Bodies are sanitized like every other read path.
+export async function queryMessages(
+  q: HistoryQuery
+): Promise<ChatHistoryMessage[]> {
+  const handle = await ensureDb()
+  const filters = []
+  if (q.projectId) filters.push(eq(chatMessages.projectId, q.projectId))
+  if (q.sessionId) filters.push(eq(chatMessages.sessionId, q.sessionId))
+  if (typeof q.since === "number")
+    filters.push(gte(chatMessages.createdAt, q.since))
+  if (typeof q.until === "number")
+    filters.push(lte(chatMessages.createdAt, q.until))
+  const limit = Math.min(
+    Math.max(1, Math.floor(q.limit ?? HISTORY_DEFAULT_LIMIT)),
+    HISTORY_MAX_LIMIT
+  )
+  const orderBy =
+    q.order === "asc"
+      ? asc(chatMessages.createdAt)
+      : desc(chatMessages.createdAt)
+  const base = handle.select().from(chatMessages)
+  const filtered = filters.length > 0 ? base.where(and(...filters)) : base
+  const rows = await filtered.orderBy(orderBy).limit(limit)
   return rows.map(sanitizeMessage)
 }
 

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { WorkspacePane } from "./WorkspacePane"
 import { RightSidebar } from "./RightSidebar"
+import type { HistoryRange } from "@/lib/historySummary"
 import {
   loadSidebarWidth,
   saveSidebarWidth,
@@ -82,6 +83,7 @@ type Props = {
     subject: string
   }) => void
   onSummarizeHistory?: (agent: string) => void
+  onSummarizeChat?: (range: HistoryRange) => void
   rightSidebarTab?: RightSidebarTab
   onRightSidebarTabChange?: (tab: RightSidebarTab) => void
   activeTreeFilePath?: string
@@ -117,6 +119,7 @@ export function WorkspaceSplit({
   onOpenFileTab,
   onOpenCommitTab,
   onSummarizeHistory,
+  onSummarizeChat,
   rightSidebarTab,
   onRightSidebarTabChange,
   activeTreeFilePath,
@@ -166,9 +169,13 @@ export function WorkspaceSplit({
   // which prevents full-screen agents from repainting at a transient skinny size.
   useEffect(() => {
     document.body.classList.add("gs-sidebar-resizing")
-    const id = window.setTimeout(() => {
-      if (!dragRef.current) document.body.classList.remove("gs-sidebar-resizing")
-    }, SIDEBAR_WIDTH_TRANSITION_MS + TERMINAL_RESIZE_SETTLE_MS + 50)
+    const id = window.setTimeout(
+      () => {
+        if (!dragRef.current)
+          document.body.classList.remove("gs-sidebar-resizing")
+      },
+      SIDEBAR_WIDTH_TRANSITION_MS + TERMINAL_RESIZE_SETTLE_MS + 50
+    )
     return () => window.clearTimeout(id)
   }, [sidebarOpen])
 
@@ -181,7 +188,8 @@ export function WorkspaceSplit({
       dragFrameRef.current = null
       const width = `${dragWidthRef.current}px`
       if (sidebarPanelRef.current) sidebarPanelRef.current.style.width = width
-      if (sidebarContentRef.current) sidebarContentRef.current.style.width = width
+      if (sidebarContentRef.current)
+        sidebarContentRef.current.style.width = width
     }
 
     const onMove = (e: MouseEvent) => {
@@ -207,7 +215,8 @@ export function WorkspaceSplit({
         sidebarPanelRef.current.style.width = widthPx
         sidebarPanelRef.current.style.transition = ""
       }
-      if (sidebarContentRef.current) sidebarContentRef.current.style.width = widthPx
+      if (sidebarContentRef.current)
+        sidebarContentRef.current.style.width = widthPx
       setSidebarWidth(width)
       setIsDragging(false)
       document.body.style.cursor = ""
@@ -233,7 +242,8 @@ export function WorkspaceSplit({
     e.preventDefault()
     dragRef.current = { startX: e.clientX, startWidth: sidebarWidth }
     dragWidthRef.current = sidebarWidth
-    if (sidebarPanelRef.current) sidebarPanelRef.current.style.transition = "none"
+    if (sidebarPanelRef.current)
+      sidebarPanelRef.current.style.transition = "none"
     setIsDragging(true)
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
@@ -345,6 +355,7 @@ export function WorkspaceSplit({
             onOpenFile={onOpenFileTab}
             onOpenCommit={onOpenCommitTab}
             onSummarizeHistory={onSummarizeHistory}
+            onSummarizeChat={onSummarizeChat}
             topRightActions={sidebarTopActions}
           />
         </div>

@@ -18,6 +18,11 @@ import { TitleBar } from "./TitleBar"
 import { UpdateButton } from "./UpdateButton"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import { SummarizeMenu } from "./SummarizeMenu"
+import {
+  summarizeHistoryToAgent,
+  writeAgentPrompt,
+  type HistoryRange,
+} from "@/lib/historySummary"
 import { HistoryNavButtons } from "./HistoryNavButtons"
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
@@ -338,17 +343,6 @@ function promptPreview(body: string | null): string | null {
   return collapsed.length > 120 ? `${collapsed.slice(0, 119)}…` : collapsed
 }
 
-const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
-
-function writeAgentPrompt(sessionId: string, prompt: string): void {
-  const body = prompt.trim()
-  if (!body) return
-  window.term.write(sessionId, body)
-  window.setTimeout(() => {
-    window.term.write(sessionId, "\r")
-  }, AGENT_PROMPT_SUBMIT_DELAY_MS)
-}
-
 function playAgentCompleteSound() {
   const audio = new Audio(agentCompleteSoundUrl)
   audio.volume = 0.5
@@ -433,8 +427,9 @@ export function AppShell() {
   } | null>(null)
   // Persisted so it survives reloads, but only written (via rememberAgentTerminal)
   // — nothing reads the value now that "Commit with AI" is gone.
-  const [, setLastAgentTerminals] =
-    useState<LastAgentTerminalsByProject>(() => loadLastAgentTerminals())
+  const [, setLastAgentTerminals] = useState<LastAgentTerminalsByProject>(() =>
+    loadLastAgentTerminals()
+  )
   const [stateRestored, setStateRestored] = useState(() => store.isReady())
   const [restoredActiveProjectId, setRestoredActiveProjectId] = useState<
     string | null
@@ -769,6 +764,70 @@ export function AppShell() {
           `Start a ${agent} terminal in this project first to summarize`
         )
       })
+    },
+    [activeProjectId, navigateToProject]
+  )
+
+  // History tab "Summary": route a recap prompt to the terminal the user is
+  // currently on (it must have a running agent). The prompt tells the agent to
+  // fetch the project's recent chat history from the local history HTTP API and
+  // summarize it.
+  const summarizeChat = useCallback(
+    async (range: HistoryRange) => {
+      const project = projectsRef.current.find((p) => p.id === activeProjectId)
+      if (!project) return
+
+      // Target the terminal the user is currently on (active tab's active pane).
+      // It must have a running agent — otherwise there's nothing to summarize to.
+      const activeTab = project.tabs.find(
+        (t) => t.kind === "terminal" && t.id === project.activeTabId
+      )
+      const activePane =
+        activeTab?.kind === "terminal"
+          ? activeTab.panes.find((p) => p.id === activeTab.activePaneId)
+          : undefined
+      if (!activePane?.agentStatus?.running || !activePane.sessionId) {
+        toast.error("This terminal needs a running agent to summarize")
+        return
+      }
+      const { id: tabId } = activeTab!
+      const { id: paneId, sessionId } = activePane
+
+      window.focus()
+      void window.appWindow?.focus?.()
+
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === project.id
+            ? {
+                ...p,
+                activeTabId: tabId,
+                tabs: p.tabs.map((t) =>
+                  t.id === tabId && t.kind === "terminal"
+                    ? { ...t, activePaneId: paneId }
+                    : t
+                ),
+              }
+            : p
+        )
+      )
+      navigateToProject(project.id, tabId)
+      terminalFocusRequestNonceRef.current += 1
+      setTerminalFocusRequest({
+        tabId,
+        paneId,
+        nonce: terminalFocusRequestNonceRef.current,
+      })
+      // Summarize the project's history (sidebar scope) into the focused agent.
+      window.setTimeout(
+        () =>
+          void summarizeHistoryToAgent({
+            sessionId,
+            scope: { projectId: project.id },
+            range,
+          }),
+        120
+      )
     },
     [activeProjectId, navigateToProject]
   )
@@ -2086,9 +2145,7 @@ export function AppShell() {
       // Bail without touching state when nothing changed — title events can
       // arrive at TUI repaint rate, and each state update here re-renders the
       // whole shell and rewrites the persisted snapshot.
-      const tab = prev
-        .flatMap((p) => p.tabs)
-        .find((t) => t.id === tabId)
+      const tab = prev.flatMap((p) => p.tabs).find((t) => t.id === tabId)
       if (tab?.kind !== "terminal") return prev
       const pane = tab.panes.find((pp) => pp.id === paneId)
       if (!pane || pane.autoTitle === title) return prev
@@ -2134,12 +2191,10 @@ export function AppShell() {
     if (agentStatusesEqual(currentStatus, status)) return
 
     terminalAgentStatusRef.current.set(key, status)
-    const wasWorking =
-      currentStatus?.working ?? false
+    const wasWorking = currentStatus?.working ?? false
     const finishedWork =
       wasWorking && !status.working && status.completed === true
-    const wasNeedsAttention =
-      currentStatus?.needsAttention ?? false
+    const wasNeedsAttention = currentStatus?.needsAttention ?? false
     const becameNeedsAttention =
       !wasNeedsAttention && status.needsAttention === true
     const appVisibleAndFocused = isAppVisibleAndFocused()
@@ -2747,8 +2802,7 @@ export function AppShell() {
             // can be re-added to the focus list.
             focusedProjectIds.length > 0
               ? !projects.some(
-                  (p) =>
-                    p.path === r.path && focusedProjectIds.includes(p.id)
+                  (p) => p.path === r.path && focusedProjectIds.includes(p.id)
                 )
               : !projects.some((p) => p.path === r.path)
           )}
@@ -2964,6 +3018,7 @@ export function AppShell() {
               onOpenFileTab={openFileTab}
               onOpenCommitTab={openCommitTab}
               onSummarizeHistory={summarizeHistory}
+              onSummarizeChat={summarizeChat}
               rightSidebarTab={rightSidebarTab}
               onRightSidebarTabChange={setRightSidebarTab}
               activeTreeFilePath={activeTreeFilePath}

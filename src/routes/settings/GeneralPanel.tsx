@@ -1,9 +1,11 @@
 import * as React from "react"
-import { PanelTop, History } from "lucide-react"
+import { PanelTop, History, PanelLeft } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   loadAutoHideTitleBar,
   saveAutoHideTitleBar,
+  loadCompactProjectSidebar,
+  saveCompactProjectSidebar,
   loadHistoryRetentionEnabled,
   saveHistoryRetentionEnabled,
   loadHistoryRetentionDays,
@@ -69,6 +71,9 @@ export function GeneralPanel() {
   const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
     loadAutoHideTitleBar()
   )
+  const [compactSidebar, setCompactSidebar] = React.useState(() =>
+    loadCompactProjectSidebar()
+  )
   const [retentionEnabled, setRetentionEnabled] = React.useState(() =>
     loadHistoryRetentionEnabled()
   )
@@ -79,6 +84,7 @@ export function GeneralPanel() {
     () =>
       store.onReady(() => {
         setAutoHideTitleBar(loadAutoHideTitleBar())
+        setCompactSidebar(loadCompactProjectSidebar())
         setRetentionEnabled(loadHistoryRetentionEnabled())
         setRetentionDays(String(loadHistoryRetentionDays()))
       }),
@@ -88,6 +94,11 @@ export function GeneralPanel() {
   const updateAutoHideTitleBar = (enabled: boolean) => {
     setAutoHideTitleBar(enabled)
     saveAutoHideTitleBar(enabled)
+  }
+
+  const updateCompactSidebar = (enabled: boolean) => {
+    setCompactSidebar(enabled)
+    saveCompactProjectSidebar(enabled)
   }
 
   const updateRetentionEnabled = (enabled: boolean) => {
@@ -121,6 +132,13 @@ export function GeneralPanel() {
           description="Hide the title bar and traffic lights after a short delay. Hover the top edge to slide it back down."
           checked={autoHideTitleBar}
           onChange={updateAutoHideTitleBar}
+        />
+        <SettingToggle
+          icon={PanelLeft}
+          label="Compact project sidebar"
+          description="Show projects as single-line rows, hiding the branch and change count for a denser list."
+          checked={compactSidebar}
+          onChange={updateCompactSidebar}
         />
         <SettingToggle
           icon={History}

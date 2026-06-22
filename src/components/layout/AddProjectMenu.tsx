@@ -26,6 +26,7 @@ type Props = {
   onRemoveRecent?: (recent: RecentProject) => void
   onOpenDialog: () => void
   variant?: "tab" | "sidebar"
+  compact?: boolean
 }
 
 export function AddProjectMenu({
@@ -34,6 +35,7 @@ export function AddProjectMenu({
   onRemoveRecent,
   onOpenDialog,
   variant = "tab",
+  compact = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -121,7 +123,7 @@ export function AddProjectMenu({
               e.stopPropagation()
               onRemoveRecent(r)
             }}
-            className="absolute right-1.5 grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-background/40 hover:text-foreground group-hover/recent:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="absolute right-1.5 grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover/recent:opacity-100 hover:bg-background/40 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <X className="size-3" />
           </button>
@@ -135,9 +137,17 @@ export function AddProjectMenu({
     variant === "sidebar" ? (
       <DropdownMenuTrigger
         aria-label="Add project"
-        className="group/add flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground"
+        className={cn(
+          "group/add flex w-full items-center gap-2.5 rounded-sm px-2 text-sm text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground",
+          compact ? "py-1.5" : "py-2"
+        )}
       >
-        <span className="grid size-4 shrink-0 place-items-center">
+        <span
+          className={cn(
+            "grid shrink-0 place-items-center",
+            compact ? "size-5" : "size-4"
+          )}
+        >
           <Plus className="size-3.5" />
         </span>
         Add Project

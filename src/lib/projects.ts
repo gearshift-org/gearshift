@@ -409,7 +409,9 @@ export function loadFocusedProjectIds(): string[] {
     const raw = store.get(FOCUSED_PROJECT_IDS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : []
+    return Array.isArray(parsed)
+      ? parsed.filter((x) => typeof x === "string")
+      : []
   } catch {
     return []
   }
@@ -537,6 +539,33 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(AUTO_HIDE_TITLE_BAR_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export const COMPACT_PROJECT_SIDEBAR_EVENT =
+  "gearshift:compactProjectSidebarChanged"
+const COMPACT_PROJECT_SIDEBAR_KEY = "gearshift.compactProjectSidebar"
+
+export function loadCompactProjectSidebar(): boolean {
+  try {
+    return store.get(COMPACT_PROJECT_SIDEBAR_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+export function saveCompactProjectSidebar(enabled: boolean): void {
+  try {
+    store.set(COMPACT_PROJECT_SIDEBAR_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(COMPACT_PROJECT_SIDEBAR_EVENT, {
           detail: enabled,
         })
       )

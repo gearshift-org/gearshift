@@ -44,6 +44,8 @@ import {
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   clearProjectAvatarImagePath,
+  COMPACT_PROJECT_SIDEBAR_EVENT,
+  loadCompactProjectSidebar,
   loadPinnedProjectPaths,
   loadProjectSidebarGroupOpen,
   randomizeProjectColor,
@@ -105,7 +107,7 @@ function SidebarGroupHeader({
       type="button"
       onClick={onToggle}
       aria-expanded={isOpen}
-      className="flex h-8 w-full shrink-0 items-center justify-between rounded-md px-2 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+      className="flex h-8 w-full shrink-0 items-center justify-between rounded-sm px-2 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
     >
       <span className="truncate">
         {label} <span className="text-muted-foreground/60">{count}</span>
@@ -140,6 +142,7 @@ type RowProps = {
   onRemoveFromFocus?: (id: string) => void
   isPinned: boolean
   onTogglePin: (path: string) => void
+  compact: boolean
 }
 
 function ProjectSidebarRow({
@@ -162,6 +165,7 @@ function ProjectSidebarRow({
   onRemoveFromFocus,
   isPinned,
   onTogglePin,
+  compact,
 }: RowProps) {
   const [, setColorVersion] = useState(0)
   const {
@@ -210,7 +214,8 @@ function ProjectSidebarRow({
   const hasWorkingAgent = projectHasWorkingAgent(p)
   const hasAttentionAgent = !hasWorkingAgent && projectHasAttentionAgent(p)
   const hasDoneAgent = projectHasDoneAgent(p)
-  const hasCompletedAgent = !hasWorkingAgent && !hasAttentionAgent && hasDoneAgent
+  const hasCompletedAgent =
+    !hasWorkingAgent && !hasAttentionAgent && hasDoneAgent
   const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
 
   return (
@@ -220,7 +225,8 @@ function ProjectSidebarRow({
         style={style}
         onClick={() => onSelect(p.id)}
         className={cn(
-          "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
+          "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
+          compact ? "py-1.5" : "py-2",
           animate &&
             "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
@@ -231,11 +237,14 @@ function ProjectSidebarRow({
         {...attributes}
         {...listeners}
       >
-        <span className="relative grid shrink-0 place-items-center rounded-sm">
+        <span className="relative grid shrink-0 place-items-center rounded-[5px]">
           <ProjectAvatar
             name={p.name}
             path={p.path}
-            className="size-6 rounded-sm text-[11px]"
+            className={cn(
+              "rounded-[5px] text-[11px]",
+              compact ? "size-5" : "size-6"
+            )}
           />
           {hasCompletedAgent && (
             <span
@@ -252,19 +261,33 @@ function ProjectSidebarRow({
             </span>
             {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
             {hasAttentionAgent && <AgentAttention className="shrink-0" />}
-          </div>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-foreground/70">
-            <span className="truncate">{subtitle ?? " "}</span>
-            {changeCount > 0 && (
+            {compact && changeCount > 0 && (
               <span
                 title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
-                className="flex shrink-0 items-center gap-0.5 tabular-nums"
+                className={cn(
+                  "ml-auto flex shrink-0 items-center gap-0.5 text-xs text-foreground/70 tabular-nums",
+                  canClose && "group-hover:opacity-0"
+                )}
               >
                 <GitBranch className="size-3" />
                 {changeCount}
               </span>
             )}
-          </span>
+          </div>
+          {!compact && (
+            <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-foreground/70">
+              <span className="truncate">{subtitle ?? " "}</span>
+              {changeCount > 0 && (
+                <span
+                  title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
+                  className="flex shrink-0 items-center gap-0.5 tabular-nums"
+                >
+                  <GitBranch className="size-3" />
+                  {changeCount}
+                </span>
+              )}
+            </span>
+          )}
         </div>
         {canClose && (
           <button
@@ -385,6 +408,7 @@ export function ProjectSidebar({
   const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
     loadPinnedProjectPaths()
   )
+  const [compact, setCompact] = useState(() => loadCompactProjectSidebar())
   useEffect(
     () =>
       store.onReady(() => {
@@ -392,9 +416,17 @@ export function ProjectSidebar({
         setPinnedOpen(groupOpen.pinned)
         setProjectsOpen(groupOpen.projects)
         setPinnedPaths(loadPinnedProjectPaths())
+        setCompact(loadCompactProjectSidebar())
       }),
     []
   )
+  useEffect(() => {
+    const onChange = (e: Event) =>
+      setCompact((e as CustomEvent<boolean>).detail)
+    window.addEventListener(COMPACT_PROJECT_SIDEBAR_EVENT, onChange)
+    return () =>
+      window.removeEventListener(COMPACT_PROJECT_SIDEBAR_EVENT, onChange)
+  }, [])
   useEffect(() => {
     saveProjectSidebarGroupOpen({ pinned: pinnedOpen, projects: projectsOpen })
   }, [pinnedOpen, projectsOpen])
@@ -582,6 +614,7 @@ export function ProjectSidebar({
                       onRemoveFromFocus={onRemoveFromFocus}
                       isPinned={true}
                       onTogglePin={togglePin}
+                      compact={compact}
                     />
                   ))}
               </>
@@ -594,7 +627,8 @@ export function ProjectSidebar({
             />
             {projectsOpen &&
               unpinnedProjects.map((p, i) => {
-                const visibleIndex = (pinnedOpen ? pinnedProjects.length : 0) + i
+                const visibleIndex =
+                  (pinnedOpen ? pinnedProjects.length : 0) + i
                 return (
                   <ProjectSidebarRow
                     key={`${p.id}-${isFocusMode}`}
@@ -617,6 +651,7 @@ export function ProjectSidebar({
                     onRemoveFromFocus={onRemoveFromFocus}
                     isPinned={false}
                     onTogglePin={togglePin}
+                    compact={compact}
                   />
                 )
               })}
@@ -628,12 +663,18 @@ export function ProjectSidebar({
             onClick={onExitFocus}
             aria-label="Exit focus mode"
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
+              "flex w-full items-center gap-2.5 rounded-sm px-2 text-left text-sm font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
+              compact ? "py-1.5" : "py-2",
               animateFocus &&
                 "animate-in duration-200 fade-in slide-in-from-left-2"
             )}
           >
-            <span className="grid size-6 shrink-0 place-items-center rounded-sm bg-sidebar-accent">
+            <span
+              className={cn(
+                "grid shrink-0 place-items-center rounded-sm bg-sidebar-accent",
+                compact ? "size-5" : "size-6"
+              )}
+            >
               <Focus className="size-3.5" />
             </span>
             <span className="truncate">Exit Focus Mode</span>
@@ -645,6 +686,7 @@ export function ProjectSidebar({
           onOpenDialog={onAdd}
           onPickRecent={onPickRecent}
           onRemoveRecent={onRemoveRecent}
+          compact={compact}
         />
       </div>
       <div className="shrink-0 px-3 pt-1.5 pb-3">
@@ -655,7 +697,7 @@ export function ProjectSidebar({
                 type="button"
                 onClick={onOpenSettings}
                 aria-label="Open settings"
-                className="flex h-7 w-fit items-center gap-2 rounded-md px-2 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+                className="flex h-7 w-fit items-center gap-2 rounded-sm px-2 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
               >
                 <Settings className="size-3.5 shrink-0" />
                 <span className="truncate">Settings</span>

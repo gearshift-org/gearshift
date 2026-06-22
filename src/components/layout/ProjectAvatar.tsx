@@ -106,7 +106,7 @@ export function ProjectAvatar({ name, path, className }: ProjectAvatarProps) {
         color: readableTextOn(bg),
       }}
       className={cn(
-        "grid size-4 shrink-0 place-items-center overflow-hidden rounded-[3px] text-[9px] leading-none font-semibold",
+        "grid size-4 shrink-0 place-items-center overflow-hidden rounded-sm text-[9px] leading-none font-semibold",
         className
       )}
     >

@@ -17,7 +17,6 @@ import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
 import { UpdateButton } from "./UpdateButton"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
-import { SummarizeMenu } from "./SummarizeMenu"
 import {
   summarizeHistoryToAgent,
   writeAgentPrompt,
@@ -2914,9 +2913,6 @@ export function AppShell() {
                 cwd={activeProject?.path ?? null}
                 onOpenChanges={openChanges}
               />
-              {activeProject && (
-                <SummarizeMenu onSummarize={summarizeHistory} />
-              )}
               <Tooltip>
                 <TooltipTrigger
                   render={

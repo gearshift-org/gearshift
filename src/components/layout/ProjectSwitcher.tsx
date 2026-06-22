@@ -26,7 +26,8 @@ type Props = {
 
 function ProjectAgentState({ project }: { project: Project }) {
   const hasWorkingAgent = projectHasWorkingAgent(project)
-  const hasAttentionAgent = !hasWorkingAgent && projectHasAttentionAgent(project)
+  const hasAttentionAgent =
+    !hasWorkingAgent && projectHasAttentionAgent(project)
   const hasDoneAgent = projectHasDoneAgent(project)
 
   if (hasWorkingAgent) return <AgentSpinner className="shrink-0" />
@@ -52,9 +53,13 @@ export function ProjectSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Switch project"
-        className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-foreground outline-none transition-colors hover:bg-foreground/10 [-webkit-app-region:no-drag]"
+        className="flex min-w-0 items-center gap-1.5 rounded-sm px-1.5 py-1 text-xs font-medium text-foreground transition-colors outline-none [-webkit-app-region:no-drag] hover:bg-foreground/10"
       >
-        <ProjectAvatar name={activeProject.name} path={activeProject.path} />
+        <ProjectAvatar
+          name={activeProject.name}
+          path={activeProject.path}
+          className="size-5 rounded-[5px]"
+        />
         <span className="max-w-[200px] truncate">{activeProject.name}</span>
         <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
@@ -65,7 +70,11 @@ export function ProjectSwitcher({
             onClick={() => onSelect(p.id)}
             className="gap-2"
           >
-            <ProjectAvatar name={p.name} path={p.path} />
+            <ProjectAvatar
+              name={p.name}
+              path={p.path}
+              className="rounded-[5px]"
+            />
             <ProjectAgentState project={p} />
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
             {p.id === activeProjectId && (

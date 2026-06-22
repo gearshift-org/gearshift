@@ -11,7 +11,7 @@ import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
 import { matchesAccelerator } from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
-import { PanelLeft, PanelRight, X } from "lucide-react"
+import { PanelLeft, PanelRight, Search, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
@@ -22,7 +22,6 @@ import {
   writeAgentPrompt,
   type HistoryRange,
 } from "@/lib/historySummary"
-import { HistoryNavButtons } from "./HistoryNavButtons"
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
 import { useTheme } from "@/components/theme-provider"
@@ -2942,6 +2941,7 @@ export function AppShell() {
           onRevealInFinder={revealProjectInFinder}
           onReorder={reorderProjects}
           onCollapse={() => setProjectSidebarOpen(false)}
+          onOpenCommandPalette={() => setPaletteOpen(true)}
           onOpenSettings={() => void navigate({ to: "/settings" })}
           focusedProjectIds={focusedProjectIds}
           onFocusProject={(id) => {
@@ -2983,6 +2983,25 @@ export function AppShell() {
               <TooltipContent>Expand sidebar</TooltipContent>
             </Tooltip>
           ) : null
+          // When the project sidebar is collapsed its search control is hidden
+          // too, so surface it next to the expand button in the top bar.
+          const collapsedSearchButton = projectSidebarCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={() => setPaletteOpen(true)}
+                    aria-label="Search"
+                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:bg-foreground/15 hover:text-foreground"
+                  >
+                    <Search className="size-3.5" />
+                  </button>
+                }
+              />
+              <TooltipContent>Search (⌘P)</TooltipContent>
+            </Tooltip>
+          ) : null
           const titleBar = (
             <AutoHideTitleBar enabled={autoHideTitleBar && !!activeProject}>
               <TitleBar
@@ -2997,7 +3016,7 @@ export function AppShell() {
                   expandProjectSidebarButton ? (
                     <div className="flex items-center gap-0.5 pr-2 [-webkit-app-region:no-drag]">
                       {expandProjectSidebarButton}
-                      <HistoryNavButtons />
+                      {collapsedSearchButton}
                     </div>
                   ) : undefined
                 }
@@ -3066,7 +3085,7 @@ export function AppShell() {
                 <>
                   <div className="w-[84px] shrink-0 self-stretch" />
                   {expandProjectSidebarButton}
-                  <HistoryNavButtons className="pl-0.5" />
+                  {collapsedSearchButton}
                 </>
               )}
               <UpdateButton />

@@ -83,6 +83,7 @@ type Props = {
   onRevealInFinder?: (id: string) => void
   onReorder?: (fromId: string, toId: string) => void
   onCollapse?: () => void
+  onOpenCommandPalette?: () => void
   onOpenSettings?: () => void
   focusedProjectIds?: string[]
   onFocusProject?: (id: string) => void
@@ -242,10 +243,7 @@ function ProjectSidebarRow({
           <ProjectAvatar
             name={p.name}
             path={p.path}
-            className={cn(
-              "rounded-[5px] text-[11px]",
-              compact ? "size-5" : "size-6"
-            )}
+            className="size-5 rounded-[5px] text-[11px]"
           />
           {hasCompletedAgent && (
             <span
@@ -453,6 +451,7 @@ export function ProjectSidebar({
   onRevealInFinder,
   onReorder,
   onCollapse,
+  onOpenCommandPalette,
   onOpenSettings,
   focusedProjectIds = [],
   onFocusProject,
@@ -588,10 +587,32 @@ export function ProjectSidebar({
         isFileDragOver && "bg-accent/30 ring-1 ring-primary/35 ring-inset"
       )}
     >
-      {/* Reserve the top-left area for the macOS traffic lights, with the
-          collapse control pinned to the right edge. */}
-      <div className="flex h-[40px] shrink-0 items-center justify-end gap-0.5 pr-3 [-webkit-app-region:drag]">
-        <HistoryNavButtons />
+      {/* Reserve the top-left area for the macOS traffic lights. A search
+          control sits just past them; the nav/collapse controls are pinned to
+          the right edge. */}
+      <div className="flex h-[34px] shrink-0 items-center justify-between gap-0.5 pr-3 [-webkit-app-region:drag]">
+        <div className="flex items-center [-webkit-app-region:no-drag]">
+          <div className="w-[88px] shrink-0 self-stretch [-webkit-app-region:drag]" />
+          {onOpenCommandPalette && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={onOpenCommandPalette}
+                    aria-label="Search"
+                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                  >
+                    <Search className="size-3.5" />
+                  </button>
+                }
+              />
+              <TooltipContent>Search (⌘P)</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        <div className="flex items-center gap-0.5 [-webkit-app-region:no-drag]">
+          <HistoryNavButtons />
         {onCollapse && (
           <Tooltip>
             <TooltipTrigger
@@ -609,8 +630,9 @@ export function ProjectSidebar({
             <TooltipContent>Collapse sidebar</TooltipContent>
           </Tooltip>
         )}
+        </div>
       </div>
-      <div className="shrink-0 px-3 pb-2">
+      <div className="shrink-0 px-3 pt-2 pb-2">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -725,7 +747,7 @@ export function ProjectSidebar({
             onClick={onExitFocus}
             aria-label="Exit focus mode"
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-sm px-2 text-left text-sm font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
+              "flex w-full items-center gap-2.5 rounded-sm px-2 text-left text-sm leading-tight font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
               compact ? "py-1.5" : "py-2",
               animateFocus &&
                 "animate-in duration-200 fade-in slide-in-from-left-2"
@@ -759,7 +781,7 @@ export function ProjectSidebar({
                 type="button"
                 onClick={onOpenSettings}
                 aria-label="Open settings"
-                className="flex h-7 w-fit items-center gap-2 rounded-sm px-2 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+                className="flex h-7 w-fit items-center gap-2 rounded-sm px-2 text-left text-sm leading-tight font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
               >
                 <Settings className="size-3.5 shrink-0" />
                 <span className="truncate">Settings</span>

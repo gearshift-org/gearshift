@@ -138,16 +138,11 @@ export function AddProjectMenu({
       <DropdownMenuTrigger
         aria-label="Add project"
         className={cn(
-          "group/add flex w-full items-center gap-2.5 rounded-sm px-2 text-sm text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground",
+          "group/add flex w-full items-center gap-2.5 rounded-sm px-2 text-sm leading-tight font-medium text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground",
           compact ? "py-1.5" : "py-2"
         )}
       >
-        <span
-          className={cn(
-            "grid shrink-0 place-items-center",
-            compact ? "size-5" : "size-4"
-          )}
-        >
+        <span className="grid size-4 shrink-0 place-items-center">
           <Plus className="size-3.5" />
         </span>
         Add Project

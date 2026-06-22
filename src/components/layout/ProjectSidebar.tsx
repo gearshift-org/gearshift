@@ -261,19 +261,18 @@ function ProjectSidebarRow({
               className={cn(
                 "min-w-0 text-sm leading-tight font-medium",
                 compact
-                  ? "flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,#000_calc(100%-1.25rem),transparent)]"
+                  ? "flex-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,#000_calc(100%-0.625rem),transparent)]"
                   : "truncate"
               )}
             >
               {p.name}
             </span>
-            {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
             {hasAttentionAgent && <AgentAttention className="shrink-0" />}
           </div>
           {!compact && (
             <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-foreground/70">
               <span className="truncate">{subtitle ?? " "}</span>
-              {changeCount > 0 && (
+              {changeCount > 0 && !hasWorkingAgent && (
                 <span
                   title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
                   className="flex shrink-0 items-center gap-0.5 tabular-nums"
@@ -285,13 +284,18 @@ function ProjectSidebarRow({
             </span>
           )}
         </div>
-        {compact && changeCount > 0 && (
+        {compact && changeCount > 0 && !hasWorkingAgent && (
           <span
             title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
             className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums transition-opacity group-hover:opacity-0"
           >
             <GitBranch className="size-3" />
             {changeCount}
+          </span>
+        )}
+        {hasWorkingAgent && (
+          <span className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center transition-opacity group-hover:opacity-0">
+            <AgentSpinner />
           </span>
         )}
         <button

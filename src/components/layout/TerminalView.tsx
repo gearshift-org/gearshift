@@ -2193,6 +2193,7 @@ export function TerminalView({
         )}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
+        {/* Clipboard */}
         <ContextMenuItem onClick={copySelection}>
           Copy
           <ContextMenuShortcut>⌘C</ContextMenuShortcut>
@@ -2201,7 +2202,9 @@ export function TerminalView({
           Paste
           <ContextMenuShortcut>⌘V</ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuSeparator />
+
+        {/* Selection & search */}
+        <ContextMenuSeparator className="bg-foreground/15" />
         <ContextMenuItem onClick={selectAll}>
           Select All
           <ContextMenuShortcut>⌘A</ContextMenuShortcut>
@@ -2210,18 +2213,21 @@ export function TerminalView({
           Clear
           <ContextMenuShortcut>⌘K</ContextMenuShortcut>
         </ContextMenuItem>
-        <ContextMenuSeparator />
         <ContextMenuItem onClick={openSearch}>
           Find
           <ContextMenuShortcut>⌘F</ContextMenuShortcut>
         </ContextMenuItem>
+
+        {/* Terminal */}
         {onClose && (
           <>
-            <ContextMenuSeparator />
+            <ContextMenuSeparator className="bg-foreground/15" />
             <ContextMenuItem onClick={onClose}>Close</ContextMenuItem>
           </>
         )}
-        <ContextMenuSeparator />
+
+        {/* Open externally */}
+        <ContextMenuSeparator className="bg-foreground/15" />
         <ContextMenuItem
           onClick={async () => {
             const cwd = await window.term.getCwd(sessionId)

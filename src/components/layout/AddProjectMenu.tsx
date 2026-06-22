@@ -100,7 +100,7 @@ export function AddProjectMenu({
         onMouseMove={() => setSelectedIndex(index)}
         className={cn(
           "group/recent relative mx-1 flex items-center gap-2 pr-7",
-          selected && "bg-accent text-accent-foreground"
+          selected && "bg-accent/50"
         )}
       >
         <div className="min-w-0 flex-1">
@@ -108,7 +108,7 @@ export function AddProjectMenu({
           <span
             className={cn(
               "block truncate text-[10px]",
-              selected ? "text-accent-foreground/80" : "text-muted-foreground"
+              selected ? "text-foreground/70" : "text-muted-foreground"
             )}
           >
             {shortenHomePath(r.path)}

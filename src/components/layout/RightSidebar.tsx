@@ -956,7 +956,7 @@ export function RightSidebar({
               value="git"
               className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
             >
-              Git
+              Changes
               {hasData && files.length > 0 && (
                 <ChangeCountBadge count={files.length} />
               )}
@@ -993,6 +993,10 @@ export function RightSidebar({
             onValueChange={(v) => setGitSubTab(v as GitSubTab)}
             className="flex h-full min-h-0 flex-col gap-0"
           >
+            {/* Sub-tabs hidden for now — Changes is shown directly via the
+                parent tab. Keep the triggers/content below for when Commits
+                and PRs are re-enabled. */}
+            {false && (
             <div className="flex h-[34px] shrink-0 items-center border-b border-border/60 px-3">
               <TabsList
                 variant="line"
@@ -1000,19 +1004,19 @@ export function RightSidebar({
               >
                 <TabsTrigger
                   value="changes"
-                  className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
+                  className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 hover:text-foreground data-active:!text-foreground after:!bottom-0"
                 >
                   Changes
                 </TabsTrigger>
                 <TabsTrigger
                   value="commits"
-                  className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
+                  className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 hover:text-foreground data-active:!text-foreground after:!bottom-0"
                 >
                   Commits
                 </TabsTrigger>
                 <TabsTrigger
                   value="prs"
-                  className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 dark:!text-foreground dark:hover:!bg-foreground/15 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground dark:data-active:!bg-foreground/15"
+                  className="!h-full gap-1.5 rounded-none !border-0 px-2 text-xs text-foreground/60 hover:text-foreground data-active:!text-foreground after:!bottom-0"
                 >
                   PRs
                   {pullRequests.length > 0 && (
@@ -1021,6 +1025,7 @@ export function RightSidebar({
                 </TabsTrigger>
               </TabsList>
             </div>
+            )}
             <TabsContent
               value="changes"
               keepMounted
@@ -1276,6 +1281,8 @@ export function RightSidebar({
                 )}
               </ScrollArea>
             </TabsContent>
+            {false && (
+              <>
             <TabsContent
               value="prs"
               keepMounted
@@ -1310,6 +1317,8 @@ export function RightSidebar({
                 onOpen={onOpenCommit}
               />
             </TabsContent>
+              </>
+            )}
           </Tabs>
         </TabsContent>
         <TabsContent

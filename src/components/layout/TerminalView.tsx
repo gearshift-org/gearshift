@@ -309,6 +309,25 @@ const SEARCH_DECORATIONS = {
 const DEC_COLOR_SCHEME_UPDATE = 2031 // subscribe via CSI ? 2031 h / l
 const DEC_COLOR_SCHEME_QUERY = 996 // explicit query: CSI ? 996 n
 const DEC_COLOR_SCHEME_REPORT = 997 // response: CSI ? 997 ; 1|2 n (dark|light)
+const OSC_FOREGROUND_COLOR = 10 // query default foreground: OSC 10 ; ? ST
+const OSC_BACKGROUND_COLOR = 11 // query default background: OSC 11 ; ? ST
+
+function expandHexChannel(channel: string): string {
+  return channel.length === 1 ? channel.repeat(4) : channel.repeat(2)
+}
+
+function oscColorReport(code: number, color: string): string {
+  const hex = color.trim().replace(/^#/, "")
+  const channels =
+    hex.length === 3
+      ? [hex[0], hex[1], hex[2]]
+      : [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)]
+
+  const [r, g, b] = channels.map((channel) =>
+    expandHexChannel(channel || "0")
+  )
+  return `\x1b]${code};rgb:${r}/${g}/${b}\x1b\\`
+}
 
 function csiParamsInclude(
   params: (number | number[])[],
@@ -673,8 +692,7 @@ export function TerminalView({
   // explicit theme id selects its own terminal tint.
   const themeId: ThemeId = theme === "system" ? resolvedTheme : theme
   const themeObj = useMemo(() => getTerminalTheme(themeId), [themeId])
-  const themeRef = useRef({ isDark })
-  themeRef.current.isDark = isDark
+  const themeRef = useRef({ isDark, theme: themeObj })
   const colorSchemeSubscribedRef = useRef(false)
   const onTitleChangeRef = useRef(onTitleChange)
   const onFocusChangeRef = useRef(onFocusChange)
@@ -730,6 +748,9 @@ export function TerminalView({
   // Mirror commitUi into a ref so the terminal's one-time key/input handlers can
   // read the current value without being re-attached on every state change.
   const commitUiRef = useRef(commitUi)
+  useEffect(() => {
+    themeRef.current = { isDark, theme: themeObj }
+  }, [isDark, themeObj])
   useEffect(() => {
     commitUiRef.current = commitUi
   }, [commitUi])
@@ -1110,24 +1131,23 @@ export function TerminalView({
     // TUIs (Claude Code, Codex, Bubble Tea, …) send `CSI ? 2031 h` and expect
     // a push of `CSI ? 997 ; 1|2 n` (dark|light) on every theme flip so they
     // repaint live without a restart. `CSI ? 996 n` is an explicit query.
+    // Track subscriptions during snapshot replay too: adopted Claude sessions
+    // subscribed before this renderer mounted, and they still need manual theme
+    // flips to be forwarded. Query replies remain suppressed while replaying.
     const colorSchemeSetSub = term.parser.registerCsiHandler(
       { prefix: "?", final: "h" },
       (params) => {
-        if (csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) {
-          if (replayingSnapshot) return true
-          colorSchemeSubscribedRef.current = true
-        }
-        return false
+        if (!csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) return false
+        colorSchemeSubscribedRef.current = true
+        return true
       }
     )
     const colorSchemeResetSub = term.parser.registerCsiHandler(
       { prefix: "?", final: "l" },
       (params) => {
-        if (csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) {
-          if (replayingSnapshot) return true
-          colorSchemeSubscribedRef.current = false
-        }
-        return false
+        if (!csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) return false
+        colorSchemeSubscribedRef.current = false
+        return true
       }
     )
     const colorSchemeQuerySub = term.parser.registerCsiHandler(
@@ -1139,6 +1159,30 @@ export function TerminalView({
         window.term.write(
           sessionId,
           `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`
+        )
+        return true
+      }
+    )
+    const foregroundColorQuerySub = term.parser.registerOscHandler(
+      OSC_FOREGROUND_COLOR,
+      (data) => {
+        if (data.trim() !== "?") return false
+        if (replayingSnapshot) return true
+        window.term.write(
+          sessionId,
+          oscColorReport(OSC_FOREGROUND_COLOR, themeRef.current.theme.foreground)
+        )
+        return true
+      }
+    )
+    const backgroundColorQuerySub = term.parser.registerOscHandler(
+      OSC_BACKGROUND_COLOR,
+      (data) => {
+        if (data.trim() !== "?") return false
+        if (replayingSnapshot) return true
+        window.term.write(
+          sessionId,
+          oscColorReport(OSC_BACKGROUND_COLOR, themeRef.current.theme.background)
         )
         return true
       }
@@ -1670,6 +1714,8 @@ export function TerminalView({
       colorSchemeSetSub.dispose()
       colorSchemeResetSub.dispose()
       colorSchemeQuerySub.dispose()
+      foregroundColorQuerySub.dispose()
+      backgroundColorQuerySub.dispose()
       kittyImageSub.dispose()
       itermImageSub.dispose()
       search.dispose()

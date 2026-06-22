@@ -546,7 +546,7 @@ export function ProjectSidebar({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={cn(
-        "flex h-full w-[248px] shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]",
+        "flex h-full w-full shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]",
         isFileDragOver && "bg-accent/30 ring-1 ring-primary/35 ring-inset"
       )}
     >

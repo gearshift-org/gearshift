@@ -364,6 +364,27 @@ export function saveSidebarWidth(width: number): void {
   }
 }
 
+const PROJECT_SIDEBAR_WIDTH_KEY = "gearshift.projectSidebarWidth"
+
+export function loadProjectSidebarWidth(): number | null {
+  try {
+    const raw = store.get(PROJECT_SIDEBAR_WIDTH_KEY)
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+export function saveProjectSidebarWidth(width: number): void {
+  try {
+    store.set(PROJECT_SIDEBAR_WIDTH_KEY, String(Math.round(width)))
+  } catch {
+    // ignore quota errors
+  }
+}
+
 const SIDEBAR_OPEN_KEY = "gearshift.sidebarOpen"
 
 export function loadSidebarOpen(): boolean {

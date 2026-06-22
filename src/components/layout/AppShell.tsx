@@ -64,6 +64,7 @@ import {
   loadFocusedProjectIds,
   loadProjects,
   loadProjectSidebarOpen,
+  loadProjectSidebarWidth,
   loadRecentProjects,
   loadRightSidebarTab,
   loadSidebarOpen,
@@ -76,6 +77,7 @@ import {
   saveLastAgentTerminals,
   saveFocusedProjectIds,
   saveProjectSidebarOpen,
+  saveProjectSidebarWidth,
   saveProjects,
   saveRecentProjects,
   saveRightSidebarTab,
@@ -164,9 +166,16 @@ function makeId() {
   return crypto.randomUUID()
 }
 
-// Must match the fixed width of ProjectSidebar so the collapse/expand margin
-// animation slides it fully off-screen without reflowing its contents.
-const PROJECT_SIDEBAR_WIDTH = 248
+// Default width of ProjectSidebar; the user can resize it via the drag handle.
+const PROJECT_SIDEBAR_DEFAULT_PX = 248
+const PROJECT_SIDEBAR_MIN_PX = 180
+const PROJECT_SIDEBAR_MAX_PX = 480
+function clampProjectSidebarWidth(n: number): number {
+  return Math.min(
+    PROJECT_SIDEBAR_MAX_PX,
+    Math.max(PROJECT_SIDEBAR_MIN_PX, n)
+  )
+}
 // Must match the wrapper's `duration-200` margin transition below.
 const PROJECT_SIDEBAR_TRANSITION_MS = 200
 const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
@@ -413,6 +422,18 @@ export function AppShell() {
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
+  const [projectSidebarWidth, setProjectSidebarWidth] = useState(() => {
+    const stored = loadProjectSidebarWidth()
+    return stored ? clampProjectSidebarWidth(stored) : PROJECT_SIDEBAR_DEFAULT_PX
+  })
+  const projectSidebarPanelRef = useRef<HTMLDivElement>(null)
+  const projectSidebarDragRef = useRef<{
+    startX: number
+    startWidth: number
+  } | null>(null)
+  const projectSidebarDragWidthRef = useRef(projectSidebarWidth)
+  const projectSidebarDragFrameRef = useRef<number | null>(null)
+  const [projectSidebarDragging, setProjectSidebarDragging] = useState(false)
   const [focusedProjectIds, setFocusedProjectIds] = useState<string[]>(() =>
     loadFocusedProjectIds()
   )
@@ -468,6 +489,9 @@ export function AppShell() {
         setSidebarOpen(loadSidebarOpen())
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setProjectSidebarOpen(loadProjectSidebarOpen())
+        const storedWidth = loadProjectSidebarWidth()
+        if (storedWidth)
+          setProjectSidebarWidth(clampProjectSidebarWidth(storedWidth))
         setFocusedProjectIds(loadFocusedProjectIds())
         setRightSidebarTab(loadRightSidebarTab())
         setLastAgentTerminals(loadLastAgentTerminals())
@@ -532,10 +556,89 @@ export function AppShell() {
   useEffect(() => {
     document.body.classList.add("gs-sidebar-resizing")
     const id = window.setTimeout(() => {
-      document.body.classList.remove("gs-sidebar-resizing")
+      if (!projectSidebarDragRef.current)
+        document.body.classList.remove("gs-sidebar-resizing")
     }, PROJECT_SIDEBAR_TRANSITION_MS + 170)
     return () => window.clearTimeout(id)
   }, [projectSidebarOpen])
+  // Persist the resized width once it settles (debounced).
+  useEffect(() => {
+    const id = window.setTimeout(
+      () => saveProjectSidebarWidth(projectSidebarWidth),
+      250
+    )
+    return () => window.clearTimeout(id)
+  }, [projectSidebarWidth])
+  useEffect(() => {
+    projectSidebarDragWidthRef.current = projectSidebarWidth
+  }, [projectSidebarWidth])
+  // Drag-to-resize: mirror WorkspaceSplit's right sidebar, but the handle is on
+  // the panel's right edge so dragging right widens it (dx is reversed in sign).
+  useEffect(() => {
+    const applyDragWidth = () => {
+      projectSidebarDragFrameRef.current = null
+      if (projectSidebarPanelRef.current)
+        projectSidebarPanelRef.current.style.width = `${projectSidebarDragWidthRef.current}px`
+    }
+    const onMove = (e: MouseEvent) => {
+      const d = projectSidebarDragRef.current
+      if (!d) return
+      e.preventDefault()
+      const dx = e.clientX - d.startX
+      projectSidebarDragWidthRef.current = clampProjectSidebarWidth(
+        d.startWidth + dx
+      )
+      if (projectSidebarDragFrameRef.current === null) {
+        projectSidebarDragFrameRef.current =
+          window.requestAnimationFrame(applyDragWidth)
+      }
+    }
+    const onUp = () => {
+      if (!projectSidebarDragRef.current) return
+      projectSidebarDragRef.current = null
+      if (projectSidebarDragFrameRef.current !== null) {
+        window.cancelAnimationFrame(projectSidebarDragFrameRef.current)
+        projectSidebarDragFrameRef.current = null
+      }
+      const width = projectSidebarDragWidthRef.current
+      if (projectSidebarPanelRef.current) {
+        projectSidebarPanelRef.current.style.width = `${width}px`
+        projectSidebarPanelRef.current.style.transition = ""
+      }
+      setProjectSidebarWidth(width)
+      setProjectSidebarDragging(false)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      document.body.classList.remove("gs-sidebar-resizing")
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+      if (projectSidebarDragFrameRef.current !== null) {
+        window.cancelAnimationFrame(projectSidebarDragFrameRef.current)
+      }
+    }
+  }, [])
+  const startProjectSidebarDrag = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      projectSidebarDragRef.current = {
+        startX: e.clientX,
+        startWidth: projectSidebarWidth,
+      }
+      projectSidebarDragWidthRef.current = projectSidebarWidth
+      if (projectSidebarPanelRef.current)
+        projectSidebarPanelRef.current.style.transition = "none"
+      setProjectSidebarDragging(true)
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+      document.body.classList.add("gs-sidebar-resizing")
+    },
+    [projectSidebarWidth]
+  )
   const focusedProjectIdsRef = useRef(focusedProjectIds)
   useEffect(() => {
     focusedProjectIdsRef.current = focusedProjectIds
@@ -2783,16 +2886,37 @@ export function AppShell() {
           collapse via a negative margin, so its contents never reflow — the
           panel glides left while the workspace expands to fill the space. */}
       <div
+        ref={projectSidebarPanelRef}
         aria-hidden={!projectSidebarOpen}
         style={{
-          width: PROJECT_SIDEBAR_WIDTH,
-          marginLeft: projectSidebarOpen ? 0 : -PROJECT_SIDEBAR_WIDTH,
+          width: projectSidebarWidth,
+          marginLeft: projectSidebarOpen ? 0 : -projectSidebarWidth,
         }}
         className={cn(
-          "shrink-0 transition-[margin-left] duration-200 ease-in-out [-webkit-app-region:no-drag]",
+          "relative shrink-0 [-webkit-app-region:no-drag]",
+          !projectSidebarDragging &&
+            "transition-[margin-left] duration-200 ease-in-out",
           !projectSidebarOpen && "pointer-events-none"
         )}
       >
+        {/* Drag handle on the right edge — dragging right widens the sidebar. */}
+        <div
+          onMouseDown={projectSidebarOpen ? startProjectSidebarDrag : undefined}
+          onDoubleClick={
+            projectSidebarOpen
+              ? () => setProjectSidebarWidth(PROJECT_SIDEBAR_DEFAULT_PX)
+              : undefined
+          }
+          role="separator"
+          aria-orientation="vertical"
+          aria-hidden={!projectSidebarOpen}
+          className={cn(
+            "group absolute inset-y-0 right-0 z-20 w-2 translate-x-1/2 cursor-col-resize touch-none",
+            !projectSidebarOpen && "pointer-events-none"
+          )}
+        >
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
+        </div>
         <ProjectSidebar
           projects={projects}
           activeId={activeProjectId}

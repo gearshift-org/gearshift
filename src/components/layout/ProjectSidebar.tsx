@@ -227,7 +227,7 @@ function ProjectSidebarRow({
         onClick={() => onSelect(p.id)}
         className={cn(
           "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
-          compact ? "py-1.5 pr-8" : "py-2",
+          compact ? "py-1.5 pr-11" : "py-2",
           animate &&
             "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
@@ -296,28 +296,64 @@ function ProjectSidebarRow({
             <AgentSpinner />
           </span>
         )}
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            // Reuse the existing right-click context menu: dispatch a synthetic
-            // contextmenu event on the trigger row so the same menu opens.
-            const trigger = e.currentTarget.parentElement
-            const rect = e.currentTarget.getBoundingClientRect()
-            trigger?.dispatchEvent(
-              new MouseEvent("contextmenu", {
-                bubbles: true,
-                clientX: rect.right,
-                clientY: rect.bottom,
-              })
-            )
-          }}
-          aria-label={`${p.name} options`}
-          className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 hover:[background-color:color-mix(in_oklab,var(--sidebar-accent),var(--foreground)_15%)]"
-        >
-          <EllipsisVertical className="size-3.5" />
-        </button>
+        <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTogglePin(p.path)
+                  }}
+                  aria-label={isPinned ? `Unpin ${p.name}` : `Pin ${p.name}`}
+                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {isPinned ? (
+                    <PinOff className="size-3.5" />
+                  ) : (
+                    <Pin className="size-3.5" />
+                  )}
+                </button>
+              }
+            />
+            <TooltipContent>
+              {isPinned ? "Unpin project" : "Pin project"}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    // Reuse the existing right-click context menu: dispatch a
+                    // synthetic contextmenu event on the trigger row.
+                    const trigger = e.currentTarget.closest(
+                      '[data-slot="context-menu-trigger"]'
+                    )
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    trigger?.dispatchEvent(
+                      new MouseEvent("contextmenu", {
+                        bubbles: true,
+                        clientX: rect.right,
+                        clientY: rect.bottom,
+                      })
+                    )
+                  }}
+                  aria-label={`${p.name} options`}
+                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <EllipsisVertical className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>More options</TooltipContent>
+          </Tooltip>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
         {/* Primary per-project actions */}

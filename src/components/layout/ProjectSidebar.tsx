@@ -226,7 +226,7 @@ function ProjectSidebarRow({
         onClick={() => onSelect(p.id)}
         className={cn(
           "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
-          compact ? "py-1.5" : "py-2",
+          compact ? "py-1.5 pr-8" : "py-2",
           animate &&
             "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
@@ -261,18 +261,6 @@ function ProjectSidebarRow({
             </span>
             {hasWorkingAgent && <AgentSpinner className="shrink-0" />}
             {hasAttentionAgent && <AgentAttention className="shrink-0" />}
-            {compact && changeCount > 0 && (
-              <span
-                title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
-                className={cn(
-                  "ml-auto flex shrink-0 items-center gap-0.5 text-xs text-foreground/70 tabular-nums",
-                  canClose && "group-hover:opacity-0"
-                )}
-              >
-                <GitBranch className="size-3" />
-                {changeCount}
-              </span>
-            )}
           </div>
           {!compact && (
             <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-foreground/70">
@@ -289,6 +277,18 @@ function ProjectSidebarRow({
             </span>
           )}
         </div>
+        {compact && changeCount > 0 && (
+          <span
+            title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
+            className={cn(
+              "absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums",
+              canClose && "group-hover:opacity-0"
+            )}
+          >
+            <GitBranch className="size-3" />
+            {changeCount}
+          </span>
+        )}
         {canClose && (
           <button
             type="button"

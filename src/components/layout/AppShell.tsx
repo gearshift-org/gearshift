@@ -3089,7 +3089,7 @@ export function AppShell() {
                 </>
               )}
               <UpdateButton />
-              {activeProject && (
+              {activeProject && projectSidebarCollapsed && (
                 <div className="flex min-w-0 items-center pr-2 pl-1.5">
                   <ProjectSwitcher
                     projects={switcherProjects}

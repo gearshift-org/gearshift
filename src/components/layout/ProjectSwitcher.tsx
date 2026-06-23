@@ -24,6 +24,8 @@ type Props = {
   onAdd: () => void
 }
 
+const SWITCHER_AVATAR_CLASS = "size-5 rounded-[5px]"
+
 function ProjectAgentState({ project }: { project: Project }) {
   const hasWorkingAgent = projectHasWorkingAgent(project)
   const hasAttentionAgent =
@@ -58,7 +60,7 @@ export function ProjectSwitcher({
         <ProjectAvatar
           name={activeProject.name}
           path={activeProject.path}
-          className="size-5 rounded-[5px]"
+          className={SWITCHER_AVATAR_CLASS}
         />
         <span className="max-w-[200px] truncate">{activeProject.name}</span>
         <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -73,7 +75,7 @@ export function ProjectSwitcher({
             <ProjectAvatar
               name={p.name}
               path={p.path}
-              className="rounded-[5px]"
+              className={SWITCHER_AVATAR_CLASS}
             />
             <ProjectAgentState project={p} />
             <span className="min-w-0 flex-1 truncate">{p.name}</span>

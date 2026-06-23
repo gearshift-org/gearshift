@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -694,6 +695,14 @@ export function TerminalView({
   const themeObj = useMemo(() => getTerminalTheme(themeId), [themeId])
   const themeRef = useRef({ isDark, theme: themeObj })
   const colorSchemeSubscribedRef = useRef(false)
+  const writeTerminalReply = useCallback(
+    (data: string) => window.term.write(sessionId, data, true),
+    [sessionId]
+  )
+  const writeColorSchemeReport = useCallback(() => {
+    const reply = themeRef.current.isDark ? 1 : 2
+    writeTerminalReply(`\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`)
+  }, [writeTerminalReply])
   const onTitleChangeRef = useRef(onTitleChange)
   const onFocusChangeRef = useRef(onFocusChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
@@ -748,7 +757,7 @@ export function TerminalView({
   // Mirror commitUi into a ref so the terminal's one-time key/input handlers can
   // read the current value without being re-attached on every state change.
   const commitUiRef = useRef(commitUi)
-  useEffect(() => {
+  useLayoutEffect(() => {
     themeRef.current = { isDark, theme: themeObj }
   }, [isDark, themeObj])
   useEffect(() => {
@@ -1129,8 +1138,11 @@ export function TerminalView({
 
     // DEC private mode 2031 — color-scheme update notifications. Subscribed
     // TUIs (Claude Code, Codex, Bubble Tea, …) send `CSI ? 2031 h` and expect
-    // a push of `CSI ? 997 ; 1|2 n` (dark|light) on every theme flip so they
-    // repaint live without a restart. `CSI ? 996 n` is an explicit query.
+    // `CSI ? 997 ; 1|2 n` (dark|light) reports so they repaint live without a
+    // restart. Send the current scheme when a live subscription appears too:
+    // COLORFGBG is fixed at PTY creation, so an agent launched after GearShift
+    // changed themes needs an immediate report instead of waiting for the next
+    // flip. `CSI ? 996 n` is an explicit query.
     // Track subscriptions during snapshot replay too: adopted Claude sessions
     // subscribed before this renderer mounted, and they still need manual theme
     // flips to be forwarded. Query replies remain suppressed while replaying.
@@ -1139,6 +1151,7 @@ export function TerminalView({
       (params) => {
         if (!csiParamsInclude(params, DEC_COLOR_SCHEME_UPDATE)) return false
         colorSchemeSubscribedRef.current = true
+        if (!replayingSnapshot) writeColorSchemeReport()
         return true
       }
     )
@@ -1155,11 +1168,7 @@ export function TerminalView({
       (params) => {
         if (!csiParamsInclude(params, DEC_COLOR_SCHEME_QUERY)) return false
         if (replayingSnapshot) return true
-        const reply = themeRef.current.isDark ? 1 : 2
-        window.term.write(
-          sessionId,
-          `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`
-        )
+        writeColorSchemeReport()
         return true
       }
     )
@@ -1168,8 +1177,7 @@ export function TerminalView({
       (data) => {
         if (data.trim() !== "?") return false
         if (replayingSnapshot) return true
-        window.term.write(
-          sessionId,
+        writeTerminalReply(
           oscColorReport(OSC_FOREGROUND_COLOR, themeRef.current.theme.foreground)
         )
         return true
@@ -1180,8 +1188,7 @@ export function TerminalView({
       (data) => {
         if (data.trim() !== "?") return false
         if (replayingSnapshot) return true
-        window.term.write(
-          sessionId,
+        writeTerminalReply(
           oscColorReport(OSC_BACKGROUND_COLOR, themeRef.current.theme.background)
         )
         return true
@@ -1519,6 +1526,7 @@ export function TerminalView({
       replayingSnapshot = true
       term.write(snap, () => {
         replayingSnapshot = false
+        if (colorSchemeSubscribedRef.current) writeColorSchemeReport()
         attachLiveData()
       })
     })
@@ -1739,6 +1747,8 @@ export function TerminalView({
     markAgentWorking,
     clearAgentWorking,
     emitAgentStatus,
+    writeColorSchemeReport,
+    writeTerminalReply,
   ])
 
   useEffect(() => {
@@ -2012,10 +2022,9 @@ export function TerminalView({
     // DEC mode 2031: push color-scheme report so subscribed TUIs (Claude Code,
     // Codex, Bubble Tea) repaint live on theme flip without a restart.
     if (colorSchemeSubscribedRef.current) {
-      const reply = isDark ? 1 : 2
-      window.term.write(sessionId, `\x1b[?${DEC_COLOR_SCHEME_REPORT};${reply}n`)
+      writeColorSchemeReport()
     }
-  }, [themeObj, isDark, sessionId])
+  }, [themeObj, isDark, writeColorSchemeReport])
 
   useEffect(() => {
     const term = termRef.current

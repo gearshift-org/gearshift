@@ -1381,19 +1381,18 @@ function GitHubBranchAction({
             disabled={busy}
             aria-label={`Open ${branch} on GitHub`}
             onClick={onOpen}
-            className="h-8 shrink-0 gap-1.5 px-2 text-xs"
+            className="size-8 shrink-0 p-0"
           >
             {busy ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <ExternalLink className="size-3.5" />
             )}
-            <span>GitHub</span>
           </Button>
         }
       />
       <TooltipContent side="bottom">
-        Open current branch on GitHub
+        Open branch <span className="font-medium">{branch}</span> on GitHub
       </TooltipContent>
     </Tooltip>
   )
@@ -1429,7 +1428,7 @@ function PullRequestAction({
             aria-label={label}
             onClick={pullRequest ? onOpen : onCreate}
             className={cn(
-              "h-8 shrink-0 gap-1.5 px-2 text-xs",
+              "size-8 shrink-0 p-0",
               pullRequest &&
                 "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
             )}
@@ -1439,14 +1438,13 @@ function PullRequestAction({
             ) : (
               <GitPullRequest className="size-3.5" />
             )}
-            <span>{pullRequest ? `#${pullRequest.number}` : "Create PR"}</span>
           </Button>
         }
       />
       <TooltipContent side="bottom">
         {pullRequest
-          ? "View Pull Request"
-          : "Open GitHub to create a pull request"}
+          ? `View pull request #${pullRequest.number}`
+          : "Create a pull request on GitHub"}
       </TooltipContent>
     </Tooltip>
   )

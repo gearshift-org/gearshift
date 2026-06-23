@@ -816,7 +816,17 @@ export function ProjectSidebar({
               isOpen={projectsOpen}
               onToggle={() => setProjectsOpen((open) => !open)}
               action={
-                <ProjectSortMenu mode={sortMode} onChange={changeSortMode} />
+                <div className="flex items-center gap-0.5">
+                  <ProjectSortMenu mode={sortMode} onChange={changeSortMode} />
+                  <AddProjectMenu
+                    variant="sidebar-icon"
+                    recents={recents}
+                    onOpenDialog={onAdd}
+                    onPickRecent={onPickRecent}
+                    onRemoveRecent={onRemoveRecent}
+                    compact={compact}
+                  />
+                </div>
               }
             />
             {projectsOpen &&
@@ -875,14 +885,6 @@ export function ProjectSidebar({
             <span className="truncate">Exit Focus Mode</span>
           </button>
         )}
-        <AddProjectMenu
-          variant="sidebar"
-          recents={recents}
-          onOpenDialog={onAdd}
-          onPickRecent={onPickRecent}
-          onRemoveRecent={onRemoveRecent}
-          compact={compact}
-        />
       </div>
       <div className="shrink-0 px-3 pt-1.5 pb-3">
         <Tooltip>

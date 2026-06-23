@@ -12,6 +12,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 import { ChevronDownIcon, XIcon, CheckIcon } from "lucide-react"
+import { menuItemHighlightedClass } from "./menu-styles"
 
 const Combobox = ComboboxPrimitive.Root
 
@@ -140,7 +141,8 @@ function ComboboxItem({
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-highlighted:bg-accent/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        menuItemHighlightedClass,
         className
       )}
       {...props}

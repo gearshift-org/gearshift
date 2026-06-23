@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { menuItemSelectedClass } from "./menu-styles"
 
 function Command({
   className,
@@ -133,7 +134,8 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[selected=true]:bg-accent/20 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+        "relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+        menuItemSelectedClass,
         className,
       )}
       {...props}

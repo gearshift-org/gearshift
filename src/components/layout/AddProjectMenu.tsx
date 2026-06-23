@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react"
-import { FolderOpen, Plus, Search, X } from "lucide-react"
+import { useMemo, useState, type KeyboardEvent } from "react"
+import { FolderOpen, FolderPlus, Plus, Search, X } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/tooltip"
 import { shortenHomePath } from "@/lib/pathDisplay"
 import { cn } from "@/lib/utils"
+import { menuItemActiveClass } from "@/components/ui/menu-styles"
 import type { RecentProject } from "@/lib/projects"
 
 type Props = {
@@ -25,7 +26,7 @@ type Props = {
   onPickRecent: (recent: RecentProject) => void
   onRemoveRecent?: (recent: RecentProject) => void
   onOpenDialog: () => void
-  variant?: "tab" | "sidebar"
+  variant?: "tab" | "sidebar" | "sidebar-icon"
   compact?: boolean
 }
 
@@ -48,11 +49,21 @@ export function AddProjectMenu({
         recent.path.toLowerCase().includes(q)
     )
   }, [query, recents])
-  const [selectedIndex, setSelectedIndex] = useState(0)
-
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [query, filteredRecents.length])
+  const selectionKey = `${query}\0${filteredRecents.length}`
+  const [selection, setSelection] = useState({ key: selectionKey, index: 0 })
+  const selectedIndex =
+    selection.key === selectionKey
+      ? Math.min(selection.index, Math.max(filteredRecents.length - 1, 0))
+      : 0
+  const setSelectedIndex = (next: number | ((index: number) => number)) => {
+    setSelection((prev) => {
+      const index = prev.key === selectionKey ? prev.index : 0
+      return {
+        key: selectionKey,
+        index: typeof next === "function" ? next(index) : next,
+      }
+    })
+  }
 
   const pickRecent = (recent: RecentProject) => {
     onPickRecent(recent)
@@ -100,7 +111,7 @@ export function AddProjectMenu({
         onMouseMove={() => setSelectedIndex(index)}
         className={cn(
           "group/recent relative mx-1 flex items-center gap-2 pr-7",
-          selected && "bg-accent/50"
+          selected && menuItemActiveClass
         )}
       >
         <div className="min-w-0 flex-1">
@@ -132,6 +143,7 @@ export function AddProjectMenu({
     )
   })
   const shouldScrollRecents = filteredRecents.length > 5
+  const isSidebarIcon = variant === "sidebar-icon"
 
   const trigger =
     variant === "sidebar" ? (
@@ -146,6 +158,13 @@ export function AddProjectMenu({
           <Plus className="size-3.5" />
         </span>
         Add Project
+      </DropdownMenuTrigger>
+    ) : isSidebarIcon ? (
+      <DropdownMenuTrigger
+        aria-label="Add project"
+        className="grid size-5 place-items-center rounded-sm text-muted-foreground/80 transition-colors outline-none hover:text-foreground data-[popup-open]:text-foreground"
+      >
+        <FolderPlus className="size-3.5" />
       </DropdownMenuTrigger>
     ) : (
       <DropdownMenuTrigger
@@ -165,11 +184,13 @@ export function AddProjectMenu({
       ) : (
         <Tooltip>
           <TooltipTrigger render={trigger} />
-          <TooltipContent>Open project</TooltipContent>
+          <TooltipContent>
+            {isSidebarIcon ? "Add project" : "Open project"}
+          </TooltipContent>
         </Tooltip>
       )}
       <DropdownMenuContent
-        align="start"
+        align={isSidebarIcon ? "end" : "start"}
         className={cn(
           "flex max-h-[min(520px,var(--available-height))] min-w-[260px] flex-col overflow-hidden",
           variant === "sidebar" && "w-[214px]"

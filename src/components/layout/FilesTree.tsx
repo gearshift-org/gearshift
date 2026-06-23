@@ -126,7 +126,8 @@ function FolderNode({
   const [manuallyOpen, setManuallyOpen] = useState(depth === 0)
   const [forceClosed, setForceClosed] = useState(false)
   const collapseSignal = useContext(CollapseSignalContext)
-  const { pendingCreate, pendingRename, moveToDir } = useTreeActions()
+  const { pendingCreate, pendingRename, moveToDir, startRename } =
+    useTreeActions()
   const [dragOver, setDragOver] = useState(false)
   const isCreateTarget = pendingCreate?.parentAbs === absPath
   const isRenaming = pendingRename?.absPath === absPath
@@ -192,8 +193,14 @@ function FolderNode({
           setForceClosed(false)
         }
       }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault()
+          startRename(absPath)
+        }
+      }}
       className={cn(
-        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+        "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground outline-none hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
         dragOver && "bg-accent/70 ring-1 ring-ring/40 ring-inset",
         ignored && "text-muted-foreground opacity-80"
       )}
@@ -352,9 +359,23 @@ function RenameEntryRow({
   const [value, setValue] = useState(initialName)
   const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Track whether the input has actually taken focus. A context menu restores
+  // focus to its (now-unmounted) trigger as it closes, which can fire a blur on
+  // this input before the user types — that spurious blur must not commit.
+  const focusedRef = useRef(false)
   useEffect(() => {
-    inputRef.current?.focus()
-    inputRef.current?.select()
+    const raf = requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const dot = value.lastIndexOf(".")
+      // Select the base name (excluding the extension) like Finder/VS Code.
+      if (!isDir && dot > 0) el.setSelectionRange(0, dot)
+      else el.select()
+      focusedRef.current = true
+    })
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const submit = async () => {
@@ -404,6 +425,7 @@ function RenameEntryRow({
           }
         }}
         onBlur={() => {
+          if (!focusedRef.current) return
           void submit()
         }}
         className="min-w-0 flex-1 rounded-sm border border-ring/40 bg-background px-1 py-0 outline-none focus:border-ring"
@@ -468,7 +490,10 @@ function FileTreeContextMenu({
           <>
             <ContextMenuItem
               onClick={() => {
-                startRename(absPath)
+                // Defer until the menu has closed and restored focus to its
+                // trigger; otherwise that restoration steals focus from the
+                // rename input the moment it mounts.
+                requestAnimationFrame(() => startRename(absPath))
               }}
             >
               <Pencil className="size-3.5" />
@@ -535,7 +560,7 @@ function FileNode({
   ignored?: boolean
 }) {
   const ref = useRef<HTMLButtonElement>(null)
-  const { pendingRename } = useTreeActions()
+  const { pendingRename, startRename } = useTreeActions()
   const isRenaming = pendingRename?.absPath === absPath
 
   useEffect(() => {
@@ -561,8 +586,14 @@ function FileNode({
         draggable
         onDragStart={(e) => setPathDragData(e.dataTransfer, [absPath])}
         onClick={() => onOpenFile(relPath)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            startRename(absPath)
+          }
+        }}
         className={cn(
-          "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground hover:bg-accent/40",
+          "flex w-full items-center gap-1 px-2 py-[3px] text-left text-xs text-foreground outline-none hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
           active && "bg-foreground/10 dark:bg-foreground/15",
           ignored && "text-muted-foreground opacity-80"
         )}

@@ -692,13 +692,11 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
   useEffect(() => {
     let active = true
     let watchId: string | null = null
-    window.fsApi.watchProject(cwd).then((res) => {
-      if (!active || !res.ok || !res.watchId) return
-      watchId = res.watchId
-    })
     let timer: number | null = null
+    // Gate on watchId (not a cwd string compare) so path normalization
+    // mismatches can't silently drop events — matches the git watcher.
     const off = window.fsApi.onChanged((ev) => {
-      if (ev.cwd !== cwd) return
+      if (!watchId || ev.watchId !== watchId) return
       if (timer !== null) window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         void queryClient.invalidateQueries({
@@ -708,6 +706,10 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
           queryKey: fileTreeAllFilesQueryKey(cwd),
         })
       }, 300)
+    })
+    window.fsApi.watchProject(cwd).then((res) => {
+      if (!active || !res.ok || !res.watchId) return
+      watchId = res.watchId
     })
     return () => {
       active = false

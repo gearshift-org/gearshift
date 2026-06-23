@@ -287,6 +287,41 @@
   --sidebar-ring: #4078f2;
 }
 
+/* Light · Atom One Light — akamud.vscode-theme-onelight workbench palette */
+[data-theme="light-atom-one-light"] {
+  --background: #fafafa;
+  --foreground: #383a42;
+  --card: #fafafa;
+  --card-foreground: #383a42;
+  --popover: #ffffff;
+  --popover-foreground: #383a42;
+  --primary: #5871ef;
+  --primary-foreground: #ffffff;
+  --secondary: #eaeaeb;
+  --secondary-foreground: #383a42;
+  --muted: #dbdbdc;
+  --muted-foreground: #9d9d9f;
+  --accent: #dbdbdc;
+  --accent-foreground: #232324;
+  --destructive: #de3d3b;
+  --border: #dbdbdc;
+  --input: #ffffff;
+  --ring: #526fff;
+  --chart-1: #4078f2;
+  --chart-2: #50a14f;
+  --chart-3: #a626a4;
+  --chart-4: #c18401;
+  --chart-5: #e45649;
+  --sidebar: #eaeaeb;
+  --sidebar-foreground: #383a42;
+  --sidebar-primary: #526fff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dbdbdc;
+  --sidebar-accent-foreground: #232324;
+  --sidebar-border: #dbdbdc;
+  --sidebar-ring: #526fff;
+}
+
 /* Light · Nebula Pandas — light lavender UI with lime accent */
 [data-theme="light-nebula-pandas"] {
   --background: #f8f6ff;
@@ -637,6 +672,41 @@
   --sidebar-accent-foreground: #d7dae0;
   --sidebar-border: #181a1f;
   --sidebar-ring: #61afef;
+}
+
+/* Dark · Atom One Dark — akamud.vscode-theme-onedark workbench palette */
+[data-theme="dark-atom-one-dark"] {
+  --background: #282c34;
+  --foreground: #abb2bf;
+  --card: #282c34;
+  --card-foreground: #abb2bf;
+  --popover: #21252b;
+  --popover-foreground: #abb2bf;
+  --primary: #4d78cc;
+  --primary-foreground: #ffffff;
+  --secondary: #353b45;
+  --secondary-foreground: #abb2bf;
+  --muted: #2c313a;
+  --muted-foreground: #636d83;
+  --accent: #2c313a;
+  --accent-foreground: #d7dae0;
+  --destructive: #e06c75;
+  --border: #181a1f;
+  --input: #1b1d23;
+  --ring: #528bff;
+  --chart-1: #61afef;
+  --chart-2: #98c379;
+  --chart-3: #c678dd;
+  --chart-4: #e5c07b;
+  --chart-5: #e06c75;
+  --sidebar: #21252b;
+  --sidebar-foreground: #abb2bf;
+  --sidebar-primary: #528bff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #2c313a;
+  --sidebar-accent-foreground: #d7dae0;
+  --sidebar-border: #181a1f;
+  --sidebar-ring: #528bff;
 }
 
 /* Dark · Nebula Pandas — ChirtleLovesDolls' purple nebula UI with lime accent */

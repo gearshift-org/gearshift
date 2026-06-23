@@ -1,6 +1,6 @@
 import * as React from "react"
-import { Monitor, Moon, Sun } from "lucide-react"
-import { THEMES, type ThemeId, useTheme } from "@/components/theme-provider"
+import { Monitor } from "lucide-react"
+import { type ThemeId, useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
@@ -16,11 +16,68 @@ import {
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
+  ComboboxTrigger,
 } from "@/components/ui/combobox"
 
-const THEME_IDS = Object.keys(THEMES) as ThemeId[]
-const LIGHT_THEMES = THEME_IDS.filter((id) => THEMES[id].appearance === "light")
-const DARK_THEMES = THEME_IDS.filter((id) => THEMES[id].appearance === "dark")
+type ThemePair = {
+  label: string
+  light: ThemeId
+  dark: ThemeId
+}
+
+const THEME_PAIRS: ThemePair[] = [
+  { label: "Default", light: "light", dark: "dark" },
+  { label: "Cool", light: "light-cool", dark: "dark-cool" },
+  { label: "Warm", light: "light-warm", dark: "dark-warm" },
+  { label: "Rosé", light: "light-rose", dark: "dark-rose" },
+  { label: "Forest", light: "light-forest", dark: "dark-forest" },
+  { label: "Violet", light: "light-violet", dark: "dark-violet" },
+  { label: "Atom One", light: "light-atom-one", dark: "dark-atom-one" },
+  {
+    label: "Atom One Dark",
+    light: "light-atom-one-light",
+    dark: "dark-atom-one-dark",
+  },
+  {
+    label: "Nebula Pandas",
+    light: "light-nebula-pandas",
+    dark: "dark-nebula-pandas",
+  },
+  { label: "Night Owl", light: "light-night-owl", dark: "dark-night-owl" },
+  { label: "Palenight", light: "light-palenight", dark: "dark-palenight" },
+  {
+    label: "Material Color",
+    light: "light-material-color",
+    dark: "dark-material-color",
+  },
+  {
+    label: "Monokai Pro",
+    light: "light-monokai-pro",
+    dark: "dark-monokai-pro",
+  },
+  { label: "Claude", light: "light-claude", dark: "dark-claude" },
+]
+
+const THEME_OPTIONS = THEME_PAIRS.flatMap((pair) => [
+  {
+    id: pair.light,
+    label: pair.label,
+    appearance: "Light",
+    value: `${pair.label} Light`,
+  },
+  {
+    id: pair.dark,
+    label: pair.label,
+    appearance: "Dark",
+    value: `${pair.label} Dark`,
+  },
+] satisfies Array<{
+  id: ThemeId
+  label: string
+  appearance: string
+  value: string
+}>)
+const THEME_OPTION_VALUES = THEME_OPTIONS.map((option) => option.value)
 
 // Swatch colors per theme so variants are distinguishable at a glance. Values
 // mirror the palettes in index.css.
@@ -32,6 +89,7 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "light-forest": { bg: "#f5f8f4", fg: "#384439", accent: "#5b9c63" },
   "light-violet": { bg: "#f8f6fb", fg: "#423a52", accent: "#8b6bc7" },
   "light-atom-one": { bg: "#fafafa", fg: "#383a42", accent: "#4078f2" },
+  "light-atom-one-light": { bg: "#fafafa", fg: "#383a42", accent: "#526fff" },
   "light-nebula-pandas": { bg: "#f8f6ff", fg: "#27273a", accent: "#6bc75f" },
   "light-night-owl": { bg: "#fbfbfb", fg: "#403f53", accent: "#2aa298" },
   "light-palenight": { bg: "#f7f7fb", fg: "#2f3354", accent: "#7e57c2" },
@@ -45,6 +103,7 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "dark-forest": { bg: "#171a17", fg: "#d2dbd0", accent: "#6cc777" },
   "dark-violet": { bg: "#1b1820", fg: "#d8d2e0", accent: "#a98fd6" },
   "dark-atom-one": { bg: "#282c34", fg: "#abb2bf", accent: "#61afef" },
+  "dark-atom-one-dark": { bg: "#282c34", fg: "#abb2bf", accent: "#528bff" },
   "dark-nebula-pandas": { bg: "#27273a", fg: "#fcf6ff", accent: "#97ee91" },
   "dark-night-owl": { bg: "#011627", fg: "#d6deeb", accent: "#80a4c2" },
   "dark-palenight": { bg: "#292d3e", fg: "#bfc7d5", accent: "#7e57c2" },
@@ -82,15 +141,14 @@ function selectedFontFamily(fontFamily: string, choices: string[]): string | und
 
 function useLocalFontFamilies() {
   const [families, setFamilies] = React.useState<string[]>([])
-  const [available, setAvailable] = React.useState(false)
+  const queryLocalFonts = (window as Window & {
+    queryLocalFonts?: () => Promise<LocalFontData[]>
+  }).queryLocalFonts
+  const available = !!queryLocalFonts
 
   React.useEffect(() => {
-    const queryLocalFonts = (window as Window & {
-      queryLocalFonts?: () => Promise<LocalFontData[]>
-    }).queryLocalFonts
     if (!queryLocalFonts) return
 
-    setAvailable(true)
     let cancelled = false
     queryLocalFonts()
       .then((fonts) => {
@@ -105,65 +163,94 @@ function useLocalFontFamilies() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [queryLocalFonts])
 
   return { available, families }
 }
 
-function ThemeGroup({
-  label,
-  icon: Icon,
-  ids,
+function ThemePreviewTile({ id }: { id: ThemeId }) {
+  const swatch = SWATCHES[id]
+
+  return (
+    <span
+      className="grid size-6 shrink-0 place-items-center rounded-md border border-border/60 text-[11px] font-semibold"
+      style={{ backgroundColor: swatch.bg, color: swatch.accent }}
+    >
+      Aa
+    </span>
+  )
+}
+
+function ThemeOptionLabel({
+  option,
+  className,
+}: {
+  option: (typeof THEME_OPTIONS)[number]
+  className?: string
+}) {
+  return (
+    <span className={cn("min-w-0 truncate", className)}>
+      {option.label}
+      <span className="text-muted-foreground"> {option.appearance}</span>
+    </span>
+  )
+}
+
+function ThemeDropdowns({
   active,
   onSelect,
 }: {
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  ids: ThemeId[]
   active: string
   onSelect: (id: ThemeId) => void
 }) {
+  const activeTheme = THEME_OPTIONS.find((option) => option.id === active)
+  const selectedTheme = activeTheme ?? THEME_OPTIONS[0]
+  const selectTheme = (value: string | null) => {
+    const option = THEME_OPTIONS.find((item) => item.value === value)
+    if (option) onSelect(option.id)
+  }
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="size-3.5" />
-        {label}
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        {ids.map((id) => {
-          const isActive = active === id
-          const swatch = SWATCHES[id]
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onSelect(id)}
-              aria-pressed={isActive}
-              className={cn(
-                "flex flex-col gap-3 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isActive && "border-ring bg-muted/60 ring-2 ring-ring/40",
-              )}
-            >
-              <span
-                className="flex h-10 items-center gap-1.5 rounded-md border border-border/60 px-2"
-                style={{ backgroundColor: swatch.bg }}
-              >
-                <span
-                  className="h-4 w-4 rounded-full"
-                  style={{ backgroundColor: swatch.accent }}
-                />
-                <span
-                  className="h-1.5 flex-1 rounded-full"
-                  style={{ backgroundColor: swatch.fg, opacity: 0.5 }}
-                />
-              </span>
-              <span className="text-sm font-medium text-foreground">
-                {THEMES[id].label}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+    <div className="grid gap-1.5">
+      <label className="grid gap-1.5">
+        <span className="text-sm font-medium text-foreground">Theme</span>
+        <Combobox
+          items={THEME_OPTION_VALUES}
+          value={selectedTheme.value}
+          onValueChange={selectTheme}
+          autoHighlight
+        >
+          <ComboboxTrigger
+            aria-label="Theme"
+            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-input)] border border-border bg-background px-2.5 text-sm text-foreground outline-none transition-colors hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [&>svg:last-child]:ml-auto"
+          >
+            <ThemePreviewTile id={selectedTheme.id} />
+            <ThemeOptionLabel option={selectedTheme} className="flex-none" />
+          </ComboboxTrigger>
+          <ComboboxContent align="start" className="p-0">
+            <div className="border-b border-border/60 p-2">
+              <ComboboxInput
+                showTrigger={false}
+                placeholder="Filter themes..."
+                className="h-7 w-full text-xs"
+              />
+            </div>
+            <ComboboxEmpty>No themes found.</ComboboxEmpty>
+            <ComboboxList>
+              {(value) => {
+                const option = THEME_OPTIONS.find((item) => item.value === value)
+                if (!option) return null
+                return (
+                  <ComboboxItem key={option.id} value={value}>
+                    <ThemePreviewTile id={option.id} />
+                    <ThemeOptionLabel option={option} />
+                  </ComboboxItem>
+                )
+              }}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
+      </label>
     </div>
   )
 }
@@ -214,20 +301,7 @@ export function AppearancePanel() {
         </div>
       </button>
 
-      <ThemeGroup
-        label="Light"
-        icon={Sun}
-        ids={LIGHT_THEMES}
-        active={theme}
-        onSelect={setTheme}
-      />
-      <ThemeGroup
-        label="Dark"
-        icon={Moon}
-        ids={DARK_THEMES}
-        active={theme}
-        onSelect={setTheme}
-      />
+      <ThemeDropdowns active={theme} onSelect={setTheme} />
       <div className="mt-2 rounded-lg border border-border bg-background">
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Terminal</h3>

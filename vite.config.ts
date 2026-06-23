@@ -5,6 +5,10 @@ import { defineConfig } from "vite"
 import electron from "vite-plugin-electron"
 
 export default defineConfig({
+  // Vite 8.1 experimental Full Bundle Mode (experimental.bundledDev) is
+  // disabled: it mis-orders reselect's circular imports (pulled in via
+  // @base-ui/utils), crashing the renderer with "createSelectorCreator is not
+  // defined". Re-enable once the experimental bundler handles it.
   server: {
     port: 5111,
     strictPort: true,

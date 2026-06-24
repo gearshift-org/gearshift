@@ -597,9 +597,10 @@ const COMPACT_PROJECT_SIDEBAR_KEY = "gearshift.compactProjectSidebar"
 
 export function loadCompactProjectSidebar(): boolean {
   try {
-    return store.get(COMPACT_PROJECT_SIDEBAR_KEY) === "1"
+    const value = store.get(COMPACT_PROJECT_SIDEBAR_KEY)
+    return value === null ? true : value === "1"
   } catch {
-    return false
+    return true
   }
 }
 

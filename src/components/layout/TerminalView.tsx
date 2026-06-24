@@ -479,6 +479,10 @@ const COLUMN_REFLOW_DEBOUNCE_LINES = 200
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
 const RECAP_IDLE_DELAY_MS = 30000
+const LIVE_FIT_SUPPRESSING_BODY_CLASSES = [
+  "gs-sidebar-resizing",
+  "gs-window-resizing",
+]
 const TERMINAL_RECAP_BOX_ENABLED = true
 // Floating commit affordance temporarily disabled; keep the code path intact.
 const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
@@ -488,6 +492,13 @@ const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
 // interactions that repaint the TUI (opening the model picker, selecting a
 // model) get misread as work and stick a false busy dot on the pane.
 const HOOK_BACKED_AGENTS = new Set(["claude", "codex", "opencode", "pi"])
+
+function shouldSuppressLiveFit() {
+  return LIVE_FIT_SUPPRESSING_BODY_CLASSES.some((className) =>
+    document.body.classList.contains(className)
+  )
+}
+
 // Hookless agents fall back to "terminal produced output while running" as a
 // busy signal. Keep this to agents that have no hooks (Gemini, plain shells).
 const OUTPUT_ACTIVITY_AGENTS = new Set(["gemini"])
@@ -1634,8 +1645,9 @@ export function TerminalView({
       // forces a synchronous layout read every frame right after the drag
       // mutates the sidebar width — that thrash, on top of a busy agent's
       // rendering, is what makes dragging janky. The settle fit below runs once
-      // the drag pauses. Other resizes (window, splits) keep the live fit.
-      if (!document.body.classList.contains("gs-sidebar-resizing")) {
+      // the drag pauses. Native window drags use the same suppression; split
+      // resizes keep the live fit.
+      if (!shouldSuppressLiveFit()) {
         scheduleFit(false)
       }
       if (resizeTimer) window.clearTimeout(resizeTimer)

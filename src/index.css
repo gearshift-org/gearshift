@@ -1410,6 +1410,10 @@
 body.gs-sidebar-resizing .gs-agent-header-scan,
 body.gs-sidebar-resizing .gs-agent-project-scan::before,
 body.gs-sidebar-resizing .gs-agent-pulse-border,
-body.gs-sidebar-resizing .gs-agent-done-dot::before {
+body.gs-sidebar-resizing .gs-agent-done-dot::before,
+body.gs-window-resizing .gs-agent-header-scan,
+body.gs-window-resizing .gs-agent-project-scan::before,
+body.gs-window-resizing .gs-agent-pulse-border,
+body.gs-window-resizing .gs-agent-done-dot::before {
   animation-play-state: paused;
 }

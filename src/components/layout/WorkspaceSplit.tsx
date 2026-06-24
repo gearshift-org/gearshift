@@ -141,6 +141,7 @@ export function WorkspaceSplit({
     []
   )
   const containerRef = useRef<HTMLDivElement>(null)
+  const workspacePanelRef = useRef<HTMLDivElement>(null)
   const sidebarPanelRef = useRef<HTMLDivElement>(null)
   const sidebarContentRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -187,6 +188,8 @@ export function WorkspaceSplit({
     const applyDragWidth = () => {
       dragFrameRef.current = null
       const width = `${dragWidthRef.current}px`
+      if (workspacePanelRef.current)
+        workspacePanelRef.current.style.paddingRight = width
       if (sidebarPanelRef.current) sidebarPanelRef.current.style.width = width
       if (sidebarContentRef.current)
         sidebarContentRef.current.style.width = width
@@ -211,6 +214,8 @@ export function WorkspaceSplit({
       }
       const width = dragWidthRef.current
       const widthPx = `${width}px`
+      if (workspacePanelRef.current)
+        workspacePanelRef.current.style.paddingRight = widthPx
       if (sidebarPanelRef.current) {
         sidebarPanelRef.current.style.width = widthPx
         sidebarPanelRef.current.style.transition = ""
@@ -304,41 +309,50 @@ export function WorkspaceSplit({
   return (
     <div
       ref={containerRef}
-      className="relative flex min-h-0 flex-1 overflow-hidden"
+      className="relative min-h-0 flex-1 overflow-hidden"
     >
-      <div className="min-w-0 flex-1">{workspaceSection}</div>
       <div
-        onMouseDown={sidebarOpen ? startDrag : undefined}
-        onDoubleClick={
-          sidebarOpen ? () => setSidebarWidth(SIDEBAR_DEFAULT_PX) : undefined
-        }
-        role="separator"
-        aria-orientation="vertical"
-        aria-hidden={!sidebarOpen}
+        ref={workspacePanelRef}
         className={cn(
-          "group relative z-20 shrink-0 cursor-col-resize touch-none",
-          sidebarOpen ? "-mx-2 w-4" : "pointer-events-none w-0",
-          !isDragging && "transition-[width] duration-150 ease-out"
+          "h-full min-w-0",
+          !isDragging && "transition-[padding-right] duration-200 ease-in-out"
         )}
+        style={{ paddingRight: sidebarOpen ? sidebarWidth : 0 }}
       >
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
+        {workspaceSection}
       </div>
-      {/* Keep the sidebar mounted at its full width and slide it off-screen on
-          collapse via a negative margin, so its contents never reflow — same
-          mechanism (and timing) as the left project sidebar in AppShell. */}
+      {/* Keep the sidebar mounted at its full width and pin it to the right app
+          edge. The workspace reserves matching space so opposite-edge window
+          resizes don't make the sidebar drift before layout settles. */}
       <div
         ref={sidebarPanelRef}
         style={{
           width: sidebarWidth,
-          marginRight: sidebarOpen ? 0 : -sidebarWidth,
+          transform: sidebarOpen ? "translateX(0)" : "translateX(100%)",
         }}
         className={cn(
-          "relative h-full shrink-0 overflow-hidden",
-          !isDragging && "transition-[margin-right] duration-200 ease-in-out",
+          "absolute inset-y-0 right-0 z-10 h-full overflow-hidden",
+          !isDragging && "transition-transform duration-200 ease-in-out",
           !sidebarOpen && "pointer-events-none"
         )}
         aria-hidden={!sidebarOpen}
       >
+        {/* Drag handle on the left edge — dragging left widens the sidebar. */}
+        <div
+          onMouseDown={sidebarOpen ? startDrag : undefined}
+          onDoubleClick={
+            sidebarOpen ? () => setSidebarWidth(SIDEBAR_DEFAULT_PX) : undefined
+          }
+          role="separator"
+          aria-orientation="vertical"
+          aria-hidden={!sidebarOpen}
+          className={cn(
+            "group absolute inset-y-0 left-0 z-20 w-2 -translate-x-1/2 cursor-col-resize touch-none",
+            !sidebarOpen && "pointer-events-none"
+          )}
+        >
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
+        </div>
         <div
           ref={sidebarContentRef}
           className="absolute inset-0"

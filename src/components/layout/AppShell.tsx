@@ -177,6 +177,7 @@ function clampProjectSidebarWidth(n: number): number {
 }
 // Must match the wrapper's `duration-200` margin transition below.
 const PROJECT_SIDEBAR_TRANSITION_MS = 200
+const WINDOW_RESIZE_SETTLE_MS = 180
 const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   claude: "claude",
   codex: "codex",
@@ -545,6 +546,27 @@ export function AppShell() {
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
   }, [sidebarOpen])
+  // Native window drags can dispatch dozens of layout resizes per second.
+  // Mark that short window so terminals skip expensive per-frame refits and do
+  // a single settle fit, keeping the fixed-width right sidebar from appearing
+  // to shake while the app frame is resized.
+  useEffect(() => {
+    let resizeTimer: number | null = null
+    const onResize = () => {
+      document.body.classList.add("gs-window-resizing")
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = null
+        document.body.classList.remove("gs-window-resizing")
+      }, WINDOW_RESIZE_SETTLE_MS)
+    }
+    window.addEventListener("resize", onResize)
+    return () => {
+      window.removeEventListener("resize", onResize)
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer)
+      document.body.classList.remove("gs-window-resizing")
+    }
+  }, [])
   useEffect(() => {
     saveProjectSidebarOpen(projectSidebarOpen)
   }, [projectSidebarOpen])

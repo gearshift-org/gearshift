@@ -3,14 +3,15 @@ import * as React from "react"
 import { store } from "@/lib/store"
 
 type ResolvedTheme = "dark" | "light"
+export type ThemeMode = "system" | ResolvedTheme
 
 type ThemeDefinition = {
   label: string
   appearance: ResolvedTheme
 }
 
-// Registry of selectable themes. `system` is handled separately (it follows the
-// OS and resolves to the default light/dark palette).
+// Registry of concrete theme variants. Appearance settings choose a family
+// plus a mode, then resolve to one of these light/dark IDs.
 export const THEMES = {
   light: { label: "Default", appearance: "light" },
   "light-cool": { label: "Cool", appearance: "light" },
@@ -45,6 +46,82 @@ export const THEMES = {
 export type ThemeId = keyof typeof THEMES
 type Theme = ThemeId | "system"
 
+export type ThemeFamily = {
+  id: string
+  label: string
+  light: ThemeId
+  dark: ThemeId
+}
+
+export const THEME_FAMILIES = [
+  { id: "default", label: "Default", light: "light", dark: "dark" },
+  { id: "cool", label: "Cool", light: "light-cool", dark: "dark-cool" },
+  { id: "warm", label: "Warm", light: "light-warm", dark: "dark-warm" },
+  { id: "rose", label: "Rosé", light: "light-rose", dark: "dark-rose" },
+  {
+    id: "forest",
+    label: "Forest",
+    light: "light-forest",
+    dark: "dark-forest",
+  },
+  {
+    id: "violet",
+    label: "Violet",
+    light: "light-violet",
+    dark: "dark-violet",
+  },
+  {
+    id: "atom-one",
+    label: "Atom One",
+    light: "light-atom-one",
+    dark: "dark-atom-one",
+  },
+  {
+    id: "atom-one-dark",
+    label: "Atom One Dark",
+    light: "light-atom-one-light",
+    dark: "dark-atom-one-dark",
+  },
+  {
+    id: "nebula-pandas",
+    label: "Nebula Pandas",
+    light: "light-nebula-pandas",
+    dark: "dark-nebula-pandas",
+  },
+  {
+    id: "night-owl",
+    label: "Night Owl",
+    light: "light-night-owl",
+    dark: "dark-night-owl",
+  },
+  {
+    id: "palenight",
+    label: "Palenight",
+    light: "light-palenight",
+    dark: "dark-palenight",
+  },
+  {
+    id: "material-color",
+    label: "Material Color",
+    light: "light-material-color",
+    dark: "dark-material-color",
+  },
+  {
+    id: "monokai-pro",
+    label: "Monokai Pro",
+    light: "light-monokai-pro",
+    dark: "dark-monokai-pro",
+  },
+  {
+    id: "claude",
+    label: "Claude",
+    light: "light-claude",
+    dark: "dark-claude",
+  },
+] as const satisfies readonly ThemeFamily[]
+
+export type ThemeFamilyId = (typeof THEME_FAMILIES)[number]["id"]
+
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: Theme
@@ -53,13 +130,18 @@ type ThemeProviderProps = {
 }
 
 type ThemeProviderState = {
-  theme: Theme
+  mode: ThemeMode
+  theme: ThemeId
+  themeFamily: ThemeFamilyId
   resolvedTheme: ResolvedTheme
+  setMode: (mode: ThemeMode) => void
   setTheme: (theme: Theme) => void
+  setThemeFamily: (family: ThemeFamilyId) => void
 }
 
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
 const THEME_VALUES: Theme[] = [...(Object.keys(THEMES) as ThemeId[]), "system"]
+const THEME_MODE_VALUES: ThemeMode[] = ["system", "light", "dark"]
 
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
@@ -73,6 +155,38 @@ function isTheme(value: string | null): value is Theme {
   return THEME_VALUES.includes(value as Theme)
 }
 
+function isThemeMode(value: string | null): value is ThemeMode {
+  if (value === null) return false
+  return THEME_MODE_VALUES.includes(value as ThemeMode)
+}
+
+function isThemeFamilyId(value: string | null): value is ThemeFamilyId {
+  if (value === null) return false
+  return THEME_FAMILIES.some((family) => family.id === value)
+}
+
+function findThemeFamily(familyId: ThemeFamilyId) {
+  return (
+    THEME_FAMILIES.find((family) => family.id === familyId) ?? THEME_FAMILIES[0]
+  )
+}
+
+function themeIdForFamily(
+  familyId: ThemeFamilyId,
+  appearance: ResolvedTheme
+): ThemeId {
+  const family = findThemeFamily(familyId)
+  return family[appearance]
+}
+
+function themeFamilyForTheme(themeId: ThemeId): ThemeFamilyId {
+  return (
+    THEME_FAMILIES.find(
+      (family) => family.light === themeId || family.dark === themeId
+    )?.id ?? THEME_FAMILIES[0].id
+  )
+}
+
 function getSystemTheme(): ResolvedTheme {
   if (window.matchMedia(COLOR_SCHEME_QUERY).matches) {
     return "dark"
@@ -81,17 +195,67 @@ function getSystemTheme(): ResolvedTheme {
   return "light"
 }
 
-function resolveTheme(theme: Theme): ResolvedTheme {
-  return theme === "system" ? getSystemTheme() : THEMES[theme].appearance
+function resolveMode(mode: ThemeMode): ResolvedTheme {
+  return mode === "system" ? getSystemTheme() : mode
 }
 
-function applyThemeClass(theme: Theme, resolvedTheme: ResolvedTheme) {
+function applyThemeClass(theme: ThemeId, resolvedTheme: ResolvedTheme) {
   const root = document.documentElement
   root.classList.remove("light", "dark")
   root.classList.add(resolvedTheme)
-  // `system` maps to the base light/dark palette; explicit themes map to their
-  // own `[data-theme]` palette block (the defaults reuse `:root`/`.dark`).
-  root.dataset.theme = theme === "system" ? resolvedTheme : theme
+  root.dataset.theme = theme
+}
+
+type ThemeSettings = {
+  mode: ThemeMode
+  family: ThemeFamilyId
+}
+
+function settingsFromTheme(theme: Theme, defaultTheme: Theme): ThemeSettings {
+  if (theme === "system") {
+    return {
+      mode: "system",
+      family:
+        defaultTheme === "system"
+          ? THEME_FAMILIES[0].id
+          : themeFamilyForTheme(defaultTheme),
+    }
+  }
+
+  return {
+    mode: THEMES[theme].appearance,
+    family: themeFamilyForTheme(theme),
+  }
+}
+
+function modeStorageKey(storageKey: string) {
+  return `${storageKey}.mode`
+}
+
+function familyStorageKey(storageKey: string) {
+  return `${storageKey}.family`
+}
+
+function readThemeSettings(
+  storageKey: string,
+  defaultTheme: Theme
+): ThemeSettings {
+  const storedMode = store.get(modeStorageKey(storageKey))
+  const storedFamily = store.get(familyStorageKey(storageKey))
+
+  if (isThemeMode(storedMode) && isThemeFamilyId(storedFamily)) {
+    return { mode: storedMode, family: storedFamily }
+  }
+
+  const legacyTheme = store.get(storageKey)
+  if (isTheme(legacyTheme)) return settingsFromTheme(legacyTheme, defaultTheme)
+
+  return settingsFromTheme(defaultTheme, defaultTheme)
+}
+
+function writeThemeSettings(storageKey: string, settings: ThemeSettings) {
+  store.set(modeStorageKey(storageKey), settings.mode)
+  store.set(familyStorageKey(storageKey), settings.family)
 }
 
 function disableTransitionsTemporarily() {
@@ -120,39 +284,62 @@ export function ThemeProvider({
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = React.useState<Theme>(() => {
-    const storedTheme = store.get(storageKey)
-    if (isTheme(storedTheme)) {
-      return storedTheme
-    }
-
-    return defaultTheme
-  })
+  const [settings, setSettings] = React.useState<ThemeSettings>(() =>
+    readThemeSettings(storageKey, defaultTheme)
+  )
 
   // Re-sync once the on-disk snapshot finishes hydrating (async).
   React.useEffect(
     () =>
       store.onReady(() => {
-        const storedTheme = store.get(storageKey)
-        if (isTheme(storedTheme)) setThemeState(storedTheme)
+        setSettings(readThemeSettings(storageKey, defaultTheme))
       }),
-    [storageKey],
+    [defaultTheme, storageKey]
   )
   const [resolvedTheme, setResolvedTheme] = React.useState<ResolvedTheme>(() =>
-    resolveTheme(theme)
+    resolveMode(settings.mode)
   )
 
-  const setTheme = React.useCallback(
-    (nextTheme: Theme) => {
-      store.set(storageKey, nextTheme)
-      setThemeState(nextTheme)
+  const setMode = React.useCallback(
+    (mode: ThemeMode) => {
+      setSettings((prev) => {
+        const next = { ...prev, mode }
+        writeThemeSettings(storageKey, next)
+        return next
+      })
     },
     [storageKey]
   )
 
-  const applyTheme = React.useCallback(
+  const setThemeFamily = React.useCallback(
+    (family: ThemeFamilyId) => {
+      setSettings((prev) => {
+        const next = { ...prev, family }
+        writeThemeSettings(storageKey, next)
+        return next
+      })
+    },
+    [storageKey]
+  )
+
+  const setTheme = React.useCallback(
     (nextTheme: Theme) => {
-      const nextResolvedTheme = resolveTheme(nextTheme)
+      setSettings((prev) => {
+        const next =
+          nextTheme === "system"
+            ? { ...prev, mode: "system" as const }
+            : settingsFromTheme(nextTheme, defaultTheme)
+        writeThemeSettings(storageKey, next)
+        return next
+      })
+    },
+    [defaultTheme, storageKey]
+  )
+
+  const applyTheme = React.useCallback(
+    (nextSettings: ThemeSettings) => {
+      const nextResolvedTheme = resolveMode(nextSettings.mode)
+      const nextTheme = themeIdForFamily(nextSettings.family, nextResolvedTheme)
       const restoreTransitions = disableTransitionOnChange
         ? disableTransitionsTemporarily()
         : null
@@ -168,15 +355,15 @@ export function ThemeProvider({
   )
 
   React.useLayoutEffect(() => {
-    applyTheme(theme)
+    applyTheme(settings)
 
-    if (theme !== "system") {
+    if (settings.mode !== "system") {
       return undefined
     }
 
     const mediaQuery = window.matchMedia(COLOR_SCHEME_QUERY)
     const handleChange = () => {
-      applyTheme("system")
+      applyTheme(settings)
     }
 
     mediaQuery.addEventListener("change", handleChange)
@@ -184,7 +371,7 @@ export function ThemeProvider({
     return () => {
       mediaQuery.removeEventListener("change", handleChange)
     }
-  }, [theme, applyTheme])
+  }, [settings, applyTheme])
 
   React.useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
@@ -192,16 +379,15 @@ export function ThemeProvider({
         return
       }
 
-      if (event.key !== storageKey) {
+      if (
+        event.key !== storageKey &&
+        event.key !== modeStorageKey(storageKey) &&
+        event.key !== familyStorageKey(storageKey)
+      ) {
         return
       }
 
-      if (isTheme(event.newValue)) {
-        setThemeState(event.newValue)
-        return
-      }
-
-      setThemeState(defaultTheme)
+      setSettings(readThemeSettings(storageKey, defaultTheme))
     }
 
     window.addEventListener("storage", handleStorageChange)
@@ -211,13 +397,27 @@ export function ThemeProvider({
     }
   }, [defaultTheme, storageKey])
 
+  const theme = themeIdForFamily(settings.family, resolvedTheme)
+
   const value = React.useMemo(
     () => ({
+      mode: settings.mode,
+      theme,
+      themeFamily: settings.family,
+      resolvedTheme,
+      setMode,
+      setTheme,
+      setThemeFamily,
+    }),
+    [
+      settings.mode,
+      settings.family,
       theme,
       resolvedTheme,
+      setMode,
       setTheme,
-    }),
-    [theme, resolvedTheme, setTheme]
+      setThemeFamily,
+    ]
   )
 
   return (

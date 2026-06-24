@@ -700,9 +700,7 @@ export function TerminalView({
   const { theme, resolvedTheme } = useTheme()
   const { appearance } = useTerminalAppearance()
   const isDark = resolvedTheme === "dark"
-  // `system` follows the resolved appearance's default palette; otherwise the
-  // explicit theme id selects its own terminal tint.
-  const themeId: ThemeId = theme === "system" ? resolvedTheme : theme
+  const themeId: ThemeId = theme
   const themeObj = useMemo(() => getTerminalTheme(themeId), [themeId])
   const themeRef = useRef({ isDark, theme: themeObj })
   const colorSchemeSubscribedRef = useRef(false)

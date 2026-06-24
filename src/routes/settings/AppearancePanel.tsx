@@ -1,6 +1,12 @@
 import * as React from "react"
-import { Monitor } from "lucide-react"
-import { type ThemeId, useTheme } from "@/components/theme-provider"
+import { Monitor, Moon, Sun } from "lucide-react"
+import {
+  THEME_FAMILIES,
+  type ThemeFamilyId,
+  type ThemeId,
+  type ThemeMode,
+  useTheme,
+} from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
@@ -18,66 +24,14 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@/components/ui/combobox"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
-type ThemePair = {
-  label: string
-  light: ThemeId
-  dark: ThemeId
-}
-
-const THEME_PAIRS: ThemePair[] = [
-  { label: "Default", light: "light", dark: "dark" },
-  { label: "Cool", light: "light-cool", dark: "dark-cool" },
-  { label: "Warm", light: "light-warm", dark: "dark-warm" },
-  { label: "Rosé", light: "light-rose", dark: "dark-rose" },
-  { label: "Forest", light: "light-forest", dark: "dark-forest" },
-  { label: "Violet", light: "light-violet", dark: "dark-violet" },
-  { label: "Atom One", light: "light-atom-one", dark: "dark-atom-one" },
-  {
-    label: "Atom One Dark",
-    light: "light-atom-one-light",
-    dark: "dark-atom-one-dark",
-  },
-  {
-    label: "Nebula Pandas",
-    light: "light-nebula-pandas",
-    dark: "dark-nebula-pandas",
-  },
-  { label: "Night Owl", light: "light-night-owl", dark: "dark-night-owl" },
-  { label: "Palenight", light: "light-palenight", dark: "dark-palenight" },
-  {
-    label: "Material Color",
-    light: "light-material-color",
-    dark: "dark-material-color",
-  },
-  {
-    label: "Monokai Pro",
-    light: "light-monokai-pro",
-    dark: "dark-monokai-pro",
-  },
-  { label: "Claude", light: "light-claude", dark: "dark-claude" },
-]
-
-const THEME_OPTIONS = THEME_PAIRS.flatMap((pair) => [
-  {
-    id: pair.light,
-    label: pair.label,
-    appearance: "Light",
-    value: `${pair.label} Light`,
-  },
-  {
-    id: pair.dark,
-    label: pair.label,
-    appearance: "Dark",
-    value: `${pair.label} Dark`,
-  },
-] satisfies Array<{
-  id: ThemeId
-  label: string
-  appearance: string
-  value: string
-}>)
-const THEME_OPTION_VALUES = THEME_OPTIONS.map((option) => option.value)
+const THEME_OPTION_VALUES = THEME_FAMILIES.map((family) => family.id)
+const MODE_OPTIONS = [
+  { value: "system", label: "System", icon: Monitor },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+] satisfies Array<{ value: ThemeMode; label: string; icon: typeof Monitor }>
 
 // Swatch colors per theme so variants are distinguishable at a glance. Values
 // mirror the palettes in index.css.
@@ -129,21 +83,26 @@ type LocalFontData = {
 }
 
 function fontStack(family: string): string {
-  const escaped = family.replace(/"/g, "\\\"")
+  const escaped = family.replace(/"/g, '\\"')
   return `"${escaped}", monospace`
 }
 
-function selectedFontFamily(fontFamily: string, choices: string[]): string | undefined {
+function selectedFontFamily(
+  fontFamily: string,
+  choices: string[]
+): string | undefined {
   return choices.find(
-    (choice) => fontFamily === choice || fontFamily === fontStack(choice),
+    (choice) => fontFamily === choice || fontFamily === fontStack(choice)
   )
 }
 
 function useLocalFontFamilies() {
   const [families, setFamilies] = React.useState<string[]>([])
-  const queryLocalFonts = (window as Window & {
-    queryLocalFonts?: () => Promise<LocalFontData[]>
-  }).queryLocalFonts
+  const queryLocalFonts = (
+    window as Window & {
+      queryLocalFonts?: () => Promise<LocalFontData[]>
+    }
+  ).queryLocalFonts
   const available = !!queryLocalFonts
 
   React.useEffect(() => {
@@ -154,7 +113,7 @@ function useLocalFontFamilies() {
       .then((fonts) => {
         if (cancelled) return
         const next = Array.from(
-          new Set(fonts.map((font) => font.family).filter(Boolean)),
+          new Set(fonts.map((font) => font.family).filter(Boolean))
         ).sort((a, b) => a.localeCompare(b))
         setFamilies(next)
       })
@@ -182,33 +141,32 @@ function ThemePreviewTile({ id }: { id: ThemeId }) {
 }
 
 function ThemeOptionLabel({
-  option,
+  label,
   className,
 }: {
-  option: (typeof THEME_OPTIONS)[number]
+  label: string
   className?: string
 }) {
-  return (
-    <span className={cn("min-w-0 truncate", className)}>
-      {option.label}
-      <span className="text-muted-foreground"> {option.appearance}</span>
-    </span>
-  )
+  return <span className={cn("min-w-0 truncate", className)}>{label}</span>
 }
 
 function ThemeDropdowns({
-  active,
+  activeFamily,
+  previewAppearance,
   onSelect,
 }: {
-  active: string
-  onSelect: (id: ThemeId) => void
+  activeFamily: ThemeFamilyId
+  previewAppearance: "light" | "dark"
+  onSelect: (id: ThemeFamilyId) => void
 }) {
-  const activeTheme = THEME_OPTIONS.find((option) => option.id === active)
-  const selectedTheme = activeTheme ?? THEME_OPTIONS[0]
+  const selectedTheme =
+    THEME_FAMILIES.find((family) => family.id === activeFamily) ??
+    THEME_FAMILIES[0]
   const selectTheme = (value: string | null) => {
-    const option = THEME_OPTIONS.find((item) => item.value === value)
+    const option = THEME_FAMILIES.find((item) => item.id === value)
     if (option) onSelect(option.id)
   }
+  const selectedPreviewId = selectedTheme[previewAppearance]
 
   return (
     <div className="grid gap-1.5">
@@ -216,16 +174,19 @@ function ThemeDropdowns({
         <span className="text-sm font-medium text-foreground">Theme</span>
         <Combobox
           items={THEME_OPTION_VALUES}
-          value={selectedTheme.value}
+          value={selectedTheme.id}
           onValueChange={selectTheme}
           autoHighlight
         >
           <ComboboxTrigger
             aria-label="Theme"
-            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-input)] border border-border bg-background px-2.5 text-sm text-foreground outline-none transition-colors hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [&>svg:last-child]:ml-auto"
+            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-input)] border border-border bg-background px-2.5 text-sm text-foreground transition-colors outline-none hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [&>svg:last-child]:ml-auto"
           >
-            <ThemePreviewTile id={selectedTheme.id} />
-            <ThemeOptionLabel option={selectedTheme} className="flex-none" />
+            <ThemePreviewTile id={selectedPreviewId} />
+            <ThemeOptionLabel
+              label={selectedTheme.label}
+              className="flex-none"
+            />
           </ComboboxTrigger>
           <ComboboxContent align="start" className="p-0">
             <div className="border-b border-border/60 p-2">
@@ -238,12 +199,13 @@ function ThemeDropdowns({
             <ComboboxEmpty>No themes found.</ComboboxEmpty>
             <ComboboxList>
               {(value) => {
-                const option = THEME_OPTIONS.find((item) => item.value === value)
+                const option = THEME_FAMILIES.find((item) => item.id === value)
                 if (!option) return null
+                const previewId = option[previewAppearance]
                 return (
                   <ComboboxItem key={option.id} value={value}>
-                    <ThemePreviewTile id={option.id} />
-                    <ThemeOptionLabel option={option} />
+                    <ThemePreviewTile id={previewId} />
+                    <ThemeOptionLabel label={option.label} />
                   </ComboboxItem>
                 )
               }}
@@ -256,7 +218,8 @@ function ThemeDropdowns({
 }
 
 export function AppearancePanel() {
-  const { theme, setTheme } = useTheme()
+  const { mode, resolvedTheme, setMode, themeFamily, setThemeFamily } =
+    useTheme()
   const {
     appearance,
     setFontFamily,
@@ -268,10 +231,10 @@ export function AppearancePanel() {
     useLocalFontFamilies()
   const fontChoices = React.useMemo(
     () =>
-      Array.from(new Set([...COMMON_TERMINAL_FONTS, ...localFontFamilies])).sort(
-        (a, b) => a.localeCompare(b),
-      ),
-    [localFontFamilies],
+      Array.from(
+        new Set([...COMMON_TERMINAL_FONTS, ...localFontFamilies])
+      ).sort((a, b) => a.localeCompare(b)),
+    [localFontFamilies]
   )
   const selectedFont = selectedFontFamily(appearance.fontFamily, fontChoices)
 
@@ -283,25 +246,39 @@ export function AppearancePanel() {
           Choose how GearShift looks. System matches your operating system.
         </p>
       </div>
-      <button
-        type="button"
-        onClick={() => setTheme("system")}
-        aria-pressed={theme === "system"}
-        className={cn(
-          "flex items-center gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          theme === "system" && "border-ring bg-muted/60 ring-2 ring-ring/40",
-        )}
-      >
-        <Monitor className="size-5 text-foreground" />
-        <div>
-          <span className="block text-sm font-medium text-foreground">System</span>
-          <span className="text-xs text-muted-foreground">
-            Match your operating system appearance.
-          </span>
-        </div>
-      </button>
+      <label className="grid gap-1.5">
+        <span className="text-sm font-medium text-foreground">Mode</span>
+        <ToggleGroup
+          value={[mode]}
+          onValueChange={(values) => {
+            const next = values.at(-1)
+            if (next) setMode(next as ThemeMode)
+          }}
+          variant="outline"
+          spacing={0}
+          className="w-full"
+        >
+          {MODE_OPTIONS.map((option) => {
+            const Icon = option.icon
+            return (
+              <ToggleGroupItem
+                key={option.value}
+                value={option.value}
+                className="flex-1"
+              >
+                <Icon data-icon="inline-start" />
+                {option.label}
+              </ToggleGroupItem>
+            )
+          })}
+        </ToggleGroup>
+      </label>
 
-      <ThemeDropdowns active={theme} onSelect={setTheme} />
+      <ThemeDropdowns
+        activeFamily={themeFamily}
+        previewAppearance={resolvedTheme}
+        onSelect={setThemeFamily}
+      />
       <div className="mt-2 rounded-lg border border-border bg-background">
         <div className="border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">Terminal</h3>
@@ -330,7 +307,9 @@ export function AppearancePanel() {
                 autoHighlight
               >
                 <ComboboxInput
-                  placeholder={localFontsAvailable ? "Search fonts" : "Common fonts"}
+                  placeholder={
+                    localFontsAvailable ? "Search fonts" : "Common fonts"
+                  }
                   className="w-48"
                 />
                 <ComboboxContent>
@@ -349,7 +328,9 @@ export function AppearancePanel() {
                 variant="ghost"
                 size="sm"
                 onClick={resetFontFamily}
-                disabled={appearance.fontFamily === DEFAULT_TERMINAL_FONT_FAMILY}
+                disabled={
+                  appearance.fontFamily === DEFAULT_TERMINAL_FONT_FAMILY
+                }
               >
                 Reset
               </Button>
@@ -369,7 +350,9 @@ export function AppearancePanel() {
                 max={32}
                 step={1}
                 value={appearance.fontSize}
-                onChange={(e) => setFontSize(clampFontSize(e.target.valueAsNumber))}
+                onChange={(e) =>
+                  setFontSize(clampFontSize(e.target.valueAsNumber))
+                }
                 className="h-8 w-24 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               />
               <Button

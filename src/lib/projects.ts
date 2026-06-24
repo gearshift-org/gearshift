@@ -31,11 +31,24 @@ export type StoredTab = {
   id: string
   name: string
   customName?: string
+  /** Tab kind. Absent on older snapshots, which only ever stored terminals. */
+  kind?: "terminal" | "file" | "diff" | "commit"
   /** Persisted multi-pane state. Falls back to [{ id: tab.id }] for older snapshots. */
   panes?: StoredPane[]
   activePaneId?: string
   /** Persisted recursive split arrangement over pane ids. */
   layout?: TerminalLayout
+  // Preview-tab fields (file/diff/commit). Lets an open preview survive reload.
+  /** Path relative to project root, for file/diff tabs. */
+  path?: string
+  /** Whether a diff tab shows the staged side. */
+  staged?: boolean
+  /** Full commit hash, for commit tabs. */
+  hash?: string
+  /** Abbreviated commit hash, for commit tabs. */
+  shortHash?: string
+  /** True for ephemeral "preview" tabs (replaced by the next preview open). */
+  preview?: boolean
 }
 
 export type StoredProject = {
@@ -48,6 +61,7 @@ export type StoredProject = {
 
 const KEY = "gearshift.projects"
 const ACTIVE_KEY = "gearshift.activeProjectId"
+const LAST_LOCATION_KEY = "gearshift.lastLocation"
 const LAST_AGENT_TERMINAL_KEY = "gearshift.lastAgentTerminal"
 const RECENTS_KEY = "gearshift.recentProjects"
 const PALETTE_RECENTS_KEY = "gearshift.paletteRecents"
@@ -224,6 +238,28 @@ export function loadProjects(): StoredProject[] {
                   typeof (t as StoredTab).name === "string"
               )
               .map((t) => {
+                // Preview tabs (file/diff/commit) carry a descriptor instead
+                // of panes — pass it through so the preview reopens on reload.
+                if (
+                  t.kind === "file" ||
+                  t.kind === "diff" ||
+                  t.kind === "commit"
+                ) {
+                  return {
+                    id: t.id,
+                    name: t.name,
+                    kind: t.kind,
+                    ...(typeof t.path === "string" ? { path: t.path } : {}),
+                    ...(typeof t.staged === "boolean"
+                      ? { staged: t.staged }
+                      : {}),
+                    ...(typeof t.hash === "string" ? { hash: t.hash } : {}),
+                    ...(typeof t.shortHash === "string"
+                      ? { shortHash: t.shortHash }
+                      : {}),
+                    ...(t.preview ? { preview: true } : {}),
+                  }
+                }
                 const panes: StoredPane[] = Array.isArray(t.panes)
                   ? t.panes
                       .filter(
@@ -287,6 +323,31 @@ export function loadActiveProjectId(): string | null {
 export function saveActiveProjectId(id: string): void {
   if (id) store.set(ACTIVE_KEY, id)
   else store.remove(ACTIVE_KEY)
+}
+
+export type LastLocation = {
+  pathname: string
+  search: Record<string, unknown>
+}
+
+export function loadLastLocation(): LastLocation | null {
+  try {
+    const raw = store.get(LAST_LOCATION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as LastLocation
+    if (typeof parsed?.pathname !== "string") return null
+    return {
+      pathname: parsed.pathname,
+      search:
+        parsed.search && typeof parsed.search === "object" ? parsed.search : {},
+    }
+  } catch {
+    return null
+  }
+}
+
+export function saveLastLocation(location: LastLocation): void {
+  store.set(LAST_LOCATION_KEY, JSON.stringify(location))
 }
 
 function parseLastAgentTerminal(value: unknown): LastAgentTerminal | null {

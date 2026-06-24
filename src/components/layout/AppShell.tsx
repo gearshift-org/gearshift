@@ -57,6 +57,7 @@ import type {
 } from "./types"
 import {
   loadActiveProjectId,
+  loadLastLocation,
   loadAutoHideTitleBar,
   loadLastAgentTerminals,
   loadPaletteRecents,
@@ -89,7 +90,9 @@ import {
   type RecentProject,
   type RightSidebarTab,
   type StoredProject,
+  type StoredTab,
 } from "@/lib/projects"
+import { parseSettingsSection } from "@/routes/settings/settingsSections"
 import { gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   AGENT_TERMINAL_LABELS,
@@ -116,7 +119,46 @@ function hydrateProjectSnapshot(): {
         id,
         name: p.name,
         path: p.path,
-        tabs: (p.tabs ?? []).map((t) => {
+        tabs: (p.tabs ?? []).flatMap((t): WorkspaceTab[] => {
+          // Preview tabs (file/diff/commit) restore from their descriptor.
+          if (t.kind === "file") {
+            if (!t.path) return []
+            return [
+              {
+                kind: "file" as const,
+                id: t.id,
+                name: t.name,
+                path: t.path,
+                ...(t.preview ? { preview: true } : {}),
+              },
+            ]
+          }
+          if (t.kind === "diff") {
+            if (!t.path) return []
+            return [
+              {
+                kind: "diff" as const,
+                id: t.id,
+                name: t.name,
+                path: t.path,
+                staged: !!t.staged,
+                ...(t.preview ? { preview: true } : {}),
+              },
+            ]
+          }
+          if (t.kind === "commit") {
+            if (!t.hash) return []
+            return [
+              {
+                kind: "commit" as const,
+                id: t.id,
+                name: t.name,
+                hash: t.hash,
+                shortHash: t.shortHash ?? t.hash.slice(0, 7),
+                ...(t.preview ? { preview: true } : {}),
+              },
+            ]
+          }
           const storedPanes =
             t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
           const panes = storedPanes.map((sp) => ({
@@ -134,15 +176,17 @@ function hydrateProjectSnapshot(): {
             (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
               ? t.activePaneId
               : panes[0]?.id) ?? t.id
-          return {
-            kind: "terminal" as const,
-            id: t.id,
-            name: t.name,
-            customName: t.customName,
-            panes,
-            activePaneId,
-            ...(t.layout ? { layout: t.layout } : {}),
-          }
+          return [
+            {
+              kind: "terminal" as const,
+              id: t.id,
+              name: t.name,
+              customName: t.customName,
+              panes,
+              activePaneId,
+              ...(t.layout ? { layout: t.layout } : {}),
+            },
+          ]
         }),
         activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
       },
@@ -259,21 +303,40 @@ function countWorkingTerminalPanes(tabs: WorkspaceTab[]): number {
   return count
 }
 
-function serializeProjects(projects: Project[]) {
+function serializeProjects(projects: Project[]): StoredProject[] {
   return projects.map((p) => {
-    const terminals = p.tabs.filter(
-      (t): t is Extract<WorkspaceTab, { kind: "terminal" }> =>
-        t.kind === "terminal"
-    )
-    const activeTerminal = terminals.find((t) => t.id === p.activeTabId)
-    return {
-      id: p.id,
-      name: p.name,
-      path: p.path,
-      // Only persist the active id if it points at a terminal — diff/file tabs
-      // are ephemeral.
-      activeTabId: activeTerminal?.id ?? terminals[0]?.id ?? "",
-      tabs: terminals.map((t) => ({
+    const tabs: StoredTab[] = p.tabs.map((t) => {
+      if (t.kind === "file") {
+        return {
+          kind: "file",
+          id: t.id,
+          name: t.name,
+          path: t.path,
+          ...(t.preview ? { preview: true } : {}),
+        }
+      }
+      if (t.kind === "diff") {
+        return {
+          kind: "diff",
+          id: t.id,
+          name: t.name,
+          path: t.path,
+          staged: t.staged,
+          ...(t.preview ? { preview: true } : {}),
+        }
+      }
+      if (t.kind === "commit") {
+        return {
+          kind: "commit",
+          id: t.id,
+          name: t.name,
+          hash: t.hash,
+          shortHash: t.shortHash,
+          ...(t.preview ? { preview: true } : {}),
+        }
+      }
+      return {
+        kind: "terminal",
         id: t.id,
         name: t.name,
         ...(t.customName ? { customName: t.customName } : {}),
@@ -295,7 +358,17 @@ function serializeProjects(projects: Project[]) {
               : {}),
           }
         }),
-      })),
+      }
+    })
+    const activeTab = p.tabs.find((t) => t.id === p.activeTabId)
+    return {
+      id: p.id,
+      name: p.name,
+      path: p.path,
+      // Persist whatever tab is active — preview tabs included — so reload
+      // returns to it.
+      activeTabId: activeTab?.id ?? tabs[0]?.id ?? "",
+      tabs,
     }
   })
 }
@@ -506,7 +579,17 @@ export function AppShell() {
             : null
         setRestoredActiveProjectId(validStoredActiveId)
         setStateRestored(true)
-        if (validStoredActiveId && !params.projectId) {
+        // Memory history boots at "/", so restore the last route the user was
+        // on. Settings wins when it was the last location; otherwise fall back
+        // to the stored active project below.
+        const lastLocation = loadLastLocation()
+        if (lastLocation?.pathname === "/settings" && !params.projectId) {
+          void navigate({
+            to: "/settings",
+            search: { section: parseSettingsSection(lastLocation.search.section) },
+            replace: true,
+          })
+        } else if (validStoredActiveId && !params.projectId) {
           const proj = hydrated.find((p) => p.id === validStoredActiveId)!
           if (proj.activeTabId) {
             void navigate({

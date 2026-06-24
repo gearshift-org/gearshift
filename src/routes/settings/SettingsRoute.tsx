@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useRouterState } from "@tanstack/react-router"
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { X, Bot, Keyboard, Palette, SlidersHorizontal } from "lucide-react"
 import { router } from "@/router"
 import { cn } from "@/lib/utils"
@@ -24,10 +24,18 @@ const SECTIONS: {
 ]
 
 export function SettingsRoute() {
-  const searchSection = useRouterState({
+  const navigate = useNavigate()
+  // Section is driven by the route search param so it survives reload (the
+  // location is persisted and restored on boot).
+  const section = useRouterState({
     select: (state) => parseSettingsSection(state.location.search.section),
   })
-  const [section, setSection] = React.useState<SettingsSection>(searchSection)
+  const setSection = React.useCallback(
+    (next: SettingsSection) => {
+      void navigate({ to: "/settings", search: { section: next }, replace: true })
+    },
+    [navigate]
+  )
 
   const close = React.useCallback(() => {
     const idx = router.history.length

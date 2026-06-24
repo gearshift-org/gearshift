@@ -11,6 +11,8 @@ import {
   parseSettingsSection,
   type SettingsSection,
 } from "./routes/settings/settingsSections"
+import { store } from "./lib/store"
+import { saveLastLocation } from "./lib/projects"
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -66,6 +68,17 @@ const routeTree = rootRoute.addChildren([
 export const router = createRouter({
   routeTree,
   history: createMemoryHistory({ initialEntries: ["/"] }),
+})
+
+// Memory history resets to "/" on every reload, so persist the resolved
+// location once the store is ready and restore it on boot (see AppShell). The
+// pre-ready guard avoids writes being clobbered when the snapshot hydrates.
+router.subscribe("onResolved", () => {
+  if (!store.isReady()) return
+  saveLastLocation({
+    pathname: router.state.location.pathname,
+    search: router.state.location.search as Record<string, unknown>,
+  })
 })
 
 declare module "@tanstack/react-router" {

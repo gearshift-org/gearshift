@@ -290,7 +290,7 @@ function ProjectSidebarRow({
         onClick={() => onSelect(p.id)}
         className={cn(
           "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
-          compact ? "py-1.5 pr-11" : "py-2",
+          compact ? "py-1.5 pr-11" : hasCompletedAgent ? "py-2 pr-7" : "py-2",
           animate &&
             "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
@@ -307,13 +307,6 @@ function ProjectSidebarRow({
             path={p.path}
             className="size-5 rounded-[5px] text-[11px]"
           />
-          {hasCompletedAgent && (
-            <span
-              aria-label="Coding agent done"
-              title="Coding agent done"
-              className="gs-agent-done-dot pointer-events-none absolute -top-1 -right-1"
-            />
-          )}
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -342,7 +335,7 @@ function ProjectSidebarRow({
             </span>
           )}
         </div>
-        {compact && changeCount > 0 && !hasWorkingAgent && (
+        {compact && changeCount > 0 && !hasWorkingAgent && !hasCompletedAgent && (
           <span
             title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
             className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums transition-opacity group-hover:opacity-0"
@@ -350,6 +343,13 @@ function ProjectSidebarRow({
             <GitBranch className="size-3" />
             {changeCount}
           </span>
+        )}
+        {hasCompletedAgent && (
+          <span
+            aria-label="Coding agent done"
+            title="Coding agent done"
+            className="gs-agent-done-dot pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transition-opacity group-hover:opacity-0"
+          />
         )}
         {hasWorkingAgent && (
           <span className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center transition-opacity group-hover:opacity-0">

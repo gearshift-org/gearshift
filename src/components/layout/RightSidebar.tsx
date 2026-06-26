@@ -152,7 +152,7 @@ type Props = {
   topRightActions?: React.ReactNode
 }
 
-export function RightSidebar({
+export const RightSidebar = memo(function RightSidebar({
   cwd,
   projectId,
   isActive = true,
@@ -1321,7 +1321,7 @@ export function RightSidebar({
       />
     </div>
   )
-}
+})
 
 const CommitControls = memo(function CommitControls({
   hasData,

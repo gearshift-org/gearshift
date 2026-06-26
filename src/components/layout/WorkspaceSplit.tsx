@@ -142,7 +142,6 @@ export function WorkspaceSplit({
       }),
     []
   )
-  const containerRef = useRef<HTMLDivElement>(null)
   const workspacePanelRef = useRef<HTMLDivElement>(null)
   const sidebarPanelRef = useRef<HTMLDivElement>(null)
   const sidebarContentRef = useRef<HTMLDivElement>(null)
@@ -168,8 +167,7 @@ export function WorkspaceSplit({
   }, [activeProjectId, projects, queryClient])
 
   // Treat open/close width animations like a sidebar resize drag. Terminals then
-  // ignore intermediate widths and send one PTY resize after the layout settles,
-  // which prevents full-screen agents from repainting at a transient skinny size.
+  // ignore intermediate widths and send one PTY resize after the layout settles.
   useEffect(() => {
     document.body.classList.add("gs-sidebar-resizing")
     const id = window.setTimeout(
@@ -307,14 +305,10 @@ export function WorkspaceSplit({
     </div>
   )
 
-  // Keep the tree structurally stable regardless of `sidebarOpen` — otherwise
-  // toggling unmounts `WorkspacePane`/`TerminalView`, the xterm remeasures
-  // before layout settles, and TUIs (Claude Code, etc.) get stuck at cols=1.
+  // Keep the tree structurally stable regardless of `sidebarOpen`; the right
+  // sidebar stays pinned to the app edge while the workspace reserves its space.
   return (
-    <div
-      ref={containerRef}
-      className="relative min-h-0 flex-1 overflow-hidden"
-    >
+    <div className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={workspacePanelRef}
         className={cn(
@@ -325,9 +319,6 @@ export function WorkspaceSplit({
       >
         {workspaceSection}
       </div>
-      {/* Keep the sidebar mounted at its full width and pin it to the right app
-          edge. The workspace reserves matching space so opposite-edge window
-          resizes don't make the sidebar drift before layout settles. */}
       <div
         ref={sidebarPanelRef}
         style={{
@@ -341,7 +332,6 @@ export function WorkspaceSplit({
         )}
         aria-hidden={!sidebarOpen}
       >
-        {/* Drag handle on the left edge — dragging left widens the sidebar. */}
         <div
           onMouseDown={sidebarOpen ? startDrag : undefined}
           onDoubleClick={
@@ -359,8 +349,14 @@ export function WorkspaceSplit({
         </div>
         <div
           ref={sidebarContentRef}
-          className="absolute inset-0"
+          className={cn(
+            // The right sidebar is expensive; keep its own layout/paint isolated
+            // while the project sidebar changes the workspace width.
+            "absolute inset-0 [contain:layout_paint]",
+            !sidebarOpen && "pointer-events-none"
+          )}
           style={{ width: sidebarWidth }}
+          aria-hidden={!sidebarOpen}
         >
           <RightSidebar
             cwd={activeProject?.path ?? null}

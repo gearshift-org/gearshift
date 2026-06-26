@@ -3112,6 +3112,32 @@ export function AppShell() {
     toggleProjectSidebar,
   ])
 
+  const sidebarTopActions = useMemo(
+    () => (
+      <div className="flex items-center pr-1">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={toggleRightSidebar}
+                aria-pressed={sidebarOpen}
+                aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+              >
+                <PanelRight className="size-3.5" />
+              </button>
+            }
+          />
+          <TooltipContent>
+            {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    ),
+    [sidebarOpen, toggleRightSidebar]
+  )
+
   return (
     <div className="relative flex h-svh flex-row bg-background text-foreground">
       <CommandPalette
@@ -3265,28 +3291,6 @@ export function AppShell() {
                 }
               />
             </AutoHideTitleBar>
-          )
-          const sidebarTopActions = (
-            <div className="flex items-center pr-1">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      onClick={toggleSidebar}
-                      aria-pressed={sidebarOpen}
-                      aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                      className="grid size-5 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
-                    >
-                      <PanelRight className="size-3.5" />
-                    </button>
-                  }
-                />
-                <TooltipContent>
-                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-                </TooltipContent>
-              </Tooltip>
-            </div>
           )
           // In the vertical project layout the workspace tab bar doubles as the
           // top bar, so the window controls (changes badge + sidebar toggle) live

@@ -1298,7 +1298,7 @@
     0 0 12px color-mix(in srgb, var(--ring) 95%, transparent),
     0 0 22px color-mix(in srgb, var(--ring) 70%, transparent);
   filter: brightness(1.25) saturate(1.15);
-  animation: gs-agent-header-scan 0.9s linear infinite;
+  animation: gs-agent-header-scan 1s linear infinite;
 }
 
 .gs-agent-project-scan::before {

@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react"
 import { Columns2, Eye, FileCode, Rows3 } from "lucide-react"
@@ -24,7 +25,8 @@ import { cn } from "@/lib/utils"
 import { KeyChip } from "@/components/keybindings/KeyChip"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { matchesModifierChord } from "@/lib/keybindings/registry"
-import { TerminalView } from "./TerminalView"
+import { TerminalView, getTerminalTheme } from "./TerminalView"
+import { useTheme } from "@/components/theme-provider"
 import { SingleFileDiff } from "./SingleFileDiff"
 import { CommitDiff } from "./CommitDiff"
 import {
@@ -251,7 +253,7 @@ function HeaderDropZone({
     <div ref={setNodeRef} className="relative shrink-0">
       {children}
       {enabled && isOver ? (
-        <div className="pointer-events-none absolute inset-0 z-20 rounded-sm bg-foreground/15 ring-2 ring-foreground/50 ring-inset" />
+        <div className="pointer-events-none absolute inset-0 z-20 rounded-t-[calc(var(--radius)-1px)] bg-foreground/15 ring-2 ring-foreground/50 ring-inset" />
       ) : null}
     </div>
   )
@@ -383,6 +385,10 @@ function TerminalTabContent({
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
 }) {
   const multi = tab.panes.length > 1
+  // Share the terminal body's background with each pane's header (and the leaf
+  // card) so the chrome blends with the terminal instead of the app surface.
+  const { theme } = useTheme()
+  const terminalBg = getTerminalTheme(theme).background
   const layout = ensureLayout(
     tab.layout,
     tab.panes.map((p) => p.id)
@@ -528,7 +534,10 @@ function TerminalTabContent({
     const agentDone =
       !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
     return (
-      <div className="relative flex h-full flex-col">
+      <div
+        className="relative flex h-full flex-col overflow-hidden rounded-lg border border-border bg-[var(--xterm-bg)]"
+        style={{ "--xterm-bg": terminalBg } as CSSProperties}
+      >
         <HeaderDropZone
           paneId={paneId}
           enabled={draggingPaneId !== null && draggingPaneId !== paneId}
@@ -539,6 +548,11 @@ function TerminalTabContent({
           paneId={paneId}
           enabled={draggingPaneId !== null && draggingPaneId !== paneId}
         >
+          {agentWorking ? (
+            // Busy agent: a scan line that sweeps along the top of the terminal
+            // body (just below the header).
+            <span className="gs-agent-header-scan pointer-events-none absolute top-0 left-0 z-30 h-0.5 w-1/2" />
+          ) : null}
           {renderTerminal(pane)}
           {quickSplitArmed && draggingPaneId === null && !pane.pendingStart ? (
             <QuickSplitOverlay
@@ -547,11 +561,11 @@ function TerminalTabContent({
           ) : null}
         </PaneDropZone>
         {activePane ? (
-          <div className="pointer-events-none absolute inset-0 z-30 box-border border-2 border-ring" />
+          <div className="pointer-events-none absolute inset-0 z-30 box-border rounded-[calc(var(--radius)-1px)] border-2 border-ring" />
         ) : agentNeedsAttention || agentDone ? (
           <div
             className={cn(
-              "gs-agent-pulse-border pointer-events-none absolute inset-0 z-30",
+              "gs-agent-pulse-border pointer-events-none absolute inset-0 z-30 rounded-[calc(var(--radius)-1px)]",
               agentNeedsAttention
                 ? "gs-agent-pulse-attention"
                 : "gs-agent-pulse-done"

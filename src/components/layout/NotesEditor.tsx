@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { EditorContent, useEditor, type Editor } from "@tiptap/react"
 import { BubbleMenu } from "@tiptap/react/menus"
 import StarterKit from "@tiptap/starter-kit"
@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
-const NOTES_SAVE_DEBOUNCE_MS = 500
+const NOTES_SAVE_DEBOUNCE_MS = 200
 
 // tiptap-markdown stashes its serializer on editor.storage but its type
 // augmentation isn't picked up under TipTap v3, so read it through a narrow cast.
@@ -53,68 +53,147 @@ export function NotesEditor({
   projectId,
   initialMarkdown,
   editable,
+  onSaved,
   placeholder,
 }: {
   projectId: string | null
   initialMarkdown: string
   editable: boolean
+  onSaved?: (note: {
+    projectId: string
+    body: string
+    updatedAt: number
+  }) => void
   placeholder: string
 }) {
   const saveTimerRef = useRef<number | null>(null)
+  const editorRef = useRef<Editor | null>(null)
   const latestRef = useRef(initialMarkdown)
-
-  const save = useCallback(
-    (markdown: string) => {
-      if (!projectId) return
-      void window.term.notes.save(projectId, markdown).then((res) => {
-        if (!res.ok) toast.error("Could not save notes")
-      })
-    },
-    [projectId]
+  const lastSavedRef = useRef(initialMarkdown)
+  const dirtyRef = useRef(false)
+  const saveInFlightRef = useRef(false)
+  const saveQueuedRef = useRef(false)
+  const saveErrorShownRef = useRef(false)
+  const extensions = useMemo(
+    () => [...editorExtensions, Placeholder.configure({ placeholder })],
+    [placeholder]
   )
 
-  const flushSave = useCallback(() => {
+  const captureLatestMarkdown = useCallback(() => {
+    const editor = editorRef.current
+    if (editor) latestRef.current = getMarkdown(editor)
+    return latestRef.current
+  }, [])
+
+  const runSaveLoop = useCallback(() => {
+    if (!projectId) return
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true
+      return
+    }
+
+    saveInFlightRef.current = true
+
+    void (async () => {
+      try {
+        for (;;) {
+          saveQueuedRef.current = false
+          const markdown = captureLatestMarkdown()
+          dirtyRef.current = false
+          if (markdown === lastSavedRef.current) break
+
+          try {
+            const res = await window.term.notes.save(projectId, markdown)
+            if (!res.ok) {
+              dirtyRef.current = true
+              if (!saveErrorShownRef.current) {
+                toast.error("Could not save notes")
+                saveErrorShownRef.current = true
+              }
+              break
+            }
+            saveErrorShownRef.current = false
+            lastSavedRef.current = markdown
+            if (res.note) onSaved?.(res.note)
+          } catch {
+            dirtyRef.current = true
+            if (!saveErrorShownRef.current) {
+              toast.error("Could not save notes")
+              saveErrorShownRef.current = true
+            }
+            break
+          }
+
+          if (!saveQueuedRef.current && latestRef.current === markdown) break
+        }
+      } finally {
+        saveInFlightRef.current = false
+      }
+    })()
+  }, [captureLatestMarkdown, onSaved, projectId])
+
+  const scheduleSave = useCallback(() => {
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = null
     }
-    save(latestRef.current)
-  }, [save])
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null
+      runSaveLoop()
+    }, NOTES_SAVE_DEBOUNCE_MS)
+  }, [runSaveLoop])
+
+  const scheduleDirtySave = useCallback(() => {
+    if (!editable || !projectId) return
+    dirtyRef.current = true
+    scheduleSave()
+  }, [editable, projectId, scheduleSave])
 
   const editor = useEditor({
     editable,
-    extensions: [
-      ...editorExtensions,
-      Placeholder.configure({ placeholder }),
-    ],
+    extensions,
     content: initialMarkdown,
     editorProps: {
       attributes: {
         class: "notes-editor focus:outline-none",
       },
     },
-    onUpdate: ({ editor }) => {
-      if (!editable) return
-      latestRef.current = getMarkdown(editor)
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current)
-      }
-      saveTimerRef.current = window.setTimeout(
-        flushSave,
-        NOTES_SAVE_DEBOUNCE_MS
-      )
-    },
   })
 
-  // Flush any pending save when the editor is torn down (project switch/unmount).
+  useEffect(() => {
+    editorRef.current = editor
+  }, [editor])
+
+  useEffect(() => {
+    if (!editor) return
+    if (initialMarkdown === lastSavedRef.current) return
+    if (dirtyRef.current || latestRef.current !== lastSavedRef.current) return
+
+    editor.commands.setContent(initialMarkdown, { emitUpdate: false })
+    latestRef.current = initialMarkdown
+    lastSavedRef.current = initialMarkdown
+  }, [editor, initialMarkdown])
+
+  useEffect(() => {
+    if (!editor) return
+    editor.on("update", scheduleDirtySave)
+    return () => {
+      editor.off("update", scheduleDirtySave)
+    }
+  }, [editor, scheduleDirtySave])
+
+  // Save pending edits when switching projects or unmounting the notes panel.
   useEffect(() => {
     return () => {
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current)
-        save(latestRef.current)
+        saveTimerRef.current = null
+      }
+      captureLatestMarkdown()
+      if (latestRef.current !== lastSavedRef.current) {
+        runSaveLoop()
       }
     }
-  }, [save])
+  }, [captureLatestMarkdown, runSaveLoop])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -145,9 +224,7 @@ function NotesToolbarButtons({ editor }: { editor: Editor }) {
       <ToolbarButton
         label="Heading"
         active={editor.isActive("heading", { level: 2 })}
-        onClick={() =>
-          editor.chain().focus().toggleHeading({ level: 2 }).run()
-        }
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
       >
         <Heading2 />
       </ToolbarButton>

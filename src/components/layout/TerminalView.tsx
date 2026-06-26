@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -290,7 +291,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
   }
 
-function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {
+export function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {
   const base = THEMES[themeId].appearance === "dark" ? DARK_THEME : LIGHT_THEME
   const overrides = TERMINAL_VARIANTS[themeId]
   return overrides ? { ...base, ...overrides } : base
@@ -324,9 +325,7 @@ function oscColorReport(code: number, color: string): string {
       ? [hex[0], hex[1], hex[2]]
       : [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)]
 
-  const [r, g, b] = channels.map((channel) =>
-    expandHexChannel(channel || "0")
-  )
+  const [r, g, b] = channels.map((channel) => expandHexChannel(channel || "0"))
   return `\x1b]${code};rgb:${r}/${g}/${b}\x1b\\`
 }
 
@@ -640,10 +639,7 @@ function pasteText(
     // stay in the composer instead of submitting each line.
     const normalized = text.replace(/\r\n?/g, "\n").replace(/\n+$/g, "")
     if (normalized) {
-      window.term.write(
-        sessionId,
-        normalized.split("\n").join("\x1b[13;2u")
-      )
+      window.term.write(sessionId, normalized.split("\n").join("\x1b[13;2u"))
     }
     return
   }
@@ -746,6 +742,7 @@ export function TerminalView({
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const deferredSearchQuery = useDeferredValue(searchQuery)
   const [searchResults, setSearchResults] = useState({
     resultIndex: -1,
     resultCount: 0,
@@ -776,7 +773,7 @@ export function TerminalView({
   const { data: gitData } = useQuery({
     queryKey: gitQueryKey(cwd ?? null),
     queryFn: () => fetchGitQueryData(cwd!),
-    enabled: !!cwd,
+    enabled: FLOATING_COMMIT_AFFORDANCE_ENABLED && !!cwd,
   })
   const cwdRef = useRef(cwd)
   useEffect(() => {
@@ -844,7 +841,10 @@ export function TerminalView({
     const agentSessionId = agentSessionIdRef.current
     if (!agent || !agentSessionId) return
     try {
-      const title = await window.term.agentSessionTitle({ agent, agentSessionId })
+      const title = await window.term.agentSessionTitle({
+        agent,
+        agentSessionId,
+      })
       if (title && title !== agentSessionTitleRef.current) {
         agentSessionTitleRef.current = title
         emitAgentStatus({ ...agentStatusRef.current, agentSessionTitle: title })
@@ -884,7 +884,7 @@ export function TerminalView({
         })
       }, RECAP_IDLE_DELAY_MS)
     },
-    [sessionId],
+    [sessionId]
   )
 
   // Animate out, then unmount once the exit animation finishes (onAnimationEnd).
@@ -932,10 +932,11 @@ export function TerminalView({
   // only surfaced by maybeShowCommit() after an agent finishes a turn, so it
   // can't linger when no agent ran.
   useEffect(() => {
-    if (!gitData) return
-    if (gitData.files.length === 0) {
+    if (!gitData || gitData.files.length !== 0) return
+    const id = requestAnimationFrame(() => {
       setCommitUi((s) => (s === "open" ? "closing" : s))
-    }
+    })
+    return () => cancelAnimationFrame(id)
   }, [gitData])
 
   const commitChanges = useCallback(() => {
@@ -1094,10 +1095,14 @@ export function TerminalView({
     container.addEventListener("focusout", onTerminalFocusOut)
 
     const resultsSub = search.onDidChangeResults((e) => {
-      setSearchResults({
-        resultIndex: e.resultIndex,
-        resultCount: e.resultCount,
-      })
+      setSearchResults((prev) =>
+        prev.resultIndex === e.resultIndex && prev.resultCount === e.resultCount
+          ? prev
+          : {
+              resultIndex: e.resultIndex,
+              resultCount: e.resultCount,
+            }
+      )
     })
 
     // Snapshot replay paints historical PTY output into a fresh xterm instance.
@@ -1187,7 +1192,10 @@ export function TerminalView({
         if (data.trim() !== "?") return false
         if (replayingSnapshot) return true
         writeTerminalReply(
-          oscColorReport(OSC_FOREGROUND_COLOR, themeRef.current.theme.foreground)
+          oscColorReport(
+            OSC_FOREGROUND_COLOR,
+            themeRef.current.theme.foreground
+          )
         )
         return true
       }
@@ -1198,7 +1206,10 @@ export function TerminalView({
         if (data.trim() !== "?") return false
         if (replayingSnapshot) return true
         writeTerminalReply(
-          oscColorReport(OSC_BACKGROUND_COLOR, themeRef.current.theme.background)
+          oscColorReport(
+            OSC_BACKGROUND_COLOR,
+            themeRef.current.theme.background
+          )
         )
         return true
       }
@@ -2050,6 +2061,22 @@ export function TerminalView({
     return () => cancelAnimationFrame(id)
   }, [focusRequest, isActive, searchOpen])
 
+  // Paste redirected from the app shell when the user pastes with idle focus.
+  // Runs the same agent-aware paste path as Cmd+V inside the terminal.
+  useEffect(() => {
+    const onShellPaste = (e: Event) => {
+      const detail = (e as CustomEvent<{ sessionId: string }>).detail
+      if (detail?.sessionId !== sessionId) return
+      const term = termRef.current
+      if (term) {
+        void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+      }
+    }
+    window.addEventListener("gearshift:terminal-paste", onShellPaste)
+    return () =>
+      window.removeEventListener("gearshift:terminal-paste", onShellPaste)
+  }, [sessionId])
+
   const runSearch = useCallback(
     (q: string, direction: "next" | "prev" = "next") => {
       const search = searchRef.current
@@ -2068,8 +2095,11 @@ export function TerminalView({
 
   useEffect(() => {
     if (!searchOpen) return
-    runSearch(searchQuery, "next")
-  }, [searchQuery, searchOpen, runSearch])
+    const id = requestAnimationFrame(() =>
+      runSearch(deferredSearchQuery, "next")
+    )
+    return () => cancelAnimationFrame(id)
+  }, [deferredSearchQuery, searchOpen, runSearch])
 
   const findNext = () => runSearch(searchQuery, "next")
   const findPrev = () => runSearch(searchQuery, "prev")
@@ -2151,52 +2181,52 @@ export function TerminalView({
         {FLOATING_COMMIT_AFFORDANCE_ENABLED &&
           commitUi !== "hidden" &&
           !showScrollToBottom && (
-          // Outer element owns the bottom-left placement; the inner element owns
-          // the slide animation so the exit keyframes do not move the anchor.
-          <div
-            className="absolute bottom-4 left-4 z-10"
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.stopPropagation()}
-          >
+            // Outer element owns the bottom-left placement; the inner element owns
+            // the slide animation so the exit keyframes do not move the anchor.
             <div
-              onAnimationEnd={(e) => {
-                if (e.target === e.currentTarget && commitUi === "closing") {
-                  setCommitUi("hidden")
-                }
-              }}
-              className={cn(
-                "flex items-center gap-2",
-                commitUi === "closing"
-                  ? // fill-mode-forwards holds the final (opacity 0) frame until
-                    // unmount; without it the element snaps back to opaque for a
-                    // frame at animation end — the exit "flicker".
-                    "animate-out fade-out slide-out-to-bottom-2 fill-mode-forwards"
-                  : "animate-in fade-in slide-in-from-bottom-2"
-              )}
+              className="absolute bottom-4 left-4 z-10"
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.stopPropagation()}
             >
-              <Button
-                type="button"
-                onClick={commitChanges}
-                aria-label="Commit changes with AI"
-                className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+              <div
+                onAnimationEnd={(e) => {
+                  if (e.target === e.currentTarget && commitUi === "closing") {
+                    setCommitUi("hidden")
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-2",
+                  commitUi === "closing"
+                    ? // fill-mode-forwards holds the final (opacity 0) frame until
+                      // unmount; without it the element snaps back to opaque for a
+                      // frame at animation end — the exit "flicker".
+                      "animate-out fill-mode-forwards fade-out slide-out-to-bottom-2"
+                    : "animate-in fade-in slide-in-from-bottom-2"
+                )}
               >
-                Commit changes
-                <kbd className="ml-1 rounded border border-current/40 bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none opacity-100">
-                  ⌘⏎
-                </kbd>
-              </Button>
-              <Button
-                type="button"
-                size="icon"
-                onClick={dismissCommit}
-                aria-label="Dismiss"
-                className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
-              >
-                <X />
-              </Button>
+                <Button
+                  type="button"
+                  onClick={commitChanges}
+                  aria-label="Commit changes with AI"
+                  className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+                >
+                  Commit changes
+                  <kbd className="ml-1 rounded border border-current/40 bg-foreground/10 px-1.5 py-0.5 text-[10px] leading-none font-semibold opacity-100">
+                    ⌘⏎
+                  </kbd>
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={dismissCommit}
+                  aria-label="Dismiss"
+                  className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+                >
+                  <X />
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {searchOpen && (
           <div
             className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-md border border-border bg-popover/95 px-1.5 py-1 text-xs shadow-md backdrop-blur"

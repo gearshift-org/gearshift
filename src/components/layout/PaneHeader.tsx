@@ -112,13 +112,12 @@ export function PaneHeader({
         startEdit()
       }}
       className={cn(
-        "relative flex h-[34px] shrink-0 cursor-default items-center gap-0.5 overflow-hidden border-b border-border bg-background px-3 text-xs text-foreground/80 select-none",
-        isActive && "bg-muted/60 text-foreground"
+        // Match the terminal body background (the --xterm-bg var is set on the
+        // pane leaf in WorkspacePane) so the header blends with the terminal.
+        "relative flex h-[34px] shrink-0 cursor-default items-center gap-0.5 overflow-hidden border-b border-border bg-[var(--xterm-bg)] px-3 text-xs text-foreground/80 select-none",
+        isActive && "text-foreground"
       )}
     >
-      {agentWorking ? (
-        <span className="gs-agent-header-scan pointer-events-none absolute top-0 left-0 h-0.5 w-1/2" />
-      ) : null}
       {agentActive ? (
         <AgentIcon
           agent={pane.agentStatus?.agentName}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   useInfiniteQuery,
   useQuery,
@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Collapsible,
   CollapsibleContent,
@@ -172,7 +173,6 @@ export function RightSidebar({
   const [actionErrorsByCwd, setActionErrorsByCwd] = useState<
     Record<string, string>
   >({})
-  const [commitMessage, setCommitMessage] = useState("")
   const [notesOpen, setNotesOpen] = useState(true)
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
@@ -325,7 +325,15 @@ export function RightSidebar({
     queryKey: ["projectNotes", projectId],
     enabled: !!projectId,
     queryFn: () => window.term.notes.get(projectId!),
+    staleTime: 0,
+    refetchOnMount: "always",
   })
+  const handleNoteSaved = useCallback(
+    (note: { projectId: string; body: string; updatedAt: number }) => {
+      queryClient.setQueryData(["projectNotes", note.projectId], note)
+    },
+    [queryClient]
+  )
   const firstCommitsPage = commitsQuery.data?.pages[0]
   const commitsError = commitsQuery.error
     ? commitsQuery.error instanceof Error
@@ -682,16 +690,16 @@ export function RightSidebar({
   }, [cwd, runAction, stagedFiles, updateCachedFiles])
 
   const commit = useCallback(
-    async (opts?: { push?: boolean }) => {
-      if (!cwd || busy) return
-      const message = commitMessage.trim()
+    async (rawMessage: string, opts?: { push?: boolean }) => {
+      if (!cwd || busy) return false
+      const message = rawMessage.trim()
       if (!message) {
         setCurrentActionError("Commit message required")
-        return
+        return false
       }
       if (stagedFiles.length === 0) {
         setCurrentActionError("Nothing staged to commit")
-        return
+        return false
       }
       inflightActionsRef.current += 1
       setBusy(true)
@@ -705,9 +713,8 @@ export function RightSidebar({
         if (!res.ok) {
           rollback()
           setCurrentActionError(res.error ?? "Commit failed")
-          return
+          return false
         }
-        setCommitMessage("")
         updateCachedGitMeta({
           ahead: hasUpstream ? ahead + 1 : ahead,
         })
@@ -721,7 +728,7 @@ export function RightSidebar({
               currentGitQueryKey,
               await fetchGitQueryData(cwd)
             )
-            return
+            return true
           }
           updateCachedGitMeta({ ahead: 0 })
         }
@@ -731,6 +738,7 @@ export function RightSidebar({
           await fetchGitQueryData(cwd)
         )
         void queryClient.invalidateQueries({ queryKey: gitLogQueryKey(cwd) })
+        return true
       } finally {
         setBusy(false)
         setCommitting(null)
@@ -745,7 +753,6 @@ export function RightSidebar({
     [
       cwd,
       busy,
-      commitMessage,
       stagedFiles,
       queryClient,
       currentGitQueryKey,
@@ -758,11 +765,6 @@ export function RightSidebar({
       setCurrentActionError,
     ]
   )
-
-  // Gate on `hasData` so the button doesn't briefly enable on first project
-  // open before the initial fetch resolves.
-  const hasCommitMessage = commitMessage.trim().length > 0
-  const canCommit = hasData && stagedFiles.length > 0 && hasCommitMessage
 
   const switchBranch = useCallback(
     (branch: string) => {
@@ -1123,119 +1125,20 @@ export function RightSidebar({
                       />
                     )}
                   </div>
-                  <textarea
-                    value={commitMessage}
-                    onChange={(e) => setCommitMessage(e.target.value)}
-                    placeholder="Message (Ctrl+Enter to commit)"
-                    rows={2}
-                    onKeyDown={(e) => {
-                      if (
-                        (e.metaKey || e.ctrlKey) &&
-                        e.key === "Enter" &&
-                        canCommit
-                      ) {
-                        e.preventDefault()
-                        void commit()
-                      }
-                    }}
-                    className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  <CommitControls
+                    hasData={hasData}
+                    stagedCount={stagedFiles.length}
+                    busy={busy}
+                    committing={committing}
+                    syncing={syncing}
+                    showSync={showSync}
+                    showPublishBranch={showPublishBranch}
+                    ahead={ahead}
+                    behind={behind}
+                    onCommit={commit}
+                    onSync={sync}
+                    onPublish={publishBranch}
                   />
-                  {showSync ? (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() =>
-                        showPublishBranch ? void publishBranch() : void sync()
-                      }
-                      className="w-full"
-                    >
-                      {syncing ? (
-                        <>
-                          <Loader2 className="size-3.5 animate-spin" />
-                          {committing === "publish"
-                            ? "Publishing…"
-                            : committing === "pull"
-                              ? "Pulling…"
-                              : committing === "push"
-                                ? "Pushing…"
-                                : "Syncing…"}
-                        </>
-                      ) : showPublishBranch ? (
-                        <>
-                          <CloudUpload className="size-3.5" />
-                          <span>Publish Branch</span>
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="size-3.5" />
-                          <span>Sync Changes</span>
-                          {ahead > 0 && (
-                            <span className="inline-flex items-center gap-0.5">
-                              {ahead}
-                              <ArrowUp className="size-3" />
-                            </span>
-                          )}
-                          {behind > 0 && (
-                            <span className="inline-flex items-center gap-0.5">
-                              {behind}
-                              <ArrowDown className="size-3" />
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <div className="flex items-stretch">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        disabled={!canCommit || busy}
-                        onClick={() => void commit()}
-                        className="flex-1 rounded-r-none"
-                      >
-                        {committing === "commit" ? (
-                          <>
-                            <Loader2 className="size-3.5 animate-spin" />
-                            Committing…
-                          </>
-                        ) : committing === "push" ? (
-                          <>
-                            <Loader2 className="size-3.5 animate-spin" />
-                            Pushing…
-                          </>
-                        ) : (
-                          "Commit"
-                        )}
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              variant="default"
-                              size="sm"
-                              disabled={busy}
-                              aria-label="More commit options"
-                              className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
-                            >
-                              <ChevronDown className="size-3.5" />
-                            </Button>
-                          }
-                        />
-                        <DropdownMenuContent
-                          align="end"
-                          className="min-w-[180px]"
-                        >
-                          <DropdownMenuItem
-                            disabled={!canCommit || busy}
-                            onClick={() => void commit({ push: true })}
-                          >
-                            Commit &amp; Push
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
                 </div>
               )}
               <ScrollArea className="min-h-0 flex-1">
@@ -1412,6 +1315,7 @@ export function RightSidebar({
         projectId={projectId ?? null}
         initialBody={notesQuery.data?.body ?? ""}
         loading={notesQuery.isLoading}
+        onSaved={handleNoteSaved}
         open={notesOpen}
         onOpenChange={setNotesOpen}
       />
@@ -1419,16 +1323,175 @@ export function RightSidebar({
   )
 }
 
-function SidebarNotesSection({
+const CommitControls = memo(function CommitControls({
+  hasData,
+  stagedCount,
+  busy,
+  committing,
+  syncing,
+  showSync,
+  showPublishBranch,
+  ahead,
+  behind,
+  onCommit,
+  onSync,
+  onPublish,
+}: {
+  hasData: boolean
+  stagedCount: number
+  busy: boolean
+  committing: null | "commit" | "push" | "sync" | "pull" | "publish"
+  syncing: boolean
+  showSync: boolean
+  showPublishBranch: boolean
+  ahead: number
+  behind: number
+  onCommit: (message: string, opts?: { push?: boolean }) => Promise<boolean>
+  onSync: () => void | Promise<void>
+  onPublish: () => void | Promise<void>
+}) {
+  const [message, setMessage] = useState("")
+  const canCommit = hasData && stagedCount > 0 && message.trim().length > 0
+
+  const submitCommit = useCallback(
+    (opts?: { push?: boolean }) => {
+      if (!canCommit) return
+      const submittedMessage = message
+      void onCommit(submittedMessage, opts).then((ok) => {
+        if (ok) {
+          setMessage((current) => (current === submittedMessage ? "" : current))
+        }
+      })
+    },
+    [canCommit, message, onCommit]
+  )
+
+  return (
+    <>
+      <Textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Message (Ctrl+Enter to commit)"
+        rows={2}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canCommit) {
+            e.preventDefault()
+            submitCommit()
+          }
+        }}
+        className="min-h-0 resize-none rounded-md bg-background px-2 py-1.5 text-xs focus-visible:ring-2 focus-visible:ring-ring/40 md:text-xs"
+      />
+      {showSync ? (
+        <Button
+          variant="default"
+          size="sm"
+          disabled={busy}
+          onClick={() => (showPublishBranch ? void onPublish() : void onSync())}
+          className="w-full"
+        >
+          {syncing ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" />
+              {committing === "publish"
+                ? "Publishing…"
+                : committing === "pull"
+                  ? "Pulling…"
+                  : committing === "push"
+                    ? "Pushing…"
+                    : "Syncing…"}
+            </>
+          ) : showPublishBranch ? (
+            <>
+              <CloudUpload className="size-3.5" />
+              <span>Publish Branch</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw className="size-3.5" />
+              <span>Sync Changes</span>
+              {ahead > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  {ahead}
+                  <ArrowUp className="size-3" />
+                </span>
+              )}
+              {behind > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  {behind}
+                  <ArrowDown className="size-3" />
+                </span>
+              )}
+            </>
+          )}
+        </Button>
+      ) : (
+        <div className="flex items-stretch">
+          <Button
+            variant="default"
+            size="sm"
+            disabled={!canCommit || busy}
+            onClick={() => submitCommit()}
+            className="flex-1 rounded-r-none"
+          >
+            {committing === "commit" ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Committing…
+              </>
+            ) : committing === "push" ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Pushing…
+              </>
+            ) : (
+              "Commit"
+            )}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={busy}
+                  aria-label="More commit options"
+                  className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="min-w-[180px]">
+              <DropdownMenuItem
+                disabled={!canCommit || busy}
+                onClick={() => submitCommit({ push: true })}
+              >
+                Commit &amp; Push
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+    </>
+  )
+})
+
+const SidebarNotesSection = memo(function SidebarNotesSection({
   projectId,
   initialBody,
   loading,
+  onSaved,
   open,
   onOpenChange,
 }: {
   projectId: string | null
   initialBody: string
   loading: boolean
+  onSaved: (note: {
+    projectId: string
+    body: string
+    updatedAt: number
+  }) => void
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -1574,6 +1637,7 @@ function SidebarNotesSection({
           projectId={projectId}
           initialMarkdown={projectId ? initialBody : ""}
           editable={!!projectId && !loading}
+          onSaved={onSaved}
           placeholder={
             !projectId
               ? "Open a project to add notes..."
@@ -1585,7 +1649,7 @@ function SidebarNotesSection({
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
 function GitHubBranchAction({
   branch,

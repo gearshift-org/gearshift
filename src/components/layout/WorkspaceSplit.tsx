@@ -269,7 +269,9 @@ export function WorkspaceSplit({
             key={p.id}
             aria-hidden={p.id !== activeProjectId}
             className={cn(
-              "absolute inset-0 transition-opacity duration-75",
+              // POC: outside padding detaches the terminal view from the panel
+              // edges; each pane rounds itself and the resize handles add gaps.
+              "absolute inset-0 p-2 transition-opacity duration-75",
               p.id !== activeProjectId && "pointer-events-none opacity-0"
             )}
           >

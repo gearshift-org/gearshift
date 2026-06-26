@@ -619,6 +619,14 @@ export function AppShell() {
   )
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
   const terminalFocusRequestNonceRef = useRef(0)
+  // The terminal pane currently visible (active tab is a terminal). Null when
+  // the active tab is a file/diff/commit preview or there is no terminal. Read
+  // by the global key/paste handlers to redirect stray typing into the terminal.
+  const visibleTerminalRef = useRef<{
+    tabId: string
+    paneId: string
+    sessionId: string
+  } | null>(null)
   const windowFocusedRef = useRef(
     typeof document !== "undefined" ? document.hasFocus() : true
   )
@@ -1217,13 +1225,23 @@ export function AppShell() {
   }, [activeProjectId, activeTabId])
 
   useEffect(() => {
-    if (!activeProject || !activeTabId) return
-    const activeTab = activeProject.tabs.find((t) => t.id === activeTabId)
-    if (activeTab?.kind !== "terminal") return
+    const activeTab = activeProject?.tabs.find((t) => t.id === activeTabId)
+    if (!activeProject || !activeTabId || activeTab?.kind !== "terminal") {
+      visibleTerminalRef.current = null
+      return
+    }
     lastTerminalByProjectRef.current[activeProject.id] = activeTab.id
     const activePane = activeTab.panes.find(
       (pp) => pp.id === activeTab.activePaneId
     )
+    visibleTerminalRef.current =
+      activePane?.sessionId != null
+        ? {
+            tabId: activeTab.id,
+            paneId: activePane.id,
+            sessionId: activePane.sessionId,
+          }
+        : null
     if (activePane?.agentStatus?.agentName || activePane?.agentSessionId) {
       rememberAgentTerminal(activeProject.id, activeTab.id, activePane.id)
     }
@@ -2913,6 +2931,25 @@ export function AppShell() {
 
   const { bindings, findActionForEvent } = useKeybindings()
   useEffect(() => {
+    // True when focus already lives somewhere that consumes typing — a real
+    // input/editor or the terminal itself — so we must not hijack the keystroke.
+    const focusConsumesTyping = (target: HTMLElement | null) =>
+      isTextEditingTarget(target) || !!target?.closest(".xterm")
+
+    // Move focus to the visible terminal pane (if any) via the focus-request
+    // nonce. Returns its sessionId so the caller can also forward the keystroke.
+    const focusVisibleTerminal = () => {
+      const visible = visibleTerminalRef.current
+      if (!visible) return null
+      terminalFocusRequestNonceRef.current += 1
+      setTerminalFocusRequest({
+        tabId: visible.tabId,
+        paneId: visible.paneId,
+        nonce: terminalFocusRequestNonceRef.current,
+      })
+      return visible.sessionId
+    }
+
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       if (target?.dataset?.keycapture === "true") return
@@ -2941,8 +2978,47 @@ export function AppShell() {
       // example, CodeMirror's Mod+S save binding calls preventDefault(), so the
       // sidebar shortcut should not also run while the editor handles saving.
       if (e.defaultPrevented) return
+      // Cmd/Ctrl+V with idle focus: redirect the paste into the visible
+      // terminal. Handled here too (not just the paste listener) because a
+      // native paste event doesn't fire when focus is on a non-editable element.
+      if (
+        mod &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "v" || e.key === "V") &&
+        !focusConsumesTyping(target)
+      ) {
+        const sessionId = focusVisibleTerminal()
+        if (sessionId) {
+          e.preventDefault()
+          window.dispatchEvent(
+            new CustomEvent("gearshift:terminal-paste", {
+              detail: { sessionId },
+            })
+          )
+          return
+        }
+      }
       const action = findActionForEvent(e)
-      if (!action) return
+      if (!action) {
+        // No shortcut matched. If the user just typed a plain printable
+        // character while focus is idle (not an input/editor/terminal),
+        // redirect it into the visible terminal so typing "just works".
+        if (
+          e.key.length === 1 &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          !focusConsumesTyping(target)
+        ) {
+          const sessionId = focusVisibleTerminal()
+          if (sessionId) {
+            e.preventDefault()
+            window.term.write(sessionId, e.key)
+          }
+        }
+        return
+      }
       switch (action) {
         case "sidebar.toggle":
           e.preventDefault()
@@ -3006,8 +3082,25 @@ export function AppShell() {
           break
       }
     }
+    // Paste with idle focus: route it into the visible terminal. Dispatch a
+    // custom event the matching TerminalView handles so its full paste logic
+    // (agent-aware, image, bracketed paste) runs instead of a raw PTY write.
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (focusConsumesTyping(target)) return
+      const sessionId = focusVisibleTerminal()
+      if (!sessionId) return
+      e.preventDefault()
+      window.dispatchEvent(
+        new CustomEvent("gearshift:terminal-paste", { detail: { sessionId } })
+      )
+    }
     window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
+    window.addEventListener("paste", onPaste)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("paste", onPaste)
+    }
   }, [
     bindings,
     findActionForEvent,

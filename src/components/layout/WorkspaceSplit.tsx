@@ -84,6 +84,7 @@ type Props = {
   }) => void
   onSummarizeHistory?: (agent: string) => void
   onSummarizeChat?: (range: HistoryRange) => void
+  onFocusSession?: (sessionId: string) => void
   rightSidebarTab?: RightSidebarTab
   onRightSidebarTabChange?: (tab: RightSidebarTab) => void
   activeTreeFilePath?: string
@@ -120,6 +121,7 @@ export function WorkspaceSplit({
   onOpenCommitTab,
   onSummarizeHistory,
   onSummarizeChat,
+  onFocusSession,
   rightSidebarTab,
   onRightSidebarTabChange,
   activeTreeFilePath,
@@ -370,6 +372,7 @@ export function WorkspaceSplit({
             onOpenCommit={onOpenCommitTab}
             onSummarizeHistory={onSummarizeHistory}
             onSummarizeChat={onSummarizeChat}
+            onFocusSession={onFocusSession}
             topRightActions={sidebarTopActions}
           />
         </div>

@@ -147,6 +147,7 @@ type Props = {
   }) => void
   onSummarizeHistory?: (agent: string) => void
   onSummarizeChat?: (range: HistoryRange) => void
+  onFocusSession?: (sessionId: string) => void
   topRightActions?: React.ReactNode
 }
 
@@ -162,6 +163,7 @@ export function RightSidebar({
   onOpenCommit,
   onSummarizeHistory,
   onSummarizeChat,
+  onFocusSession,
   topRightActions,
 }: Props) {
   const [internalTab, setInternalTab] = useState<RightSidebarTab>("git")
@@ -199,6 +201,12 @@ export function RightSidebar({
   // are deferred so half-applied git state can't flash into the UI.
   const inflightActionsRef = useRef(0)
   const settleUntilRef = useRef(0)
+  // Snapshot of the working-tree/branch state (per cwd) used to auto-dismiss a
+  // stale action error once the user actually resolves the underlying problem.
+  const gitStateSigRef = useRef<{ cwd: string | null; sig: string }>({
+    cwd: null,
+    sig: "",
+  })
 
   const queryClient = useQueryClient()
   const currentGitQueryKey = useMemo(() => gitQueryKey(cwd), [cwd])
@@ -349,6 +357,29 @@ export function RightSidebar({
     : null
   const error = currentActionError ?? queryError
   const loading = gitQuery.isLoading
+
+  // A failed action (e.g. a branch switch blocked by untracked files) leaves a
+  // sticky error that previously only cleared when the next sidebar action ran.
+  // Clear it once the working tree or branch actually changes — i.e. after the
+  // user fixes the problem, even from the terminal. Gated by the action settle
+  // window so an action's own optimistic/rollback churn can't wipe the error it
+  // just raised, and re-baselined (without clearing) when the project changes.
+  useEffect(() => {
+    const sig = `${currentBranch ?? ""}::${files
+      .map((f) => `${f.path} ${f.status} ${f.staged ? 1 : 0}`)
+      .join("")}`
+    const prev = gitStateSigRef.current
+    gitStateSigRef.current = { cwd, sig }
+    if (prev.cwd !== cwd) return
+    if (
+      sig !== prev.sig &&
+      currentActionError &&
+      inflightActionsRef.current === 0 &&
+      Date.now() >= settleUntilRef.current
+    ) {
+      setCurrentActionError(null)
+    }
+  }, [cwd, files, currentBranch, currentActionError, setCurrentActionError])
 
   const stagedFiles = useMemo(() => files.filter((f) => f.staged), [files])
   const unstagedFiles = useMemo(() => files.filter((f) => !f.staged), [files])
@@ -1373,6 +1404,7 @@ export function RightSidebar({
           <ProjectChatHistoryPanel
             projectId={projectId ?? null}
             onSummarize={onSummarizeChat}
+            onFocusSession={onFocusSession}
           />
         </TabsContent>
       </Tabs>
@@ -2083,13 +2115,47 @@ function BranchPicker({
             </ComboboxItem>
           )}
           {filteredBranches.map((b) => (
-            <ComboboxItem key={b} value={b} className="text-xs">
+            <ComboboxItem key={b} value={b} className="group text-xs">
               <span className="min-w-0 flex-1 truncate">{b}</span>
+              <BranchCopyButton branch={b} />
             </ComboboxItem>
           ))}
         </ComboboxList>
       </ComboboxContent>
     </Combobox>
+  )
+}
+
+function BranchCopyButton({ branch }: { branch: string }) {
+  const [copied, setCopied] = useState(false)
+  const timerRef = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    },
+    []
+  )
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-label={`Copy branch name ${branch}`}
+      // Stop the click/pointer from reaching the combobox item so copying
+      // doesn't switch branches or close the list.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        void navigator.clipboard.writeText(branch)
+        setCopied(true)
+        toast.success("Branch name copied")
+        if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+        timerRef.current = window.setTimeout(() => setCopied(false), 1200)
+      }}
+      className="size-5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-data-[highlighted]:opacity-100 focus-visible:opacity-100"
+    >
+      {copied ? <Check /> : <Copy />}
+    </Button>
   )
 }
 

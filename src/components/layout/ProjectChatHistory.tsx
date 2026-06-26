@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Trash2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Tooltip,
@@ -20,6 +21,7 @@ type Props = {
   projectId: string | null
   reloadKey?: number
   onSummarize?: (range: HistoryRange) => void
+  onFocusSession?: (sessionId: string) => void
 }
 
 type ClearRange = "today" | "this-week" | "last-30-days" | "all"
@@ -88,6 +90,7 @@ export function ProjectChatHistoryPanel({
   projectId,
   reloadKey = 0,
   onSummarize,
+  onFocusSession,
 }: Props) {
   const [messages, setMessages] = useState<ChatHistoryMessage[]>([])
   const [loading, setLoading] = useState(false)
@@ -222,7 +225,41 @@ export function ProjectChatHistoryPanel({
         ) : (
           <ul className="divide-y divide-border/60">
             {messages.map((m) => (
-              <li key={m.id} className="group px-3 py-2">
+              <li
+                key={m.id}
+                className={cn(
+                  "group px-3 py-2",
+                  onFocusSession &&
+                    "cursor-pointer transition-colors hover:bg-accent/50"
+                )}
+                role={onFocusSession ? "button" : undefined}
+                tabIndex={onFocusSession ? 0 : undefined}
+                title={
+                  onFocusSession
+                    ? "Focus the terminal that ran this"
+                    : undefined
+                }
+                onClick={
+                  onFocusSession
+                    ? () => {
+                        // Don't hijack a text selection (e.g. copying the body).
+                        const sel = window.getSelection()
+                        if (sel && !sel.isCollapsed) return
+                        onFocusSession(m.sessionId)
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  onFocusSession
+                    ? (e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          onFocusSession(m.sessionId)
+                        }
+                      }
+                    : undefined
+                }
+              >
                 <div className="flex items-center justify-between gap-2 text-[10px] tracking-wide text-muted-foreground uppercase">
                   <span>{m.agent ?? "user"}</span>
                   <div className="flex items-center gap-1.5">
@@ -232,7 +269,10 @@ export function ProjectChatHistoryPanel({
                         render={
                           <button
                             type="button"
-                            onClick={() => void deleteMessage(m.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void deleteMessage(m.id)
+                            }}
                             aria-label="Delete history item"
                             className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus:opacity-100"
                           >

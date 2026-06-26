@@ -1038,6 +1038,51 @@ export function AppShell() {
     [activeProjectId, navigateToProject]
   )
 
+  // History tab: clicking a message focuses the terminal whose session
+  // submitted it (the per-pane GEARSHIFT_SESSION_ID stored on the message).
+  const focusSession = useCallback(
+    (sessionId: string) => {
+      if (!sessionId) return
+      for (const project of projectsRef.current) {
+        for (const tab of project.tabs) {
+          if (tab.kind !== "terminal") continue
+          const pane = tab.panes.find(
+            (pp) =>
+              pp.sessionId === sessionId || pp.pendingSessionId === sessionId
+          )
+          if (!pane) continue
+          setProjects((prev) =>
+            prev.map((p) =>
+              p.id === project.id
+                ? {
+                    ...p,
+                    activeTabId: tab.id,
+                    tabs: p.tabs.map((t) =>
+                      t.id === tab.id && t.kind === "terminal"
+                        ? { ...t, activePaneId: pane.id }
+                        : t
+                    ),
+                  }
+                : p
+            )
+          )
+          navigateToProject(project.id, tab.id)
+          terminalFocusRequestNonceRef.current += 1
+          setTerminalFocusRequest({
+            tabId: tab.id,
+            paneId: pane.id,
+            nonce: terminalFocusRequestNonceRef.current,
+          })
+          window.focus()
+          void window.appWindow?.focus?.()
+          return
+        }
+      }
+      toast.error("That terminal is no longer open")
+    },
+    [navigateToProject]
+  )
+
   useEffect(() => {
     if (!stateRestored) return
     saveActiveProjectId(activeProjectId)
@@ -3263,6 +3308,7 @@ export function AppShell() {
               onOpenCommitTab={openCommitTab}
               onSummarizeHistory={summarizeHistory}
               onSummarizeChat={summarizeChat}
+              onFocusSession={focusSession}
               rightSidebarTab={rightSidebarTab}
               onRightSidebarTabChange={setRightSidebarTab}
               activeTreeFilePath={activeTreeFilePath}

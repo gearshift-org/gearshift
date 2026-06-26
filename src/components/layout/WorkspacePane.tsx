@@ -535,7 +535,10 @@ function TerminalTabContent({
       !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
     return (
       <div
-        className="relative flex h-full flex-col overflow-hidden rounded-lg border border-border bg-[var(--xterm-bg)]"
+        className={cn(
+          "relative flex h-full flex-col overflow-hidden rounded-lg border bg-[var(--xterm-bg)]",
+          activePane ? "border-transparent" : "border-border"
+        )}
         style={{ "--xterm-bg": terminalBg } as CSSProperties}
       >
         <HeaderDropZone

@@ -35,6 +35,10 @@ The renderer combines lifecycle hooks, process detection, terminal title changes
 
 User prompts are captured in `electron/inputCapture.ts` and saved through `electron/db/chatDb.ts`. `appendMessage` redacts likely secrets before writing to `chat.db`, and history reads redact again before returning rows so older stored messages are not shown with raw secrets. The redactor masks credential-looking fields (`password`, `api_key`, `token`, etc.), `Authorization` headers, and common key formats with `********`. Stored history bodies are capped at 500 characters, and users can delete individual history items or clear a whole session/project.
 
+### Project notes
+
+Right-sidebar project notes are stored in the same local SQLite database as chat history (`chat.db`), in `project_notes` keyed by `project_id`. The renderer reads and saves notes through `window.term.notes`, while the existing loopback-only history server exposes them to local agents via `GET /notes?projectId=<id>` on the same port as `/history`. The endpoint returns Markdown with the project ID, available project metadata, and the current notes for that project.
+
 ### Agent-native session IDs
 
 In addition to GearShift's own per-pane `GEARSHIFT_SESSION_ID` (a UUID we generate and inject at PTY spawn), each lifecycle hook also reports the **agent's own session ID** — e.g. the UUID Claude writes to `~/.claude/projects/<cwd>/<session-id>.jsonl`. This is the id needed to later resume a conversation (`claude --resume <id>`, OpenCode session restore, pi session file, etc.).

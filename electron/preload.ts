@@ -9,6 +9,12 @@ export type ChatHistoryMessage = {
   createdAt: number
 }
 
+export type ProjectNote = {
+  projectId: string
+  body: string
+  updatedAt: number
+}
+
 const dialogApi = {
   openProject: () =>
     ipcRenderer.invoke("dialog:openProject") as Promise<string | null>,
@@ -205,6 +211,18 @@ const termApi = {
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },
+  },
+  notes: {
+    get: (projectId: string) =>
+      ipcRenderer.invoke(
+        "term:notes:get",
+        projectId
+      ) as Promise<ProjectNote | null>,
+    save: (projectId: string, body: string) =>
+      ipcRenderer.invoke("term:notes:save", projectId, body) as Promise<{
+        ok: boolean
+        note?: ProjectNote
+      }>,
   },
 }
 

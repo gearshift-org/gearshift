@@ -3073,6 +3073,20 @@ app.whenReady().then(async () => {
     return chatDb.latestByProject()
   })
 
+  ipcMain.handle("term:notes:get", async (_e, projectId: string) => {
+    if (!projectId) return null
+    return chatDb.getProjectNote(projectId)
+  })
+
+  ipcMain.handle(
+    "term:notes:save",
+    async (_e, projectId: string, body: string) => {
+      if (!projectId) return { ok: false }
+      const note = await chatDb.saveProjectNote(projectId, body ?? "")
+      return { ok: true, note }
+    }
+  )
+
   ipcMain.handle("term:history:delete", async (event, id: string) => {
     const msg = await chatDb.deleteMessage(id)
     if (!msg) return { ok: false }

@@ -4,7 +4,7 @@ import { app } from "electron"
 import { createClient, type Client } from "@libsql/client"
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql"
 import { and, asc, desc, eq, gte, isNotNull, lte, lt, sql } from "drizzle-orm"
-import { chatMessages } from "./schema"
+import { chatMessages, projectNotes } from "./schema"
 import { sanitizeChatHistoryBody } from "../redactSecrets"
 
 export type ChatHistoryMessage = {
@@ -14,6 +14,12 @@ export type ChatHistoryMessage = {
   body: string
   agent: string | null
   createdAt: number
+}
+
+export type ProjectNote = {
+  projectId: string
+  body: string
+  updatedAt: number
 }
 
 let client: Client | null = null
@@ -45,6 +51,11 @@ async function ensureDb(): Promise<LibSQLDatabase> {
           ON chat_messages (session_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_chat_project
           ON chat_messages (project_id, created_at);
+        CREATE TABLE IF NOT EXISTS project_notes (
+          project_id TEXT PRIMARY KEY,
+          body       TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
       `)
       db = handle
     })()
@@ -173,6 +184,41 @@ export async function projectIdForSession(
   return rows[0]?.projectId ?? null
 }
 
+export async function getProjectNote(
+  projectId: string
+): Promise<ProjectNote | null> {
+  const handle = await ensureDb()
+  const rows = await handle
+    .select()
+    .from(projectNotes)
+    .where(eq(projectNotes.projectId, projectId))
+    .limit(1)
+  return rows[0] ?? null
+}
+
+export async function saveProjectNote(
+  projectId: string,
+  body: string
+): Promise<ProjectNote> {
+  const handle = await ensureDb()
+  const note: ProjectNote = {
+    projectId,
+    body,
+    updatedAt: Date.now(),
+  }
+  await handle
+    .insert(projectNotes)
+    .values(note)
+    .onConflictDoUpdate({
+      target: projectNotes.projectId,
+      set: {
+        body: note.body,
+        updatedAt: note.updatedAt,
+      },
+    })
+  return note
+}
+
 export async function deleteMessage(
   id: string
 ): Promise<ChatHistoryMessage | null> {
@@ -233,6 +279,21 @@ export async function migrateProjectIds(
       .update(chatMessages)
       .set({ projectId: migration.to })
       .where(eq(chatMessages.projectId, migration.from))
+    const existingTargetNote = await handle
+      .select({ projectId: projectNotes.projectId })
+      .from(projectNotes)
+      .where(eq(projectNotes.projectId, migration.to))
+      .limit(1)
+    if (existingTargetNote.length > 0) {
+      await handle
+        .delete(projectNotes)
+        .where(eq(projectNotes.projectId, migration.from))
+    } else {
+      await handle
+        .update(projectNotes)
+        .set({ projectId: migration.to })
+        .where(eq(projectNotes.projectId, migration.from))
+    }
   }
 }
 

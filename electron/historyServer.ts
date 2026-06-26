@@ -1,5 +1,5 @@
 import http from "node:http"
-import { queryMessages, type HistoryQuery } from "./db/chatDb"
+import { getProjectNote, queryMessages, type HistoryQuery } from "./db/chatDb"
 
 // A small, local-only HTTP API that serves chat history so agents (or any local
 // tool) can pull recent prompts and summarize them. Bound to 127.0.0.1 only —
@@ -43,6 +43,49 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown) {
     "Content-Length": Buffer.byteLength(payload),
   })
   res.end(payload)
+}
+
+function sendMarkdown(res: http.ServerResponse, status: number, body: string) {
+  res.writeHead(status, {
+    "Content-Type": "text/markdown; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Length": Buffer.byteLength(body),
+  })
+  res.end(body)
+}
+
+function metadataLine(value: string | undefined): string | null {
+  const cleaned = value?.replace(/\s+/g, " ").trim()
+  return cleaned ? cleaned : null
+}
+
+function projectNotesMarkdown({
+  projectId,
+  project,
+  body,
+  updatedAt,
+}: {
+  projectId: string
+  project: HistoryServerProject | null
+  body: string
+  updatedAt: number | null
+}) {
+  const lines = ["# Project Notes", "", `Project ID: \`${projectId}\``]
+  const projectName = metadataLine(project?.name)
+  const projectPath = metadataLine(project?.path)
+  if (projectName) lines.push(`Project: ${projectName}`)
+  if (projectPath) lines.push(`Path: \`${projectPath}\``)
+  if (updatedAt !== null) {
+    lines.push(`Updated: ${new Date(updatedAt).toISOString()}`)
+  }
+  lines.push(
+    "",
+    "## Notes",
+    "",
+    body.trim() || "_No notes saved for this project._",
+    ""
+  )
+  return lines.join("\n")
 }
 
 function parseIntParam(value: string | null): number | undefined {
@@ -102,6 +145,34 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     return
   }
 
+  if (url.pathname === "/notes") {
+    const projectId = url.searchParams.get("projectId")
+    if (!projectId) {
+      sendJson(res, 400, { error: "missing_project_id" })
+      return
+    }
+    getProjectNote(projectId)
+      .then((note) => {
+        const projects = getProjectsFn?.() ?? []
+        const project = projects.find((p) => p.id === projectId) ?? null
+        sendMarkdown(
+          res,
+          200,
+          projectNotesMarkdown({
+            projectId,
+            project,
+            body: note?.body ?? "",
+            updatedAt: note?.updatedAt ?? null,
+          })
+        )
+      })
+      .catch((err) => {
+        console.error("[history-server] notes query failed", err)
+        sendJson(res, 500, { error: "query_failed" })
+      })
+    return
+  }
+
   sendJson(res, 404, { error: "not_found" })
 }
 
@@ -118,7 +189,8 @@ function listenWithRetry(srv: http.Server, port: number, attempt: number) {
     srv.once("error", onError)
     srv.listen(port, "127.0.0.1", () => {
       srv.off("error", onError)
-      resolve(port)
+      const address = srv.address()
+      resolve(typeof address === "object" && address ? address.port : port)
     })
   })
 }

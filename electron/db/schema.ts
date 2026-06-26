@@ -16,4 +16,11 @@ export const chatMessages = sqliteTable(
   ]
 )
 
+export const projectNotes = sqliteTable("project_notes", {
+  projectId: text("project_id").primaryKey(),
+  body: text("body").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
 export type ChatMessageRow = typeof chatMessages.$inferSelect
+export type ProjectNoteRow = typeof projectNotes.$inferSelect

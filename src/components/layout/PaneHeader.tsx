@@ -1,6 +1,12 @@
 import * as React from "react"
 import { useDraggable } from "@dnd-kit/core"
-import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react"
+import {
+  Maximize2,
+  Minimize2,
+  SplitSquareHorizontal,
+  SplitSquareVertical,
+  X,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   Tooltip,
@@ -25,12 +31,15 @@ type Props = {
   index: number
   isActive: boolean
   showSplit: boolean
+  showExpand?: boolean
   showClose?: boolean
+  isExpanded?: boolean
   onFocus: () => void
   onClose: () => void
   onRename: (name: string) => void
   onSplitHorizontal: () => void
   onSplitVertical: () => void
+  onToggleExpand: () => void
 }
 
 export function PaneHeader({
@@ -38,12 +47,15 @@ export function PaneHeader({
   index,
   isActive,
   showSplit,
+  showExpand = false,
   showClose = true,
+  isExpanded = false,
   onFocus,
   onClose,
   onRename,
   onSplitHorizontal,
   onSplitVertical,
+  onToggleExpand,
 }: Props) {
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState("")
@@ -156,6 +168,36 @@ export function PaneHeader({
           {paneDisplayName(pane, index)}
         </span>
       )}
+      {showExpand && !editing ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onFocus()
+                  onToggleExpand()
+                }}
+                aria-label={isExpanded ? "Restore pane" : "Expand pane"}
+                aria-pressed={isExpanded}
+                className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+              >
+                {isExpanded ? (
+                  <Minimize2 className="size-3.5" />
+                ) : (
+                  <Maximize2 className="size-3.5" />
+                )}
+              </button>
+            }
+          />
+          <TooltipContent>
+            {isExpanded ? "Restore pane" : "Expand pane"}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       {pane.sessionId && !editing ? (
         <>
           <SummarizeHistoryMenu onSelect={handleSummarize} stopPropagation />

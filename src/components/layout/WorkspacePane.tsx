@@ -401,6 +401,7 @@ function TerminalTabContent({
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null)
   const [tabBarDropRect, setTabBarDropRect] = useState<DOMRect | null>(null)
   const [focusedTerminalPaneId, setFocusedTerminalPaneId] = useState<string | null>(null)
+  const [expandedPaneId, setExpandedPaneId] = useState<string | null>(null)
   const draggingPane = draggingPaneId
     ? tab.panes.find((p) => p.id === draggingPaneId)
     : undefined
@@ -408,6 +409,12 @@ function TerminalTabContent({
   useEffect(() => {
     if (!isActive) setFocusedTerminalPaneId(null)
   }, [isActive])
+
+  useEffect(() => {
+    if (expandedPaneId && !tab.panes.some((pane) => pane.id === expandedPaneId)) {
+      setExpandedPaneId(null)
+    }
+  }, [expandedPaneId, tab.panes])
 
   // Quick split: arm clickable split zones while the configured modifier chord
   // (terminal.quickSplitHold, default Cmd+Option) is held. Modifier state is
@@ -509,12 +516,17 @@ function TerminalTabContent({
       index={idx}
       isActive={tab.activePaneId === pane.id}
       showSplit={tab.activePaneId === pane.id && !!onSplitTerminal}
+      showExpand={multi}
       showClose={multi}
+      isExpanded={expandedPaneId === pane.id}
       onFocus={() => onFocusPane?.(tab.id, pane.id)}
       onClose={() => onClosePane?.(tab.id, pane.id)}
       onRename={(name) => onRenamePane?.(tab.id, pane.id, name)}
       onSplitHorizontal={() => onSplitTerminal?.(tab.id, "horizontal")}
       onSplitVertical={() => onSplitTerminal?.(tab.id, "vertical")}
+      onToggleExpand={() =>
+        setExpandedPaneId((current) => (current === pane.id ? null : pane.id))
+      }
     />
   )
 
@@ -625,10 +637,12 @@ function TerminalTabContent({
   // simply resizes, rather than unmounting + recreating + replaying its
   // scrollback into a fresh, briefly mis-sized xterm (the "compress, then
   // settle" glitch). See TerminalView's remount note.
-  const renderRoot = (node: TerminalLayout): ReactNode =>
-    node.type === "leaf"
+  const renderRoot = (node: TerminalLayout): ReactNode => {
+    if (expandedPaneId) return renderLeaf(expandedPaneId)
+    return node.type === "leaf"
       ? renderGroup([node], "horizontal", nodeKey(node), undefined)
       : renderNode(node)
+  }
 
   return (
     <DndContext

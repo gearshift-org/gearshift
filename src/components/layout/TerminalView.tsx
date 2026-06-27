@@ -482,7 +482,9 @@ const LIVE_FIT_SUPPRESSING_BODY_CLASSES = [
   "gs-sidebar-resizing",
   "gs-window-resizing",
 ]
-const TERMINAL_RECAP_BOX_ENABLED = true
+// Temporarily hide the top-right terminal recap box while testing terminal UX.
+// Keep the full code path intact; flip this back to true to restore it.
+const TERMINAL_RECAP_BOX_ENABLED = false
 // Floating commit affordance temporarily disabled; keep the code path intact.
 const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
 // Agents with authoritative lifecycle hooks (start/stop via the agent socket).

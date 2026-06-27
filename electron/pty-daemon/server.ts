@@ -21,10 +21,18 @@ const IDLE_SWEEP_INTERVAL_MS = 5 * 60 * 1000
 
 // Grace between SIGHUP and the SIGKILL fallback when terminating a session.
 const KILL_GRACE_MS = 2_000
+// After SIGKILL, give node-pty a short chance to emit onExit before we forcibly
+// drop the session reference. This prevents stale PTY master fds from piling up
+// when node-pty never observes the exit on macOS.
+const FORCE_CLEANUP_GRACE_MS = 250
+
+interface DestroyablePty extends IPty {
+  destroy?: () => void
+}
 
 interface Session {
   id: string
-  pty: IPty
+  pty: DestroyablePty
   cols: number
   rows: number
   ringChunks: string[]
@@ -255,7 +263,7 @@ export class Server {
       })
       return
     }
-    let pty: IPty
+    let pty: DestroyablePty
     try {
       pty = nodePty.spawn(msg.shell, msg.args, {
         name: "xterm-256color",
@@ -368,13 +376,46 @@ export class Server {
       // already dead
     }
     // Fallback: if the group ignored SIGHUP and onExit hasn't removed the
-    // session yet, force it. Unref so a pending timer can't hold the daemon.
+    // session yet, force it. If node-pty still doesn't emit onExit, destroy the
+    // internal stream and drop our reference so the PTY master fd can close.
+    // Unref timers so pending cleanup never holds the daemon open.
     const timer = setTimeout(() => {
-      if (this.sessions.has(session.id)) {
-        signalGroup("SIGKILL")
-      }
+      if (this.sessions.get(session.id) !== session) return
+      signalGroup("SIGKILL")
+      this.destroyPty(session)
+      const cleanupTimer = setTimeout(() => {
+        this.finalizeSession(session, 1, 9)
+      }, FORCE_CLEANUP_GRACE_MS)
+      cleanupTimer.unref()
     }, KILL_GRACE_MS)
     timer.unref()
+  }
+
+  private destroyPty(session: Session): void {
+    try {
+      session.pty.destroy?.()
+    } catch {
+      // already closed or unsupported by this node-pty build
+    }
+  }
+
+  private finalizeSession(
+    session: Session,
+    exitCode: number,
+    signal?: number,
+  ): void {
+    if (this.sessions.get(session.id) !== session) return
+    const encoded = encodeFrame({
+      type: "exit",
+      sessionId: session.id,
+      exitCode,
+      signal,
+    })
+    for (const sub of session.subscribers) {
+      if (!sub.destroyed && sub.writable) sub.write(encoded)
+    }
+    session.subscribers.clear()
+    this.sessions.delete(session.id)
   }
 
   private appendToRing(session: Session, chunk: string): void {
@@ -413,17 +454,7 @@ export class Server {
       }
     })
     session.pty.onExit(({ exitCode, signal }) => {
-      const encoded = encodeFrame({
-        type: "exit",
-        sessionId: session.id,
-        exitCode,
-        signal,
-      })
-      for (const sub of session.subscribers) {
-        if (!sub.destroyed && sub.writable) sub.write(encoded)
-      }
-      session.subscribers.clear()
-      this.sessions.delete(session.id)
+      this.finalizeSession(session, exitCode, signal)
     })
   }
 }

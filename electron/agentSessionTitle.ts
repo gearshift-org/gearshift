@@ -8,7 +8,7 @@ import type { TerminalAgentName } from "./agentHooks"
 //
 // Two tiers, matching what each agent itself can offer:
 //   - Claude / OpenCode generate a real title -> use it.
-//   - Codex / pi / Gemini have no title -> fall back to the first user message
+//   - Codex / pi have no title -> fall back to the first user message
 //     (the same thing their own `resume` pickers display).
 //
 // All lookups are best-effort and bounded; any failure returns null so callers
@@ -209,35 +209,6 @@ async function codexTitle(id: string): Promise<string | null> {
   )
 }
 
-async function geminiTitle(id: string): Promise<string | null> {
-  // Gemini stores logs under hashed temp dirs, not keyed by session id, so we
-  // scan each logs.json for an entry whose sessionId matches.
-  const tmpRoot = path.join(app.getPath("home"), ".gemini", "tmp")
-  let dirs: string[]
-  try {
-    dirs = (await fs.readdir(tmpRoot, { withFileTypes: true }))
-      .filter((d) => d.isDirectory())
-      .map((d) => path.join(tmpRoot, d.name, "logs.json"))
-  } catch {
-    return null
-  }
-  for (const logFile of dirs) {
-    const content = await readCapped(logFile)
-    if (!content) continue
-    try {
-      const arr = JSON.parse(content) as Array<Record<string, unknown>>
-      if (!Array.isArray(arr)) continue
-      const hit = arr.find(
-        (m) => m.sessionId === id && m.type === "user" && typeof m.message === "string"
-      )
-      if (hit) return clean(hit.message as string)
-    } catch {
-      // skip
-    }
-  }
-  return null
-}
-
 export async function getAgentSessionTitle(
   agent: TerminalAgentName,
   agentSessionId: string
@@ -255,8 +226,6 @@ export async function getAgentSessionTitle(
         return await piTitle(agentSessionId)
       case "codex":
         return await codexTitle(agentSessionId)
-      case "gemini":
-        return await geminiTitle(agentSessionId)
       default:
         return null
     }

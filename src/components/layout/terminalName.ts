@@ -29,8 +29,6 @@ function agentDisplayName(agentName: TerminalAgentName | undefined): string | un
       return "OpenCode"
     case "pi":
       return "Pi"
-    case "gemini":
-      return "Gemini"
     default:
       return undefined
   }

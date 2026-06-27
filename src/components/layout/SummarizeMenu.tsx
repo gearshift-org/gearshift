@@ -15,7 +15,7 @@ import {
 
 // All agents the app can launch; summarize requires one of these to already
 // be running in the project.
-const SUMMARIZE_AGENTS = ["claude", "codex", "opencode", "pi", "gemini"]
+const SUMMARIZE_AGENTS = ["claude", "codex", "opencode", "pi"]
 
 export function SummarizeMenu({
   onSummarize,

@@ -454,13 +454,6 @@ function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
   ) {
     return "pi"
   }
-  if (
-    basenames.some((base) => base === "gemini" || base === "gemini-cli") ||
-    hasPathSegment("gemini-cli") ||
-    hasPathSegment("@google/gemini-cli")
-  ) {
-    return "gemini"
-  }
   return undefined
 }
 

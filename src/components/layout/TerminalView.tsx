@@ -501,8 +501,8 @@ function shouldSuppressLiveFit() {
 }
 
 // Hookless agents fall back to "terminal produced output while running" as a
-// busy signal. Keep this to agents that have no hooks (Gemini, plain shells).
-const OUTPUT_ACTIVITY_AGENTS = new Set(["gemini"])
+// busy signal. All supported agents currently have hooks, so keep this empty.
+const OUTPUT_ACTIVITY_AGENTS = new Set<string>()
 // Delay between writing a prompt and the Enter that submits it, so the agent's
 // input box registers the full text first. Mirrors AppShell's writeAgentPrompt.
 const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
@@ -1626,7 +1626,7 @@ export function TerminalView({
       // events from their lifecycle hooks, so busy state is already covered.
       // Their TUI title carries a static leading glyph that repaints on every
       // UI interaction (opening the model picker, selecting a model), which
-      // would otherwise be misread as work. Only hookless agents (Gemini, plain
+      // would otherwise be misread as work. Only hookless agents (plain
       // shells) need the title-presence fallback.
       if (current.agentName && HOOK_BACKED_AGENTS.has(current.agentName)) return
 

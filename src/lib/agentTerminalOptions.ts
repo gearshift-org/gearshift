@@ -9,7 +9,6 @@ export const AGENT_TERMINAL_LABELS: Record<TerminalAgentName, string> = {
   codex: "Codex",
   opencode: "OpenCode",
   pi: "Pi",
-  gemini: "Gemini",
 }
 
 export const AGENT_TERMINAL_NAMES = Object.keys(
@@ -23,7 +22,6 @@ export const DEFAULT_AGENT_TERMINAL_OPTIONS: AgentTerminalOptions = {
   codex: "",
   opencode: "",
   pi: "",
-  gemini: "",
 }
 
 export const AGENT_TERMINAL_FULL_ACCESS_OPTIONS: AgentTerminalOptions = {
@@ -31,7 +29,6 @@ export const AGENT_TERMINAL_FULL_ACCESS_OPTIONS: AgentTerminalOptions = {
   codex: "--yolo",
   opencode: "--dangerously-skip-permissions",
   pi: "--tools read,bash,edit,write,grep,find,ls",
-  gemini: "--yolo",
 }
 
 function parseAgentTerminalOptions(raw: string | null): AgentTerminalOptions {

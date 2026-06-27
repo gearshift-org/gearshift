@@ -18,9 +18,14 @@ export type TerminalPane = {
    */
   agentSessionId?: string
   /**
+   * Last known coding agent for this pane. Persisted so an idle-stopped pane
+   * can relaunch/resume the same agent when the user starts it again.
+   */
+  agentName?: TerminalAgentName
+  /**
    * Human-readable title for the agent session — the agent's own AI title
-   * (Claude/OpenCode) or first user message (codex/pi/gemini). Used as the
-   * pane/tab title, below an explicit customName. Resolved from disk via the
+   * (Claude/OpenCode) or first user message (codex/pi). Used as the pane/tab
+   * title, below an explicit customName. Resolved from disk via the
    * agentSessionId.
    */
   agentSessionTitle?: string
@@ -28,12 +33,7 @@ export type TerminalPane = {
   pendingStart?: boolean
 }
 
-export type TerminalAgentName =
-  | "claude"
-  | "codex"
-  | "opencode"
-  | "pi"
-  | "gemini"
+export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi"
 
 export type TerminalAgentStatus = {
   running: boolean

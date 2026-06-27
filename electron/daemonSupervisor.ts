@@ -99,6 +99,84 @@ async function waitForSocket(socket: string, timeoutMs: number): Promise<void> {
   throw new Error(`pty-daemon socket not reachable within ${timeoutMs}ms`)
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+async function spawnDetachedDaemon(
+  socket: string,
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
+  if (process.platform === "win32") {
+    const logFd = fs.openSync(logPath(), "a")
+    const child = spawn(
+      process.execPath,
+      [daemonScriptPath(), `--socket=${socket}`],
+      {
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+        env,
+        cwd: userDataDir(),
+      },
+    )
+    child.on("error", (err) => {
+      fs.appendFileSync(logPath(), `[supervisor] spawn error: ${err.message}\n`)
+    })
+    child.unref()
+    try {
+      fs.closeSync(logFd)
+    } catch {
+      // ignore
+    }
+    if (!child.pid) throw new Error("failed to spawn pty-daemon (no pid)")
+    return child.pid
+  }
+
+  // In development, test harnesses often restart the app by killing the whole
+  // process tree. A normal detached child still appears as Electron's child
+  // until Electron exits, so the tree killer terminates it and terminal
+  // sessions cannot survive a dev restart. Spawn through a short-lived shell
+  // that backgrounds the daemon and exits immediately; launchd then reparents
+  // the daemon so app restarts can adopt the existing PTYs.
+  const command = [
+    shellQuote(process.execPath),
+    shellQuote(daemonScriptPath()),
+    shellQuote(`--socket=${socket}`),
+    ">>",
+    shellQuote(logPath()),
+    "2>&1",
+    "<",
+    "/dev/null",
+    "&",
+    "echo $!",
+  ].join(" ")
+
+  const shell = spawn("/bin/sh", ["-c", command], {
+    detached: true,
+    stdio: ["ignore", "pipe", "ignore"],
+    env,
+    cwd: userDataDir(),
+  })
+  shell.unref()
+
+  const stdout = await new Promise<string>((resolve, reject) => {
+    let out = ""
+    shell.stdout?.on("data", (chunk) => {
+      out += chunk.toString("utf8")
+    })
+    shell.on("error", reject)
+    shell.on("close", (code) => {
+      if (code === 0) resolve(out)
+      else reject(new Error(`pty-daemon launcher exited with code ${code}`))
+    })
+  })
+  const pid = Number.parseInt(stdout.trim(), 10)
+  if (!Number.isFinite(pid) || pid <= 0) {
+    throw new Error("failed to spawn pty-daemon (no pid)")
+  }
+  return pid
+}
+
 async function spawnDaemon(): Promise<Manifest> {
   const socket = socketPath()
   try {
@@ -107,42 +185,16 @@ async function spawnDaemon(): Promise<Manifest> {
     // not there
   }
   fs.mkdirSync(userDataDir(), { recursive: true })
-  const logFd = fs.openSync(logPath(), "a")
 
   // ELECTRON_RUN_AS_NODE: makes Electron's binary behave as plain Node so
   // the daemon runs under the same V8/ABI node-pty was built against.
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
-
-  const child = spawn(
-    process.execPath,
-    [daemonScriptPath(), `--socket=${socket}`],
-    {
-      detached: true,
-      stdio: ["ignore", logFd, logFd],
-      env,
-      cwd: userDataDir(),
-    },
-  )
-  child.on("error", (err) => {
-    fs.appendFileSync(logPath(), `[supervisor] spawn error: ${err.message}\n`)
-  })
-  // unref so Electron can exit even with the child still running.
-  child.unref()
-
-  try {
-    fs.closeSync(logFd)
-  } catch {
-    // ignore
-  }
-
-  if (!child.pid) {
-    throw new Error("failed to spawn pty-daemon (no pid)")
-  }
+  const pid = await spawnDetachedDaemon(socket, env)
 
   await waitForSocket(socket, READY_TIMEOUT_MS)
 
   const manifest: Manifest = {
-    pid: child.pid,
+    pid,
     socket,
     spawnedAt: Date.now(),
   }

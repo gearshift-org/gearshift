@@ -63,10 +63,10 @@ const termApi = {
   agentStatus: (id: string) =>
     ipcRenderer.invoke("term:agentStatus", id) as Promise<{
       running: boolean
-      agentName?: "claude" | "codex" | "opencode" | "pi" | "gemini"
+      agentName?: "claude" | "codex" | "opencode" | "pi"
     }>,
   agentSessionTitle: (args: {
-    agent: "claude" | "codex" | "opencode" | "pi" | "gemini"
+    agent: "claude" | "codex" | "opencode" | "pi"
     agentSessionId: string
   }) =>
     ipcRenderer.invoke("term:agentSessionTitle", args) as Promise<
@@ -75,7 +75,7 @@ const termApi = {
   onAgentEvent: (
     id: string,
     cb: (event: {
-      agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
+      agentName: "claude" | "codex" | "opencode" | "pi"
       event: "start" | "stop" | "needs_attention"
       body?: string
       agentSessionId?: string
@@ -85,7 +85,7 @@ const termApi = {
     const listener = (
       _e: unknown,
       event: {
-        agentName: "claude" | "codex" | "opencode" | "pi" | "gemini"
+        agentName: "claude" | "codex" | "opencode" | "pi"
         event: "start" | "stop" | "needs_attention"
         body?: string
       }

@@ -167,6 +167,7 @@ function hydrateProjectSnapshot(): {
             ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
             ...(sp.autoTitle ? { autoTitle: sp.autoTitle } : {}),
             ...(sp.customName ? { customName: sp.customName } : {}),
+            ...(sp.agentName ? { agentName: sp.agentName } : {}),
             ...(sp.agentSessionId ? { agentSessionId: sp.agentSessionId } : {}),
             ...(sp.agentSessionTitle
               ? { agentSessionTitle: sp.agentSessionTitle }
@@ -227,9 +228,34 @@ const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   codex: "codex",
   opencode: "opencode",
   pi: "pi",
-  gemini: "gemini",
 }
 const APP_TITLE = "GearShift"
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function agentTerminalCommand(
+  agentName: TerminalAgentName,
+  options: string,
+  agentSessionId?: string
+): string {
+  const base = options
+    ? `${AGENT_TERMINAL_COMMANDS[agentName]} ${options}`
+    : AGENT_TERMINAL_COMMANDS[agentName]
+  if (!agentSessionId) return base
+  const quotedSessionId = shellQuote(agentSessionId)
+  switch (agentName) {
+    case "claude":
+      return `${base} --resume ${quotedSessionId}`
+    case "codex":
+      return `${base} resume ${quotedSessionId}`
+    case "opencode":
+      return `${base} --session ${quotedSessionId}`
+    case "pi":
+      return `${base} --session ${quotedSessionId}`
+  }
+}
 
 function lastAgentTerminalFromPane(
   project: Project,
@@ -352,6 +378,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
             ...(sid ? { sessionId: sid } : {}),
             ...(pp.autoTitle ? { autoTitle: pp.autoTitle } : {}),
             ...(pp.customName ? { customName: pp.customName } : {}),
+            ...(pp.agentName ? { agentName: pp.agentName } : {}),
             ...(pp.agentSessionId ? { agentSessionId: pp.agentSessionId } : {}),
             ...(pp.agentSessionTitle
               ? { agentSessionTitle: pp.agentSessionTitle }
@@ -1685,7 +1712,13 @@ export function AppShell() {
               kind: "terminal" as const,
               id: tabId,
               name,
-              panes: [{ id: paneId, sessionId: paneId }],
+              panes: [
+                {
+                  id: paneId,
+                  sessionId: paneId,
+                  ...(agentName ? { agentName } : {}),
+                },
+              ],
               activePaneId: paneId,
             },
           ],
@@ -1702,9 +1735,10 @@ export function AppShell() {
       sessionId: paneId,
     })
     if (agentName) {
-      const baseCommand = AGENT_TERMINAL_COMMANDS[agentName]
-      const options = getAgentTerminalOptions(agentName)
-      const command = options ? `${baseCommand} ${options}` : baseCommand
+      const command = agentTerminalCommand(
+        agentName,
+        getAgentTerminalOptions(agentName)
+      )
       window.term.write(paneId, `${command}\r`)
     }
     return paneId
@@ -2236,7 +2270,12 @@ export function AppShell() {
   const startingTerminalsRef = useRef(new Set<string>())
 
   const startTerminalPane = useCallback(
-    async (projectId: string, tabId: string, paneId: string) => {
+    async (
+      projectId: string,
+      tabId: string,
+      paneId: string,
+      allowCreateFallback = true
+    ) => {
       const project = projects.find((p) => p.id === projectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (!project || !tab || tab.kind !== "terminal") return
@@ -2249,8 +2288,8 @@ export function AppShell() {
 
       try {
         // Try adoption first if we have a stored sessionId for this pane.
-        // Falls through to fresh create on miss (session was killed, the
-        // 24 h idle sweep fired, or the daemon was restarted).
+        // If the daemon was lost during an app/dev restart, create a replacement
+        // so the terminal layout comes back instead of looking idle-stopped.
         let sessionId: string | null = null
         if (pane.pendingSessionId) {
           try {
@@ -2260,16 +2299,26 @@ export function AppShell() {
             )
             if (res.ok) sessionId = pane.pendingSessionId
           } catch {
-            // fall through to create
+            // fall through to create only when user-initiated
           }
         }
+        const agentName = pane.agentName ?? pane.agentStatus?.agentName
         if (!sessionId) {
+          if (!allowCreateFallback) return
           const { id } = await window.term.create({
             cwd: project.path,
             theme: resolvedTheme,
             projectId: project.id,
           })
           sessionId = id
+          if (agentName) {
+            const command = agentTerminalCommand(
+              agentName,
+              getAgentTerminalOptions(agentName),
+              pane.agentSessionId
+            )
+            window.term.write(id, `${command}\r`)
+          }
         }
         const newId = sessionId
         setProjects((prev) =>
@@ -2290,6 +2339,7 @@ export function AppShell() {
                           sessionId: newId,
                           pendingSessionId: undefined,
                           pendingStart: false,
+                          ...(agentName ? { agentName } : {}),
                         }
                       : pp
                   ),
@@ -2303,7 +2353,7 @@ export function AppShell() {
         startingTerminalsRef.current.delete(startKey)
       }
     },
-    [projects]
+    [projects, resolvedTheme]
   )
 
   // Subscribe to onExit for every running pane so that when the daemon
@@ -2335,6 +2385,15 @@ export function AppShell() {
                               sessionId: undefined,
                               pendingSessionId: undefined,
                               pendingStart: true,
+                              agentStatus: pp.agentStatus
+                                ? {
+                                    ...pp.agentStatus,
+                                    running: false,
+                                    working: false,
+                                    needsAttention: false,
+                                    completed: false,
+                                  }
+                                : pp.agentStatus,
                             }
                           : pp
                       ),
@@ -2358,7 +2417,7 @@ export function AppShell() {
     const activeTab = activeProject.tabs.find((t) => t.id === activeTabId)
     if (activeTab?.kind !== "terminal") return
     for (const pane of activeTab.panes) {
-      if (pane.pendingStart) {
+      if (pane.pendingStart && pane.pendingSessionId) {
         void startTerminalPane(activeProject.id, activeTab.id, pane.id)
       }
     }
@@ -2497,7 +2556,9 @@ export function AppShell() {
                     ...pp,
                     agentStatus: status,
                     // Sticky: only overwrite when a hook actually reported an
-                    // id/title, so we never clobber a persisted one with undefined.
+                    // agent/id/title, so we never clobber a persisted value with
+                    // undefined during status churn.
+                    agentName: status.agentName ?? pp.agentName,
                     agentSessionId: status.agentSessionId ?? pp.agentSessionId,
                     agentSessionTitle:
                       status.agentSessionTitle ?? pp.agentSessionTitle,

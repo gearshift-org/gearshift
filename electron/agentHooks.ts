@@ -3,12 +3,7 @@ import fs from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
 
-export type TerminalAgentName =
-  | "claude"
-  | "codex"
-  | "opencode"
-  | "pi"
-  | "gemini"
+export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi"
 
 export type AgentHookEvent = {
   agentName: TerminalAgentName
@@ -55,7 +50,7 @@ function parseAgentHookPayload(
     ? parts[parts.length - 1]?.trim()
     : ""
   const agentName = agentRaw as TerminalAgentName
-  if (!["claude", "codex", "opencode", "pi", "gemini"].includes(agentName)) {
+  if (!["claude", "codex", "opencode", "pi"].includes(agentName)) {
     return null
   }
   const event =
@@ -264,7 +259,7 @@ if [ -z "\${GEARSHIFT_AGENT_SOCKET:-}" ] || [ -z "\${GEARSHIFT_SESSION_ID:-}" ];
 fi
 
 case "$agent" in
-  claude|codex|opencode|pi|gemini) ;;
+  claude|codex|opencode|pi) ;;
   *) exit 0 ;;
 esac
 

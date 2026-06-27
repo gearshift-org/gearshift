@@ -1,5 +1,8 @@
 import { store } from "./store"
-import type { TerminalLayout } from "@/components/layout/types"
+import type {
+  TerminalAgentName,
+  TerminalLayout,
+} from "@/components/layout/types"
 
 export type StoredPane = {
   /** Stable DOM-key id assigned at create time. Persists across restarts. */
@@ -10,10 +13,26 @@ export type StoredPane = {
   autoTitle?: string
   /** User-set name for this pane. */
   customName?: string
+  /** Last known coding agent for this pane. */
+  agentName?: TerminalAgentName
   /** The coding agent's own session id (e.g. Claude's resumable session UUID), reported via hooks. */
   agentSessionId?: string
   /** Human-readable agent session title (AI title or first prompt) shown as the pane title. */
   agentSessionTitle?: string
+}
+
+const TERMINAL_AGENT_NAMES = new Set<TerminalAgentName>([
+  "claude",
+  "codex",
+  "opencode",
+  "pi",
+])
+
+function parseTerminalAgentName(value: unknown): TerminalAgentName | undefined {
+  return typeof value === "string" &&
+    TERMINAL_AGENT_NAMES.has(value as TerminalAgentName)
+    ? (value as TerminalAgentName)
+    : undefined
 }
 
 export type LastAgentTerminal = {
@@ -276,6 +295,9 @@ export function loadProjects(): StoredProject[] {
                           : {}),
                         ...(typeof pp.customName === "string"
                           ? { customName: pp.customName }
+                          : {}),
+                        ...(parseTerminalAgentName(pp.agentName)
+                          ? { agentName: parseTerminalAgentName(pp.agentName) }
                           : {}),
                         ...(typeof pp.agentSessionId === "string"
                           ? { agentSessionId: pp.agentSessionId }

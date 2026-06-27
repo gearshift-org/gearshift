@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/tooltip"
 import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
 import { store } from "@/lib/store"
+import { AGENT_TERMINAL_LABELS } from "@/lib/agentTerminalOptions"
 import { tabDisplayName } from "./terminalName"
 import {
   ensureLayout,
@@ -142,6 +143,14 @@ function TerminalPaneView({
   onTerminalFocusChange?: (paneId: string, focused: boolean) => void
 }) {
   if (pane.pendingStart) {
+    const agentLabel = pane.agentName
+      ? AGENT_TERMINAL_LABELS[pane.agentName]
+      : null
+    const actionLabel = agentLabel
+      ? pane.agentSessionId
+        ? `Resume ${agentLabel}`
+        : `Start ${agentLabel}`
+      : "Start terminal"
     return (
       <div onClick={onFocus} className="grid h-full place-items-center bg-card">
         <div className="flex flex-col items-center gap-3 text-xs text-muted-foreground">
@@ -150,7 +159,7 @@ function TerminalPaneView({
             onClick={() => onStartTerminal?.(tab.id, pane.id)}
             className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground hover:bg-accent/40"
           >
-            Start terminal
+            {actionLabel}
           </button>
         </div>
       </div>

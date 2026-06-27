@@ -72,7 +72,6 @@ The stored `agentSessionId` is used to resolve a human-readable **session title*
 | **OpenCode** | `"title"` field in `~/.local/share/opencode/storage/session/<projectID>/<id>.json` |
 | **Codex** | first real user message in `~/.codex/sessions/**/rollout-…-<id>.jsonl` (skips the injected `AGENTS.md`/instructions envelope) |
 | **pi** | first user message in `~/.pi/agent/sessions/<cwd>/<ts>_<id>.jsonl` |
-| **Gemini** | first user message in `~/.gemini/tmp/<hash>/logs.json` whose `sessionId` matches |
 
 Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The title precedence in `terminalName.ts` is: **`customName` (explicit user name) → `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. So a user-set name always wins; otherwise the agent's own title replaces the generic TUI title (e.g. "✳ Claude Code").
 
@@ -93,5 +92,7 @@ Terminals are owned by a detached `pty-daemon` (`electron/pty-daemon/server.ts`)
 **Why sessions must be killed by process group:** node-pty's `pty.kill()` only signals the shell (`this.pid`). But coding agents spawn long-lived children (MCP servers, etc.) in the same process group. Signalling the shell alone leaves those children alive, the slave never EOFs, `onExit` never fires, and **the master fd leaks**. Enough leaked fds exhaust the system PTY table (`kern.tty.ptmx_max`, 511 on macOS) and every app — not just GearShift — then fails to allocate a PTY ("cannot allocate pty device").
 
 `terminateSession` is the single teardown path used by tab-close, the 24h idle sweep, and daemon shutdown. node-pty calls `setsid`, so the shell's pid is the process-group leader; we signal the whole group with `process.kill(-pid, "SIGHUP")`, then `SIGKILL` as a fallback after a short grace if the session hasn't exited. If node-pty still doesn't emit `onExit`, the daemon destroys the internal stream and drops the session record so stale PTY master fds are released. **Never replace this with a bare `pty.kill()`** — that reintroduces the fd leak.
+
+The daemon kills sessions with no user input for 24 hours, but the renderer keeps the pane/tab/split layout. Output, attach, and resize do not reset this timer; typed input is tracked with a 1-second throttled trailing update so rapid keystrokes do not spam idle bookkeeping. The pane flips to pending start and shows a Start/Resume button. If the pane has a saved agent name and `agentSessionId`, clicking the button starts that agent with its resume flag (`claude --resume`, `codex resume`, `opencode --session`, or `pi --session`).
 
 To diagnose a suspected leak: `lsof | grep -c ptmx` (count held PTY master fds) vs. the number of live shells. A large gap means fds are leaking; restarting the daemon frees them immediately.

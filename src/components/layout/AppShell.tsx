@@ -3337,7 +3337,7 @@ export function AppShell() {
               )}
               <UpdateButton />
               {activeProject && projectSidebarCollapsed && (
-                <div className="flex min-w-0 items-center pr-2 pl-1.5">
+                <div className="flex min-w-0 items-center pl-1.5">
                   <ProjectSwitcher
                     projects={switcherProjects}
                     activeProjectId={activeProjectId}

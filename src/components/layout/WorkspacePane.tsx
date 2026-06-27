@@ -22,7 +22,6 @@ import {
 } from "@dnd-kit/core"
 import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import { cn } from "@/lib/utils"
-import { KeyChip } from "@/components/keybindings/KeyChip"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { matchesModifierChord } from "@/lib/keybindings/registry"
 import { TerminalView, getTerminalTheme } from "./TerminalView"
@@ -253,7 +252,7 @@ function HeaderDropZone({
     <div ref={setNodeRef} className="relative shrink-0">
       {children}
       {enabled && isOver ? (
-        <div className="pointer-events-none absolute inset-0 z-20 rounded-t-[calc(var(--radius)-1px)] bg-foreground/15 ring-2 ring-foreground/50 ring-inset" />
+        <div className="pointer-events-none absolute inset-0 z-20 rounded-t-[calc(var(--radius-md)-1px)] bg-foreground/15 ring-2 ring-foreground/50 ring-inset" />
       ) : null}
     </div>
   )
@@ -536,7 +535,7 @@ function TerminalTabContent({
     return (
       <div
         className={cn(
-          "relative flex h-full flex-col overflow-hidden rounded-lg border bg-[var(--xterm-bg)]",
+          "relative flex h-full flex-col overflow-hidden rounded-md border bg-[var(--xterm-bg)]",
           activePane ? "border-transparent" : "border-border"
         )}
         style={{ "--xterm-bg": terminalBg } as CSSProperties}
@@ -564,11 +563,11 @@ function TerminalTabContent({
           ) : null}
         </PaneDropZone>
         {activePane ? (
-          <div className="pointer-events-none absolute inset-0 z-30 box-border rounded-[calc(var(--radius)-1px)] border-2 border-ring" />
+          <div className="pointer-events-none absolute inset-0 z-30 box-border rounded-[calc(var(--radius-md)-1px)] border-2 border-ring" />
         ) : agentNeedsAttention || agentDone ? (
           <div
             className={cn(
-              "gs-agent-pulse-border pointer-events-none absolute inset-0 z-30 rounded-[calc(var(--radius)-1px)]",
+              "gs-agent-pulse-border pointer-events-none absolute inset-0 z-30 rounded-[calc(var(--radius-md)-1px)]",
               agentNeedsAttention
                 ? "gs-agent-pulse-attention"
                 : "gs-agent-pulse-done"
@@ -822,7 +821,6 @@ export function WorkspacePane({
   onOpenFile,
   fileReveal,
 }: Props) {
-  const { bindings } = useKeybindings()
   const hasTabs = !!project?.tabs.length
   const resolvedActiveTabId =
     activeTabIdOverride && project?.tabs.some((t) => t.id === activeTabIdOverride)
@@ -907,7 +905,12 @@ export function WorkspacePane({
   }
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div
+      className={cn(
+        "flex h-full flex-col overflow-hidden rounded-md",
+        activeTab?.kind === "terminal" ? "bg-transparent" : "bg-card"
+      )}
+    >
       {!hideSharedHeader && (
         <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground">
           <span className="truncate">
@@ -1051,14 +1054,6 @@ export function WorkspacePane({
                 className="mb-3 h-20 w-auto opacity-80"
               />
               <span>Click here to start a new terminal</span>
-              <div className="flex items-center gap-1.5 text-[11px]">
-                <span>Press</span>
-                <KeyChip accelerator={bindings["terminal.new"][0]} />
-                <span>or</span>
-                <KeyChip accelerator={bindings["terminal.split"][0]} />
-                <span>/</span>
-                <KeyChip accelerator={bindings["terminal.splitVertical"][0]} />
-              </div>
             </div>
           </div>
         )}

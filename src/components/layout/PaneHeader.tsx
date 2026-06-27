@@ -114,7 +114,7 @@ export function PaneHeader({
       className={cn(
         // Match the terminal body background (the --xterm-bg var is set on the
         // pane leaf in WorkspacePane) so the header blends with the terminal.
-        "relative flex h-[34px] shrink-0 cursor-default items-center gap-0.5 overflow-hidden border-b border-border bg-[var(--xterm-bg)] px-3 text-xs text-foreground/80 select-none",
+        "relative flex h-[34px] shrink-0 cursor-default items-center gap-0.5 overflow-hidden bg-[var(--xterm-bg)] px-3 pt-2 text-xs text-foreground/80 select-none",
         isActive && "text-foreground"
       )}
     >

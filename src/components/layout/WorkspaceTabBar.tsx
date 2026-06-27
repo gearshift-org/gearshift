@@ -218,13 +218,13 @@ function WorkspaceTabItem({
         ref={setNodeRef as unknown as React.Ref<HTMLDivElement>}
         style={style}
         className={cn(
-          "group relative flex h-full min-w-[140px] cursor-pointer items-center gap-2 border-r border-border/60 px-3 text-xs transition-colors",
+          "group relative flex h-[28px] cursor-pointer items-center gap-2 rounded-sm border border-transparent px-2.5 text-xs transition-colors",
           TAB_WIDTH_CLASS,
           TAB_OPEN_TRANSITION_CLASS,
           openAnim.isOpening && "overflow-hidden",
           isActive
-            ? "bg-sidebar-accent text-foreground"
-            : "text-foreground hover:bg-sidebar-accent/70",
+            ? "bg-foreground/[0.12] text-foreground"
+            : "text-muted-foreground hover:bg-foreground/[0.12] hover:text-foreground",
           isDragging && "opacity-80 shadow-lg",
         )}
         onClick={() => onSelect(t.id)}
@@ -285,7 +285,7 @@ function WorkspaceTabItem({
               onClose?.(t.id)
             }}
             className={cn(
-              "ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
+              "-mr-1 ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
               isActive && "opacity-60",
             )}
           >
@@ -413,7 +413,7 @@ export function WorkspaceTabBar({
     <div
       data-terminal-tab-drop-target="true"
       className={cn(
-        "flex h-[34px] shrink-0 items-stretch border-b border-border bg-sidebar",
+        "flex h-[38px] shrink-0 items-stretch pt-1",
         draggable && "[-webkit-app-region:drag]"
       )}
     >
@@ -422,7 +422,9 @@ export function WorkspaceTabBar({
       )}
       <div
         className={cn(
-          "terminal-tabs-scroll flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden",
+          // Left inset matches the workspace's p-2 (8px) so the first tab lines
+          // up with the terminal card's left edge below it.
+          "terminal-tabs-scroll flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden py-[3px] pr-1 pl-2",
           // In draggable mode the scroll area shrinks to its tabs so the empty
           // remainder (the spacer below) becomes a window-drag region.
           draggable ? "[-webkit-app-region:no-drag]" : "flex-1"
@@ -465,9 +467,9 @@ export function WorkspaceTabBar({
               <button
                 type="button"
                 aria-label="New terminal"
-                className="group/add sticky right-0 grid h-full w-10 shrink-0 place-items-center bg-sidebar text-muted-foreground"
+                className="group/add sticky right-0 grid h-[28px] w-8 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/[0.12] hover:text-foreground"
               >
-                <span className="grid size-5 place-items-center rounded-sm transition-colors group-hover/add:bg-foreground/15 group-hover/add:text-foreground">
+                <span className="grid size-5 place-items-center rounded-sm">
                   <Plus className="size-3.5" />
                 </span>
               </button>

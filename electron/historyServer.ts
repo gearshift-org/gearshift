@@ -1,5 +1,5 @@
 import http from "node:http"
-import { getProjectNote, queryMessages, type HistoryQuery } from "./db/chatDb"
+import { getProjectNote, queryMessages, type HistoryQuery } from "./db/appDb"
 
 // A small, local-only HTTP API that serves chat history so agents (or any local
 // tool) can pull recent prompts and summarize them. Bound to 127.0.0.1 only —

@@ -30,7 +30,7 @@ import { ensureDaemonRunning } from "./daemonSupervisor"
 import { ensureCliInstalled } from "./cliInstaller"
 import { DaemonClient } from "./pty-daemon/client"
 import { buildOpenOptions } from "./pty-daemon/spawnOpts"
-import * as chatDb from "./db/chatDb"
+import * as appDb from "./db/appDb"
 import * as inputCapture from "./inputCapture"
 import {
   closeAgentHookServer,
@@ -3059,36 +3059,36 @@ app.whenReady().then(async () => {
   }))
 
   ipcMain.handle("term:history:list", async (_e, sessionId: string) => {
-    return chatDb.listForSession(sessionId)
+    return appDb.listForSession(sessionId)
   })
 
   ipcMain.handle(
     "term:history:listProject",
     async (_e, projectId: string, limit?: number) => {
-      return chatDb.listForProject(projectId, limit ?? 500)
+      return appDb.listForProject(projectId, limit ?? 500)
     }
   )
 
   ipcMain.handle("term:history:latestByProject", async () => {
-    return chatDb.latestByProject()
+    return appDb.latestByProject()
   })
 
   ipcMain.handle("term:notes:get", async (_e, projectId: string) => {
     if (!projectId) return null
-    return chatDb.getProjectNote(projectId)
+    return appDb.getProjectNote(projectId)
   })
 
   ipcMain.handle(
     "term:notes:save",
     async (_e, projectId: string, body: string) => {
       if (!projectId) return { ok: false }
-      const note = await chatDb.saveProjectNote(projectId, body ?? "")
+      const note = await appDb.saveProjectNote(projectId, body ?? "")
       return { ok: true, note }
     }
   )
 
   ipcMain.handle("term:history:delete", async (event, id: string) => {
-    const msg = await chatDb.deleteMessage(id)
+    const msg = await appDb.deleteMessage(id)
     if (!msg) return { ok: false }
     const sender = event.sender
     if (sender && !sender.isDestroyed()) {
@@ -3103,7 +3103,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "term:history:clearProject",
     async (event, projectId: string, sinceMs?: number) => {
-      await chatDb.clearForProject(projectId, sinceMs)
+      await appDb.clearForProject(projectId, sinceMs)
       const sender = event.sender
       if (sender && !sender.isDestroyed()) {
         sender.send(`term:history:projectCleared:${projectId}`, sinceMs)
@@ -3115,7 +3115,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "term:history:migrateProjectIds",
     async (_event, migrations: Array<{ from: string; to: string }>) => {
-      await chatDb.migrateProjectIds(
+      await appDb.migrateProjectIds(
         Array.isArray(migrations) ? migrations : []
       )
       return { ok: true }
@@ -3125,8 +3125,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("term:history:clear", async (event, sessionId: string) => {
     const projectId =
       sessionProjects.get(sessionId) ??
-      (await chatDb.projectIdForSession(sessionId))
-    await chatDb.clearForSession(sessionId)
+      (await appDb.projectIdForSession(sessionId))
+    await appDb.clearForSession(sessionId)
     const sender = event.sender
     if (projectId && sender && !sender.isDestroyed()) {
       sender.send(`term:history:projectSessionCleared:${projectId}`, sessionId)
@@ -3164,7 +3164,7 @@ async function pruneChatHistory(): Promise<void> {
       ? Math.max(HISTORY_RETENTION_MIN_DAYS, parsed)
       : HISTORY_RETENTION_DEFAULT_DAYS
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-    const removed = await chatDb.pruneOlderThan(cutoff)
+    const removed = await appDb.pruneOlderThan(cutoff)
     if (removed > 0) {
       console.log(`[history] pruned ${removed} message(s) older than ${days}d`)
     }
@@ -3196,7 +3196,7 @@ app.on("before-quit", () => {
     clearInterval(historyRetentionTimer)
     historyRetentionTimer = undefined
   }
-  void chatDb.closeDb()
+  void appDb.closeDb()
 })
 
 app.on("window-all-closed", () => {

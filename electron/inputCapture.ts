@@ -1,4 +1,4 @@
-import { appendMessage, type ChatHistoryMessage } from "./db/chatDb"
+import { appendMessage, type ChatHistoryMessage } from "./db/appDb"
 
 type State = {
   buf: string
@@ -81,7 +81,7 @@ export function feed(
       if (agent && s.buf.trim().length > 0) {
         void appendMessage(sessionId, projectId, s.buf, agent)
           .then(onFlush)
-          .catch((err) => console.error("[chatDb] appendMessage", err))
+          .catch((err) => console.error("[appDb] appendMessage", err))
       }
       reset(s)
       i += 1

@@ -33,11 +33,11 @@ The renderer combines lifecycle hooks, process detection, terminal title changes
 
 ### Chat history redaction
 
-User prompts are captured in `electron/inputCapture.ts` and saved through `electron/db/chatDb.ts`. `appendMessage` redacts likely secrets before writing to `chat.db`, and history reads redact again before returning rows so older stored messages are not shown with raw secrets. The redactor masks credential-looking fields (`password`, `api_key`, `token`, etc.), `Authorization` headers, and common key formats with `********`. Stored history bodies are capped at 500 characters, and users can delete individual history items or clear a whole session/project.
+User prompts are captured in `electron/inputCapture.ts` and saved through `electron/db/appDb.ts`. `appendMessage` redacts likely secrets before writing to `gearshift.db`, and history reads redact again before returning rows so older stored messages are not shown with raw secrets. The redactor masks credential-looking fields (`password`, `api_key`, `token`, etc.), `Authorization` headers, and common key formats with `********`. Stored history bodies are capped at 500 characters, and users can delete individual history items or clear a whole session/project.
 
 ### Project notes
 
-Right-sidebar project notes are stored in the same local SQLite database as chat history (`chat.db`), in `project_notes` keyed by `project_id`. The renderer reads and saves notes through `window.term.notes`; note edits are debounced for 200 ms before writing to SQLite. The existing loopback-only history server exposes notes to local agents via `GET /notes?projectId=<id>` on the same port as `/history`. The endpoint returns Markdown with the project ID, available project metadata, and the current notes for that project.
+Right-sidebar project notes are stored in the same local SQLite database as chat history (`gearshift.db`), in `project_notes` keyed by `project_id`. The renderer reads and saves notes through `window.term.notes`; note edits are debounced for 200 ms before writing to SQLite. The existing loopback-only history server exposes notes to local agents via `GET /notes?projectId=<id>` on the same port as `/history`. The endpoint returns Markdown with the project ID, available project metadata, and the current notes for that project.
 
 ### Agent-native session IDs
 

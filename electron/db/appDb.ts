@@ -34,7 +34,7 @@ async function ensureDb(): Promise<LibSQLDatabase> {
   if (db) return db
   if (!ready) {
     ready = (async () => {
-      const file = path.join(app.getPath("userData"), "chat.db")
+      const file = path.join(app.getPath("userData"), "gearshift.db")
       client = createClient({ url: `file:${file}` })
       const handle = drizzle(client)
       await client.execute("PRAGMA journal_mode = WAL")

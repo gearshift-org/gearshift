@@ -755,7 +755,11 @@ export function ProjectSidebar({
             }}
             placeholder="Filter projects"
             aria-label="Filter projects"
-            className="h-7 pl-7 text-xs md:text-xs"
+            // Use the sidebar's own border token (not the global --input) so the
+            // resting border stays subtle against the sidebar surface in every
+            // theme — some light themes set --input to pure white, which pops on
+            // the grey sidebar.
+            className="h-7 border-sidebar-border pl-7 text-xs md:text-xs"
           />
           {filter && (
             <button

@@ -1738,9 +1738,9 @@ app.whenReady().then(async () => {
       const plural = count === 1 ? "terminal has" : "terminals have"
       const result = await dialog.showMessageBox(win!, {
         type: "warning",
-        title: "Close busy terminal?",
-        message: `${count} ${plural} a coding agent still working.`,
-        detail: "Closing will stop the running terminal session.",
+        title: "Close terminal with agent?",
+        message: `${count} ${plural} a coding agent open.`,
+        detail: "Closing will stop the agent and end the terminal session.",
         buttons: ["Close", "Cancel"],
         defaultId: 0,
         noLink: true,

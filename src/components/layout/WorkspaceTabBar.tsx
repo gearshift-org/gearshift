@@ -76,6 +76,7 @@ type Props = {
   onConfigureAgents?: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
+  onCloseAllTerminals?: () => void
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onRename?: (id: string, name: string) => void
@@ -113,6 +114,7 @@ type TabItemProps = {
   onCancelRename: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
+  onCloseAllTerminals?: () => void
   onCloseOthers?: (id: string) => void
   onCloseToRight?: (id: string) => void
   onPin?: (id: string) => void
@@ -158,6 +160,7 @@ function WorkspaceTabItem({
   onCancelRename,
   onClose,
   onCloseAll,
+  onCloseAllTerminals,
   onCloseOthers,
   onCloseToRight,
   onPin,
@@ -326,6 +329,11 @@ function WorkspaceTabItem({
         <ContextMenuItem onClick={() => onCloseAll?.()}>
           Close All Tabs
         </ContextMenuItem>
+        {isTerminal && onCloseAllTerminals && (
+          <ContextMenuItem onClick={() => onCloseAllTerminals()}>
+            Close All Terminals
+          </ContextMenuItem>
+        )}
         {onOpenInVSCode && (
           <>
             <ContextMenuSeparator />
@@ -350,6 +358,7 @@ export function WorkspaceTabBar({
   onConfigureAgents,
   onClose,
   onCloseAll,
+  onCloseAllTerminals,
   onCloseOthers,
   onCloseToRight,
   onRename,
@@ -453,6 +462,7 @@ export function WorkspaceTabBar({
                 onCancelRename={() => setRenamingId(null)}
                 onClose={onClose}
                 onCloseAll={onCloseAll}
+                onCloseAllTerminals={onCloseAllTerminals}
                 onCloseOthers={onCloseOthers}
                 onCloseToRight={onCloseToRight}
                 onPin={onPin}

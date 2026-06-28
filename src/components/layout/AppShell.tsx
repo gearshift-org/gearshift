@@ -320,12 +320,15 @@ function killAllPanes(tab: WorkspaceTab) {
   }
 }
 
-function countWorkingTerminalPanes(tabs: WorkspaceTab[]): number {
+// Count terminal panes that have a coding agent open (running) — covers an
+// agent that is actively working, idle, or waiting on the user. Used to gate
+// close protection, which applies only when closing a single terminal.
+function countAgentTerminalPanes(tabs: WorkspaceTab[]): number {
   let count = 0
   for (const tab of tabs) {
     if (tab.kind !== "terminal") continue
     for (const pane of tab.panes) {
-      if (pane.agentStatus?.working) count += 1
+      if (pane.agentStatus?.running) count += 1
     }
   }
   return count
@@ -849,7 +852,10 @@ export function AppShell() {
     setProjectSidebarOpen((v) => !v)
   }, [])
 
-  const confirmCloseWorkingTerminals = async (count: number) => {
+  // Close protection: confirm before closing a single terminal that has a
+  // coding agent open. Bulk closes (all tabs / all terminals / projects) skip
+  // this by design.
+  const confirmCloseAgentTerminals = async (count: number) => {
     if (count === 0) return true
     return window.dialogApi.confirmTerminalClose({ count })
   }
@@ -1415,15 +1421,6 @@ export function AppShell() {
   }
 
   const closeProject = async (id: string) => {
-    const target = projects.find((p) => p.id === id)
-    if (
-      target &&
-      !(await confirmCloseWorkingTerminals(
-        countWorkingTerminalPanes(target.tabs)
-      ))
-    ) {
-      return
-    }
     setProjects((prev) => {
       const target = prev.find((p) => p.id === id)
       if (target) {
@@ -1443,16 +1440,6 @@ export function AppShell() {
   }
 
   const closeAllProjectTerminals = async (id: string) => {
-    const project = projects.find((p) => p.id === id)
-    const terminalTabs =
-      project?.tabs.filter((t) => t.kind === "terminal") ?? []
-    if (
-      !(await confirmCloseWorkingTerminals(
-        countWorkingTerminalPanes(terminalTabs)
-      ))
-    ) {
-      return
-    }
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p
@@ -1483,18 +1470,6 @@ export function AppShell() {
   }
 
   const closeProjectsToRight = async (id: string) => {
-    const idx = projects.findIndex((p) => p.id === id)
-    const toClose = idx >= 0 ? projects.slice(idx + 1) : []
-    if (
-      !(await confirmCloseWorkingTerminals(
-        toClose.reduce(
-          (count, project) => count + countWorkingTerminalPanes(project.tabs),
-          0
-        )
-      ))
-    ) {
-      return
-    }
     setProjects((prev) => {
       const idx = prev.findIndex((p) => p.id === id)
       if (idx < 0) return prev
@@ -1686,17 +1661,6 @@ export function AppShell() {
   }
 
   const closeOtherProjects = async (keepId: string) => {
-    const toClose = projects.filter((p) => p.id !== keepId)
-    if (
-      !(await confirmCloseWorkingTerminals(
-        toClose.reduce(
-          (count, project) => count + countWorkingTerminalPanes(project.tabs),
-          0
-        )
-      ))
-    ) {
-      return
-    }
     setProjects((prev) => {
       for (const p of prev) {
         if (p.id === keepId) continue
@@ -1865,10 +1829,7 @@ export function AppShell() {
         closeTabRef.current?.(tabId)
         return
       }
-      if (
-        pane.agentStatus?.working &&
-        !(await confirmCloseWorkingTerminals(1))
-      ) {
+      if (pane.agentStatus?.running && !(await confirmCloseAgentTerminals(1))) {
         return
       }
       if (!pane.pendingStart) {
@@ -2849,7 +2810,7 @@ export function AppShell() {
     const tab = activeProject?.tabs.find((t) => t.id === id)
     if (
       tab &&
-      !(await confirmCloseWorkingTerminals(countWorkingTerminalPanes([tab])))
+      !(await confirmCloseAgentTerminals(countAgentTerminalPanes([tab])))
     ) {
       return
     }
@@ -2883,11 +2844,6 @@ export function AppShell() {
     if (idx < 0) return
     const toClose = activeProject.tabs.slice(idx + 1)
     if (toClose.length === 0) return
-    if (
-      !(await confirmCloseWorkingTerminals(countWorkingTerminalPanes(toClose)))
-    ) {
-      return
-    }
     for (const t of toClose) killAllPanes(t)
     const closedIds = new Set(toClose.map((t) => t.id))
     setProjects((prev) =>
@@ -2907,11 +2863,6 @@ export function AppShell() {
     if (!activeProject) return
     const toClose = activeProject.tabs.filter((t) => t.id !== keepId)
     if (toClose.length === 0) return
-    if (
-      !(await confirmCloseWorkingTerminals(countWorkingTerminalPanes(toClose)))
-    ) {
-      return
-    }
     for (const t of toClose) killAllPanes(t)
     const keep = activeProject.tabs.find((t) => t.id === keepId)
     setProjects((prev) =>
@@ -2930,13 +2881,6 @@ export function AppShell() {
 
   const closeAllTabs = async () => {
     if (!activeProject) return
-    if (
-      !(await confirmCloseWorkingTerminals(
-        countWorkingTerminalPanes(activeProject.tabs)
-      ))
-    ) {
-      return
-    }
     for (const t of activeProject.tabs) killAllPanes(t)
     setProjects((prev) =>
       prev.map((p) =>
@@ -3511,6 +3455,9 @@ export function AppShell() {
                   }
                   onClose={closeTab}
                   onCloseAll={closeAllTabs}
+                  onCloseAllTerminals={() =>
+                    void closeAllProjectTerminals(activeProject.id)
+                  }
                   onCloseOthers={closeOtherTabs}
                   onCloseToRight={closeTabsToRight}
                   onRename={renameTab}

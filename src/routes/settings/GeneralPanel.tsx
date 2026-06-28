@@ -1,11 +1,13 @@
 import * as React from "react"
-import { PanelTop, History, PanelLeft } from "lucide-react"
+import { PanelTop, History, PanelLeft, Files } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   loadAutoHideTitleBar,
   saveAutoHideTitleBar,
   loadCompactProjectSidebar,
   saveCompactProjectSidebar,
+  loadOpenFilesInOwnTab,
+  saveOpenFilesInOwnTab,
   loadHistoryRetentionEnabled,
   saveHistoryRetentionEnabled,
   loadHistoryRetentionDays,
@@ -74,6 +76,9 @@ export function GeneralPanel() {
   const [compactSidebar, setCompactSidebar] = React.useState(() =>
     loadCompactProjectSidebar()
   )
+  const [openFilesInOwnTab, setOpenFilesInOwnTab] = React.useState(() =>
+    loadOpenFilesInOwnTab()
+  )
   const [retentionEnabled, setRetentionEnabled] = React.useState(() =>
     loadHistoryRetentionEnabled()
   )
@@ -85,6 +90,7 @@ export function GeneralPanel() {
       store.onReady(() => {
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setCompactSidebar(loadCompactProjectSidebar())
+        setOpenFilesInOwnTab(loadOpenFilesInOwnTab())
         setRetentionEnabled(loadHistoryRetentionEnabled())
         setRetentionDays(String(loadHistoryRetentionDays()))
       }),
@@ -99,6 +105,11 @@ export function GeneralPanel() {
   const updateCompactSidebar = (enabled: boolean) => {
     setCompactSidebar(enabled)
     saveCompactProjectSidebar(enabled)
+  }
+
+  const updateOpenFilesInOwnTab = (enabled: boolean) => {
+    setOpenFilesInOwnTab(enabled)
+    saveOpenFilesInOwnTab(enabled)
   }
 
   const updateRetentionEnabled = (enabled: boolean) => {
@@ -139,6 +150,13 @@ export function GeneralPanel() {
           description="Show projects as single-line rows, hiding the branch and change count for a denser list."
           checked={compactSidebar}
           onChange={updateCompactSidebar}
+        />
+        <SettingToggle
+          icon={Files}
+          label="Open each file in its own tab"
+          description="Open every file and diff in a new tab instead of reusing one shared preview tab. Clicking an already-open file just focuses its tab."
+          checked={openFilesInOwnTab}
+          onChange={updateOpenFilesInOwnTab}
         />
         <SettingToggle
           icon={History}

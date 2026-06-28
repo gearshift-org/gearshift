@@ -59,6 +59,7 @@ import {
   loadActiveProjectId,
   loadLastLocation,
   loadAutoHideTitleBar,
+  loadOpenFilesInOwnTab,
   loadLastAgentTerminals,
   loadPaletteRecents,
   loadFocusedProjectIds,
@@ -84,6 +85,7 @@ import {
   saveSidebarOpen,
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
+  OPEN_FILES_IN_OWN_TAB_EVENT,
   type LastAgentTerminal,
   type LastAgentTerminalsByProject,
   type PaletteRecents,
@@ -519,6 +521,9 @@ export function AppShell() {
   const [autoHideTitleBar, setAutoHideTitleBar] = useState(() =>
     loadAutoHideTitleBar()
   )
+  const [openFilesInOwnTab, setOpenFilesInOwnTab] = useState(() =>
+    loadOpenFilesInOwnTab()
+  )
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
@@ -588,6 +593,7 @@ export function AppShell() {
         setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
         setAutoHideTitleBar(loadAutoHideTitleBar())
+        setOpenFilesInOwnTab(loadOpenFilesInOwnTab())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         const storedWidth = loadProjectSidebarWidth()
         if (storedWidth)
@@ -792,6 +798,21 @@ export function AppShell() {
       window.removeEventListener(
         AUTO_HIDE_TITLE_BAR_EVENT,
         onAutoHideTitleBarChange
+      )
+    }
+  }, [])
+  useEffect(() => {
+    const onOpenFilesInOwnTabChange = (event: Event) => {
+      setOpenFilesInOwnTab((event as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener(
+      OPEN_FILES_IN_OWN_TAB_EVENT,
+      onOpenFilesInOwnTabChange
+    )
+    return () => {
+      window.removeEventListener(
+        OPEN_FILES_IN_OWN_TAB_EVENT,
+        onOpenFilesInOwnTabChange
       )
     }
   }, [])
@@ -2069,10 +2090,11 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // Reuse the existing preview diff tab if any (VS Code-style).
-      const preview = activeProject.tabs.find(
-        (t) => t.kind === "diff" && t.preview
-      )
+      // Reuse the existing preview diff tab if any (VS Code-style) — unless the
+      // user opted into a dedicated tab per file/diff.
+      const preview = openFilesInOwnTab
+        ? undefined
+        : activeProject.tabs.find((t) => t.kind === "diff" && t.preview)
       if (preview) {
         setProjects((prev) =>
           prev.map((p) =>
@@ -2106,7 +2128,7 @@ export function AppShell() {
                     name: basename(path),
                     path,
                     staged,
-                    preview: true,
+                    preview: !openFilesInOwnTab,
                   },
                 ],
                 activeTabId: id,
@@ -2116,7 +2138,7 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab]
+    [activeProject, navigateToTab, openFilesInOwnTab]
   )
 
   const openFileTab = useCallback(
@@ -2134,10 +2156,11 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // Reuse the existing preview file tab if any.
-      const preview = activeProject.tabs.find(
-        (t) => t.kind === "file" && t.preview
-      )
+      // Reuse the existing preview file tab if any — unless the user opted into
+      // a dedicated tab per file.
+      const preview = openFilesInOwnTab
+        ? undefined
+        : activeProject.tabs.find((t) => t.kind === "file" && t.preview)
       if (preview) {
         setProjects((prev) =>
           prev.map((p) =>
@@ -2170,7 +2193,7 @@ export function AppShell() {
                     id,
                     name: basename(path),
                     path,
-                    preview: true,
+                    preview: !openFilesInOwnTab,
                   },
                 ],
                 activeTabId: id,
@@ -2180,7 +2203,7 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab]
+    [activeProject, navigateToTab, openFilesInOwnTab]
   )
 
   const openCommitTab = useCallback(
@@ -2193,10 +2216,11 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // Reuse the existing preview commit tab if any.
-      const preview = activeProject.tabs.find(
-        (t) => t.kind === "commit" && t.preview
-      )
+      // Reuse the existing preview commit tab if any — unless the user opted
+      // into a dedicated tab per file/diff/commit.
+      const preview = openFilesInOwnTab
+        ? undefined
+        : activeProject.tabs.find((t) => t.kind === "commit" && t.preview)
       if (preview) {
         setProjects((prev) =>
           prev.map((p) =>
@@ -2235,7 +2259,7 @@ export function AppShell() {
                     name: commit.subject,
                     hash: commit.hash,
                     shortHash: commit.shortHash,
-                    preview: true,
+                    preview: !openFilesInOwnTab,
                   },
                 ],
                 activeTabId: id,
@@ -2245,7 +2269,7 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab]
+    [activeProject, navigateToTab, openFilesInOwnTab]
   )
 
   /** Pin a preview tab so subsequent file clicks don't replace it. */

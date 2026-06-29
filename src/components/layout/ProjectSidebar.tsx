@@ -26,6 +26,7 @@ import {
   Settings,
   X,
 } from "lucide-react"
+import { toast } from "sonner"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import {
   Tooltip,
@@ -71,6 +72,7 @@ import {
   projectHasDoneAgent,
   projectHasWorkingAgent,
 } from "@/lib/projectAgentStatus"
+import { useActionAccelerator } from "@/lib/keybindings/useKeybindings"
 import { AddProjectMenu } from "./AddProjectMenu"
 import { AgentSpinner } from "./AgentSpinner"
 import { AgentAttention } from "./AgentAttention"
@@ -475,9 +477,17 @@ function ProjectSidebarRow({
         </ContextMenuItem>
 
         {/* Open externally — last */}
+        <ContextMenuSeparator className="bg-foreground/15" />
+        <ContextMenuItem
+          onClick={() => {
+            void navigator.clipboard.writeText(p.path)
+            toast.success("Copied project path")
+          }}
+        >
+          Copy Project Path
+        </ContextMenuItem>
         {(onRevealInFinder || onOpenInVSCode) && (
           <>
-            <ContextMenuSeparator className="bg-foreground/15" />
             {onRevealInFinder && (
               <ContextMenuItem onClick={() => onRevealInFinder(p.id)}>
                 Reveal in Finder
@@ -520,6 +530,8 @@ export function ProjectSidebar({
   onRemoveFromFocus,
   onExitFocus,
 }: Props) {
+  const collapseShortcut = useActionAccelerator("projectSidebar.toggle")
+  const paletteShortcut = useActionAccelerator("palette.open")
   const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [filter, setFilter] = useState("")
   const [pinnedOpen, setPinnedOpen] = useState(
@@ -716,7 +728,9 @@ export function ProjectSidebar({
                   </button>
                 }
               />
-              <TooltipContent>Search (⌘P)</TooltipContent>
+              <TooltipContent>
+                {"Search" + (paletteShortcut ? ` (${paletteShortcut})` : "")}
+              </TooltipContent>
             </Tooltip>
           )}
         </div>
@@ -736,7 +750,10 @@ export function ProjectSidebar({
                 </button>
               }
             />
-            <TooltipContent>Collapse sidebar</TooltipContent>
+            <TooltipContent>
+              {"Collapse sidebar" +
+                (collapseShortcut ? ` (${collapseShortcut})` : "")}
+            </TooltipContent>
           </Tooltip>
         )}
         </div>

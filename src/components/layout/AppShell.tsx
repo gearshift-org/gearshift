@@ -8,7 +8,7 @@ import {
 } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
-import { matchesAccelerator } from "@/lib/keybindings/registry"
+import { acceleratorLabel, matchesAccelerator } from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelLeft, PanelRight, Search, X } from "lucide-react"
@@ -3013,6 +3013,13 @@ export function AppShell() {
   }, [])
 
   const { bindings, findActionForEvent } = useKeybindings()
+  const projectSidebarShortcut = acceleratorLabel(
+    bindings["projectSidebar.toggle"]?.[0] ?? ""
+  )
+  const rightSidebarShortcut = acceleratorLabel(
+    bindings["sidebar.toggle"]?.[0] ?? ""
+  )
+  const paletteShortcut = acceleratorLabel(bindings["palette.open"]?.[0] ?? "")
   useEffect(() => {
     // True when focus already lives somewhere that consumes typing — a real
     // input/editor or the terminal itself — so we must not hijack the keystroke.
@@ -3226,12 +3233,13 @@ export function AppShell() {
             }
           />
           <TooltipContent>
-            {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            {(sidebarOpen ? "Hide sidebar" : "Show sidebar") +
+              (rightSidebarShortcut ? ` (${rightSidebarShortcut})` : "")}
           </TooltipContent>
         </Tooltip>
       </div>
     ),
-    [sidebarOpen, toggleRightSidebar]
+    [sidebarOpen, toggleRightSidebar, rightSidebarShortcut]
   )
 
   return (
@@ -3345,7 +3353,10 @@ export function AppShell() {
                   </button>
                 }
               />
-              <TooltipContent>Expand sidebar</TooltipContent>
+              <TooltipContent>
+                {"Expand sidebar" +
+                  (projectSidebarShortcut ? ` (${projectSidebarShortcut})` : "")}
+              </TooltipContent>
             </Tooltip>
           ) : null
           // When the project sidebar is collapsed its search control is hidden
@@ -3364,7 +3375,9 @@ export function AppShell() {
                   </button>
                 }
               />
-              <TooltipContent>Search (⌘P)</TooltipContent>
+              <TooltipContent>
+                {"Search" + (paletteShortcut ? ` (${paletteShortcut})` : "")}
+              </TooltipContent>
             </Tooltip>
           ) : null
           const titleBar = (
@@ -3414,7 +3427,8 @@ export function AppShell() {
                   }
                 />
                 <TooltipContent>
-                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                  {(sidebarOpen ? "Hide sidebar" : "Show sidebar") +
+                    (rightSidebarShortcut ? ` (${rightSidebarShortcut})` : "")}
                 </TooltipContent>
               </Tooltip>
             </div>

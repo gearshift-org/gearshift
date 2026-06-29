@@ -2,6 +2,7 @@ import * as React from "react"
 import { store } from "@/lib/store"
 import {
   ACTIONS,
+  acceleratorLabel,
   defaultBindings,
   matchesAnyAccelerator,
   type ActionId,
@@ -195,4 +196,24 @@ export function useKeybindings() {
     findActionForEvent,
     conflicts,
   }
+}
+
+// Lightweight, read-only subscription to a single action's current accelerator,
+// formatted for inline hints (e.g. tooltips). Stays in sync with user
+// customizations without the menu-sync side effects of useKeybindings().
+export function useActionAccelerator(id: ActionId): string {
+  const [acc, setAcc] = React.useState(
+    () => mergeBindings(readOverrides())[id]?.[0] ?? ""
+  )
+  React.useEffect(() => {
+    const update = () => setAcc(mergeBindings(readOverrides())[id]?.[0] ?? "")
+    update()
+    const offReady = store.onReady(update)
+    bus.addEventListener(CHANGE, update)
+    return () => {
+      offReady()
+      bus.removeEventListener(CHANGE, update)
+    }
+  }, [id])
+  return acceleratorLabel(acc)
 }

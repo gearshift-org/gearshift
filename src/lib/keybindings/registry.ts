@@ -279,3 +279,14 @@ export function prettyAccelerator(acc: string): string[] {
   if (n.key) out.push(ARROW_SYMBOLS[n.key] ?? n.key)
   return out
 }
+
+// Single-string accelerator label for inline hints (e.g. tooltips): "⌘1" on
+// macOS, "Ctrl+1" elsewhere. Returns "" for an unbound/invalid accelerator.
+export function acceleratorLabel(acc: string): string {
+  const parts = prettyAccelerator(acc)
+  if (parts.length === 0 || (parts.length === 1 && !parts[0])) return ""
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad/.test(navigator.platform)
+  return parts.join(isMac ? "" : "+")
+}

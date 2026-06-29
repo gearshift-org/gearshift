@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useActionAccelerator } from "@/lib/keybindings/useKeybindings"
 import type { Project } from "./types"
 
 type Props = {
@@ -36,6 +37,7 @@ export function TitleBar({
   const activeProject = projects.find(
     (project) => project.id === activeProjectId
   )
+  const sidebarShortcut = useActionAccelerator("sidebar.toggle")
 
   return (
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
@@ -68,7 +70,8 @@ export function TitleBar({
                   }
                 />
                 <TooltipContent>
-                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                  {(sidebarOpen ? "Hide sidebar" : "Show sidebar") +
+                    (sidebarShortcut ? ` (${sidebarShortcut})` : "")}
                 </TooltipContent>
               </Tooltip>
             </div>

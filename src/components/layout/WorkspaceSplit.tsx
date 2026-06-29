@@ -73,6 +73,7 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onTerminalExpandedPaneChange?: (tabId: string, paneId: string | null) => void
   onTerminalLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
@@ -84,6 +85,7 @@ type Props = {
   }) => void
   onSummarizeHistory?: (agent: string) => void
   onSummarizeChat?: (range: HistoryRange) => void
+  onProjectActivity?: (projectId: string) => void
   onFocusSession?: (sessionId: string) => void
   rightSidebarTab?: RightSidebarTab
   onRightSidebarTabChange?: (tab: RightSidebarTab) => void
@@ -114,6 +116,7 @@ export function WorkspaceSplit({
   onRenamePane,
   onDropPane,
   onQuickSplitPane,
+  onTerminalExpandedPaneChange,
   onTerminalLayoutChange,
   onExtractPaneToTab,
   onOpenDiffTab,
@@ -121,6 +124,7 @@ export function WorkspaceSplit({
   onOpenCommitTab,
   onSummarizeHistory,
   onSummarizeChat,
+  onProjectActivity,
   onFocusSession,
   rightSidebarTab,
   onRightSidebarTabChange,
@@ -289,8 +293,10 @@ export function WorkspaceSplit({
               onRenamePane={onRenamePane}
               onDropPane={onDropPane}
               onQuickSplitPane={onQuickSplitPane}
+              onTerminalExpandedPaneChange={onTerminalExpandedPaneChange}
               onLayoutChange={onTerminalLayoutChange}
               onExtractPaneToTab={onExtractPaneToTab}
+              onProjectActivity={onProjectActivity}
               onOpenFile={onOpenFileTab}
               fileReveal={fileReveal}
             />

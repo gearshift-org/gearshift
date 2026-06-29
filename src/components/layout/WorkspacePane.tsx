@@ -2,6 +2,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -107,8 +108,10 @@ type Props = {
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onTerminalExpandedPaneChange?: (tabId: string, paneId: string | null) => void
   onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
+  onProjectActivity?: (projectId: string) => void
   onOpenFile?: (path: string) => void
   fileReveal?: FileReveal | null
 }
@@ -339,6 +342,7 @@ function QuickSplitOverlay({ onPick }: { onPick: (zone: DropZone) => void }) {
 function TerminalTabContent({
   tab,
   cwd,
+  projectId,
   isActive,
   focusRequest,
   onTitleChange,
@@ -351,11 +355,14 @@ function TerminalTabContent({
   onRenamePane,
   onDropPane,
   onQuickSplitPane,
+  onTerminalExpandedPaneChange,
   onLayoutChange,
   onExtractPaneToTab,
+  onProjectActivity,
 }: {
   tab: TerminalTab
   cwd?: string
+  projectId: string
   isActive: boolean
   focusRequest?: {
     tabId: string
@@ -389,8 +396,10 @@ function TerminalTabContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onTerminalExpandedPaneChange?: (tabId: string, paneId: string | null) => void
   onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
+  onProjectActivity?: (projectId: string) => void
 }) {
   const multi = tab.panes.length > 1
   // Share the terminal body's background with each pane's header (and the leaf
@@ -411,6 +420,7 @@ function TerminalTabContent({
   const [tabBarDropRect, setTabBarDropRect] = useState<DOMRect | null>(null)
   const [focusedTerminalPaneId, setFocusedTerminalPaneId] = useState<string | null>(null)
   const [expandedPaneId, setExpandedPaneId] = useState<string | null>(null)
+  const splitBlocked = expandedPaneId !== null
   const draggingPane = draggingPaneId
     ? tab.panes.find((p) => p.id === draggingPaneId)
     : undefined
@@ -424,6 +434,11 @@ function TerminalTabContent({
       setExpandedPaneId(null)
     }
   }, [expandedPaneId, tab.panes])
+
+  useLayoutEffect(() => {
+    onTerminalExpandedPaneChange?.(tab.id, expandedPaneId)
+    return () => onTerminalExpandedPaneChange?.(tab.id, null)
+  }, [expandedPaneId, onTerminalExpandedPaneChange, tab.id])
 
   // Quick split: arm clickable split zones while the configured modifier chord
   // (terminal.quickSplitHold, default Cmd+Option) is held. Modifier state is
@@ -446,7 +461,7 @@ function TerminalTabContent({
     }
   }, [quickSplitChord])
   const quickSplitArmed =
-    quickSplitChordHeld && isActive && !!onQuickSplitPane
+    quickSplitChordHeld && isActive && !!onQuickSplitPane && !splitBlocked
 
   const handleTerminalFocusChange = useCallback(
     (paneId: string, focused: boolean) => {
@@ -524,15 +539,22 @@ function TerminalTabContent({
       pane={pane}
       index={idx}
       isActive={tab.activePaneId === pane.id}
-      showSplit={tab.activePaneId === pane.id && !!onSplitTerminal}
+      showSplit={
+        tab.activePaneId === pane.id && !!onSplitTerminal && !splitBlocked
+      }
       showExpand={multi}
       showClose={multi}
       isExpanded={expandedPaneId === pane.id}
       onFocus={() => onFocusPane?.(tab.id, pane.id)}
       onClose={() => onClosePane?.(tab.id, pane.id)}
       onRename={(name) => onRenamePane?.(tab.id, pane.id, name)}
-      onSplitHorizontal={() => onSplitTerminal?.(tab.id, "horizontal")}
-      onSplitVertical={() => onSplitTerminal?.(tab.id, "vertical")}
+      onSplitHorizontal={() => {
+        if (!splitBlocked) onSplitTerminal?.(tab.id, "horizontal")
+      }}
+      onSplitVertical={() => {
+        if (!splitBlocked) onSplitTerminal?.(tab.id, "vertical")
+      }}
+      onProjectActivity={() => onProjectActivity?.(projectId)}
       onToggleExpand={() =>
         setExpandedPaneId((current) => (current === pane.id ? null : pane.id))
       }
@@ -579,7 +601,9 @@ function TerminalTabContent({
           {renderTerminal(pane)}
           {quickSplitArmed && draggingPaneId === null && !pane.pendingStart ? (
             <QuickSplitOverlay
-              onPick={(zone) => onQuickSplitPane?.(tab.id, paneId, zone)}
+              onPick={(zone) => {
+                if (!splitBlocked) onQuickSplitPane?.(tab.id, paneId, zone)
+              }}
             />
           ) : null}
         </PaneDropZone>
@@ -708,8 +732,10 @@ function PaneContent({
   onRenamePane,
   onDropPane,
   onQuickSplitPane,
+  onTerminalExpandedPaneChange,
   onLayoutChange,
   onExtractPaneToTab,
+  onProjectActivity,
   onOpenFile,
   onFileDirtyChange,
   fileReveal,
@@ -751,8 +777,10 @@ function PaneContent({
     targetPaneId: string,
     zone: DropZone
   ) => void
+  onTerminalExpandedPaneChange?: (tabId: string, paneId: string | null) => void
   onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
+  onProjectActivity?: (projectId: string) => void
   onOpenFile?: (path: string) => void
   onFileDirtyChange?: (
     tabId: string,
@@ -772,6 +800,7 @@ function PaneContent({
       <TerminalTabContent
         tab={tab}
         cwd={project.path}
+        projectId={project.id}
         isActive={isActive}
         focusRequest={terminalFocusRequest}
         onTitleChange={onTitleChange}
@@ -784,8 +813,10 @@ function PaneContent({
         onRenamePane={onRenamePane}
         onDropPane={onDropPane}
         onQuickSplitPane={onQuickSplitPane}
+        onTerminalExpandedPaneChange={onTerminalExpandedPaneChange}
         onLayoutChange={onLayoutChange}
         onExtractPaneToTab={onExtractPaneToTab}
+        onProjectActivity={onProjectActivity}
       />
     )
   }
@@ -839,8 +870,10 @@ export function WorkspacePane({
   onRenamePane,
   onDropPane,
   onQuickSplitPane,
+  onTerminalExpandedPaneChange,
   onLayoutChange,
   onExtractPaneToTab,
+  onProjectActivity,
   onOpenFile,
   fileReveal,
 }: Props) {
@@ -1046,9 +1079,11 @@ export function WorkspacePane({
                 onTerminalFocusChange={onTerminalFocusChange}
                 onRenamePane={onRenamePane}
                 onDropPane={onDropPane}
-        onQuickSplitPane={onQuickSplitPane}
+                onQuickSplitPane={onQuickSplitPane}
+                onTerminalExpandedPaneChange={onTerminalExpandedPaneChange}
                 onLayoutChange={onLayoutChange}
                 onExtractPaneToTab={onExtractPaneToTab}
+                onProjectActivity={onProjectActivity}
                 onOpenFile={onOpenFile}
                 onFileDirtyChange={handleFileDirtyChange}
                 fileReveal={fileReveal}

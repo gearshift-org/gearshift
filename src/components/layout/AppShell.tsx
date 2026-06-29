@@ -121,6 +121,7 @@ function hydrateProjectSnapshot(): {
         id,
         name: p.name,
         path: p.path,
+        ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
         tabs: (p.tabs ?? []).flatMap((t): WorkspaceTab[] => {
           // Preview tabs (file/diff/commit) restore from their descriptor.
           if (t.kind === "file") {
@@ -322,7 +323,7 @@ function killAllPanes(tab: WorkspaceTab) {
 
 // Count terminal panes that have a coding agent open (running) — covers an
 // agent that is actively working, idle, or waiting on the user. Used to gate
-// close protection, which applies only when closing a single terminal.
+// close protection before closing one or more terminal panes.
 function countAgentTerminalPanes(tabs: WorkspaceTab[]): number {
   let count = 0
   for (const tab of tabs) {
@@ -397,6 +398,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
       id: p.id,
       name: p.name,
       path: p.path,
+      ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
       // Persist whatever tab is active — preview tabs included — so reload
       // returns to it.
       activeTabId: activeTab?.id ?? tabs[0]?.id ?? "",
@@ -852,13 +854,13 @@ export function AppShell() {
     setProjectSidebarOpen((v) => !v)
   }, [])
 
-  // Close protection: confirm before closing a single terminal that has a
-  // coding agent open. Bulk closes (all tabs / all terminals / projects) skip
-  // this by design.
   const confirmCloseAgentTerminals = async (count: number) => {
     if (count === 0) return true
     return window.dialogApi.confirmTerminalClose({ count })
   }
+
+  const confirmCloseTabsWithAgents = (tabs: WorkspaceTab[]) =>
+    confirmCloseAgentTerminals(countAgentTerminalPanes(tabs))
 
   useEffect(() => {
     const onFocus = () => {
@@ -962,6 +964,13 @@ export function AppShell() {
     []
   )
 
+  const markProjectUpdated = useCallback((projectId: string) => {
+    const updatedAt = Date.now()
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, updatedAt } : p))
+    )
+  }, [])
+
   // History tab "Summarize": send the user's last prompts to a terminal
   // running the chosen agent and ask it for a recap. Unlike Commit with AI
   // (which reuses the remembered last agent terminal), this targets the
@@ -975,6 +984,7 @@ export function AppShell() {
           toast.error("No commits to summarize")
           return
         }
+        markProjectUpdated(project.id)
         // Commits are newest-first; recap reads better oldest-first. Keep the
         // prompt single-line — raw newlines written to the PTY would submit
         // each line separately in agent TUIs.
@@ -1033,7 +1043,7 @@ export function AppShell() {
         )
       })
     },
-    [activeProjectId, navigateToProject]
+    [activeProjectId, markProjectUpdated, navigateToProject]
   )
 
   // History tab "Summary": route a recap prompt to the terminal the user is
@@ -1058,6 +1068,7 @@ export function AppShell() {
         toast.error("This terminal needs a running agent to summarize")
         return
       }
+      markProjectUpdated(project.id)
       const { id: tabId } = activeTab!
       const { id: paneId, sessionId } = activePane
 
@@ -1097,7 +1108,7 @@ export function AppShell() {
         120
       )
     },
-    [activeProjectId, navigateToProject]
+    [activeProjectId, markProjectUpdated, navigateToProject]
   )
 
   // History tab: clicking a message focuses the terminal whose session
@@ -1343,6 +1354,7 @@ export function AppShell() {
           id,
           name: resolvedName,
           path,
+          updatedAt: Date.now(),
           tabs: [
             {
               kind: "terminal" as const,
@@ -1421,11 +1433,11 @@ export function AppShell() {
   }
 
   const closeProject = async (id: string) => {
+    const target = projects.find((p) => p.id === id)
+    if (!target || !(await confirmCloseTabsWithAgents(target.tabs))) return
     setProjects((prev) => {
       const target = prev.find((p) => p.id === id)
-      if (target) {
-        for (const t of target.tabs) killAllPanes(t)
-      }
+      if (target) for (const t of target.tabs) killAllPanes(t)
       const next = prev.filter((p) => p.id !== id)
       if (id === activeProjectId) {
         const nextActive = next[0]
@@ -1440,13 +1452,22 @@ export function AppShell() {
   }
 
   const closeAllProjectTerminals = async (id: string) => {
+    const project = projects.find((p) => p.id === id)
+    const terminalTabs = project?.tabs.filter((t) => t.kind === "terminal") ?? []
+    if (
+      terminalTabs.length === 0 ||
+      !(await confirmCloseTabsWithAgents(terminalTabs))
+    ) {
+      return
+    }
+    const terminalTabIds = new Set(terminalTabs.map((t) => t.id))
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== id) return p
-        const terminalTabs = p.tabs.filter((t) => t.kind === "terminal")
-        if (terminalTabs.length === 0) return p
-        for (const t of terminalTabs) killAllPanes(t)
-        const tabs = p.tabs.filter((t) => t.kind !== "terminal")
+        for (const t of p.tabs) {
+          if (terminalTabIds.has(t.id)) killAllPanes(t)
+        }
+        const tabs = p.tabs.filter((t) => !terminalTabIds.has(t.id))
         const activeTabId = tabs.some((t) => t.id === p.activeTabId)
           ? p.activeTabId
           : (tabs[0]?.id ?? "")
@@ -1470,15 +1491,21 @@ export function AppShell() {
   }
 
   const closeProjectsToRight = async (id: string) => {
+    const idx = projects.findIndex((p) => p.id === id)
+    if (idx < 0) return
+    const toClose = projects.slice(idx + 1)
+    if (
+      toClose.length === 0 ||
+      !(await confirmCloseTabsWithAgents(toClose.flatMap((p) => p.tabs)))
+    ) {
+      return
+    }
+    const closedIds = new Set(toClose.map((p) => p.id))
     setProjects((prev) => {
-      const idx = prev.findIndex((p) => p.id === id)
-      if (idx < 0) return prev
-      const toClose = prev.slice(idx + 1)
-      if (toClose.length === 0) return prev
-      for (const p of toClose) {
+      for (const p of prev) {
+        if (!closedIds.has(p.id)) continue
         for (const t of p.tabs) killAllPanes(t)
       }
-      const closedIds = new Set(toClose.map((p) => p.id))
       const next = prev.filter((p) => !closedIds.has(p.id))
       if (closedIds.has(activeProjectId)) {
         const keep = next.find((p) => p.id === id)
@@ -1661,9 +1688,14 @@ export function AppShell() {
   }
 
   const closeOtherProjects = async (keepId: string) => {
+    const toClose = projects.filter((p) => p.id !== keepId)
+    if (!(await confirmCloseTabsWithAgents(toClose.flatMap((p) => p.tabs)))) {
+      return
+    }
+    const closedIds = new Set(toClose.map((p) => p.id))
     setProjects((prev) => {
       for (const p of prev) {
-        if (p.id === keepId) continue
+        if (!closedIds.has(p.id)) continue
         for (const t of p.tabs) killAllPanes(t)
       }
       const next = prev.filter((p) => p.id === keepId)
@@ -1729,9 +1761,22 @@ export function AppShell() {
     return paneId
   }
 
+  const expandedTerminalPaneByTabRef = useRef<Record<string, string | null>>({})
+  const handleTerminalExpandedPaneChange = useCallback(
+    (tabId: string, paneId: string | null) => {
+      if (paneId) {
+        expandedTerminalPaneByTabRef.current[tabId] = paneId
+      } else {
+        delete expandedTerminalPaneByTabRef.current[tabId]
+      }
+    },
+    []
+  )
+
   /** Add a new terminal pane to an existing terminal tab (Cmd+D / split). */
   const splitTerminalPane = useCallback(
     async (tabId: string, direction: SplitDirection = "horizontal") => {
+      if (expandedTerminalPaneByTabRef.current[tabId]) return
       const project = projectsRef.current.find((p) => p.id === activeProjectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (!project || !tab || tab.kind !== "terminal") return
@@ -1775,6 +1820,7 @@ export function AppShell() {
   const quickSplitPane = useCallback(
     async (tabId: string, targetPaneId: string, zone: DropZone) => {
       if (zone === "center") return
+      if (expandedTerminalPaneByTabRef.current[tabId]) return
       const project = projectsRef.current.find((p) => p.id === activeProjectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (!project || !tab || tab.kind !== "terminal") return
@@ -2808,10 +2854,7 @@ export function AppShell() {
 
   const closeTab = async (id: string) => {
     const tab = activeProject?.tabs.find((t) => t.id === id)
-    if (
-      tab &&
-      !(await confirmCloseAgentTerminals(countAgentTerminalPanes([tab])))
-    ) {
+    if (tab && !(await confirmCloseTabsWithAgents([tab]))) {
       return
     }
     if (tab) killAllPanes(tab)
@@ -2844,6 +2887,7 @@ export function AppShell() {
     if (idx < 0) return
     const toClose = activeProject.tabs.slice(idx + 1)
     if (toClose.length === 0) return
+    if (!(await confirmCloseTabsWithAgents(toClose))) return
     for (const t of toClose) killAllPanes(t)
     const closedIds = new Set(toClose.map((t) => t.id))
     setProjects((prev) =>
@@ -2863,29 +2907,39 @@ export function AppShell() {
     if (!activeProject) return
     const toClose = activeProject.tabs.filter((t) => t.id !== keepId)
     if (toClose.length === 0) return
+    if (!(await confirmCloseTabsWithAgents(toClose))) return
+    const closedIds = new Set(toClose.map((t) => t.id))
     for (const t of toClose) killAllPanes(t)
-    const keep = activeProject.tabs.find((t) => t.id === keepId)
     setProjects((prev) =>
-      prev.map((p) =>
-        p.id === activeProjectId
-          ? {
-              ...p,
-              tabs: keep ? [keep] : [],
-              activeTabId: keep ? keep.id : "",
-            }
-          : p
-      )
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
+        return {
+          ...p,
+          tabs,
+          activeTabId: tabs.some((t) => t.id === keepId)
+            ? keepId
+            : (tabs[0]?.id ?? ""),
+        }
+      })
     )
     if (activeTabId !== keepId) navigateToTab(keepId)
   }
 
   const closeAllTabs = async () => {
     if (!activeProject) return
+    if (!(await confirmCloseTabsWithAgents(activeProject.tabs))) return
+    const closedIds = new Set(activeProject.tabs.map((t) => t.id))
     for (const t of activeProject.tabs) killAllPanes(t)
     setProjects((prev) =>
-      prev.map((p) =>
-        p.id === activeProjectId ? { ...p, tabs: [], activeTabId: "" } : p
-      )
+      prev.map((p) => {
+        if (p.id !== activeProjectId) return p
+        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
+        const activeTabId = tabs.some((t) => t.id === p.activeTabId)
+          ? p.activeTabId
+          : (tabs[0]?.id ?? "")
+        return { ...p, tabs, activeTabId }
+      })
     )
     navigateToProject(activeProjectId)
   }
@@ -3427,6 +3481,7 @@ export function AppShell() {
               onQuickSplitPane={(tabId, targetPaneId, zone) =>
                 void quickSplitPane(tabId, targetPaneId, zone)
               }
+              onTerminalExpandedPaneChange={handleTerminalExpandedPaneChange}
               onTerminalLayoutChange={setTerminalLayout}
               onExtractPaneToTab={extractPaneToTab}
               onOpenDiffTab={openDiffTab}
@@ -3434,6 +3489,7 @@ export function AppShell() {
               onOpenCommitTab={openCommitTab}
               onSummarizeHistory={summarizeHistory}
               onSummarizeChat={summarizeChat}
+              onProjectActivity={markProjectUpdated}
               onFocusSession={focusSession}
               rightSidebarTab={rightSidebarTab}
               onRightSidebarTabChange={setRightSidebarTab}

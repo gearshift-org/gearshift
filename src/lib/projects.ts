@@ -74,6 +74,7 @@ export type StoredProject = {
   id: string
   name: string
   path: string
+  updatedAt?: number
   tabs?: StoredTab[]
   activeTabId?: string
 }
@@ -248,6 +249,7 @@ export function loadProjects(): StoredProject[] {
       )
       .map((p) => ({
         ...p,
+        ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
         tabs: Array.isArray(p.tabs)
           ? p.tabs
               .filter(

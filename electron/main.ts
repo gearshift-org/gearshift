@@ -1735,12 +1735,19 @@ app.whenReady().then(async () => {
     async (event, opts: { count?: number }) => {
       const win = BrowserWindow.fromWebContents(event.sender)
       const count = Math.max(1, opts.count ?? 1)
-      const plural = count === 1 ? "terminal has" : "terminals have"
+      const plural =
+        count === 1 ? "terminal session has" : "terminal sessions have"
       const result = await dialog.showMessageBox(win!, {
         type: "warning",
-        title: "Close terminal with agent?",
+        title:
+          count === 1
+            ? "Close terminal session with agent?"
+            : "Close terminal sessions with agents?",
         message: `${count} ${plural} a coding agent open.`,
-        detail: "Closing will stop the agent and end the terminal session.",
+        detail:
+          count === 1
+            ? "Closing will stop the agent and end the terminal session."
+            : "Closing will stop the agents and end those terminal sessions.",
         buttons: ["Close", "Cancel"],
         defaultId: 0,
         noLink: true,

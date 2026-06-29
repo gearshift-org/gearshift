@@ -40,6 +40,7 @@ type Props = {
   onSplitHorizontal: () => void
   onSplitVertical: () => void
   onToggleExpand: () => void
+  onProjectActivity?: () => void
 }
 
 export function PaneHeader({
@@ -56,6 +57,7 @@ export function PaneHeader({
   onSplitHorizontal,
   onSplitVertical,
   onToggleExpand,
+  onProjectActivity,
 }: Props) {
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState("")
@@ -94,6 +96,7 @@ export function PaneHeader({
       toast.error("This terminal needs a running agent to summarize")
       return
     }
+    onProjectActivity?.()
     void summarizeHistoryToAgent({
       sessionId: pane.sessionId,
       scope: { sessionId: pane.sessionId },

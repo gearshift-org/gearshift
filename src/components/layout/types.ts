@@ -143,6 +143,8 @@ export type Project = {
   id: string
   name: string
   path: string
+  /** Local activity timestamp used by "Most recent" sidebar sort. */
+  updatedAt?: number
   tabs: WorkspaceTab[]
   activeTabId: string
   /** Ephemeral marker shown after a background coding agent finishes work. */

@@ -551,9 +551,8 @@ export function ProjectSidebar({
     setSortMode(mode)
     saveProjectSidebarSort(mode)
   }
-  // Most-recent sort: order projects by their latest chat-message timestamp.
-  // Only fetched while that mode is active; refetched periodically as a
-  // fallback (live updates below keep it current on each new message).
+  // Most-recent sort: order projects by local project activity, falling back to
+  // the latest chat-message timestamp when chat history has newer data.
   const queryClient = useQueryClient()
   const latestByProjectKey = ["history", "latestByProject"]
   const { data: latestByProject } = useQuery({
@@ -618,7 +617,9 @@ export function ProjectSidebar({
   const sortByMode = (list: Project[]) => {
     if (sortMode !== "recent") return list
     const ts = latestByProject ?? {}
-    return [...list].sort((a, b) => (ts[b.id] ?? 0) - (ts[a.id] ?? 0))
+    const activityAt = (project: Project) =>
+      Math.max(project.updatedAt ?? 0, ts[project.id] ?? 0)
+    return [...list].sort((a, b) => activityAt(b) - activityAt(a))
   }
   const pinnedSet = new Set(pinnedPaths)
   const pinnedProjects = sortByMode(

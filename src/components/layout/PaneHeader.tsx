@@ -165,9 +165,10 @@ export function PaneHeader({
             else if (e.key === "Escape") cancel()
           }}
           onBlur={commit}
-          // Seamless inline edit: no input chrome, blends with the header so it
-          // reads like the title text (just selectable/editable).
-          className="h-5 min-w-0 flex-1 bg-transparent px-0 font-mono text-[11px] text-foreground outline-none"
+          // Seamless inline edit: no input chrome and the same font/size as the
+          // displayed title (inherits the header's sans font) so it reads like
+          // the title text — just selectable/editable.
+          className="h-5 min-w-0 flex-1 bg-transparent px-0 text-xs text-foreground outline-none"
         />
       ) : (
         // The name span is the ONLY drag handle. Buttons sit outside the

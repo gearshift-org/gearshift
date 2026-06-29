@@ -32,7 +32,7 @@ import {
   TAB_LABEL_CLASS,
   TAB_NAME_TOOLTIP_DELAY_MS,
   TAB_OPEN_TRANSITION_CLASS,
-  TAB_WIDTH_CLASS,
+  TAB_WIDTH_SHRINK_CLASS,
   useTabOpenAnimation,
 } from "./tabSizing"
 import { displayName, tabDisplayName } from "./terminalName"
@@ -222,7 +222,7 @@ function WorkspaceTabItem({
         style={style}
         className={cn(
           "group relative flex h-[28px] cursor-pointer items-center gap-2 rounded-sm border border-transparent px-2.5 text-xs transition-colors",
-          TAB_WIDTH_CLASS,
+          TAB_WIDTH_SHRINK_CLASS,
           TAB_OPEN_TRANSITION_CLASS,
           openAnim.isOpening && "overflow-hidden",
           isActive
@@ -433,7 +433,7 @@ export function WorkspaceTabBar({
         className={cn(
           // Left inset matches the workspace's p-2 (8px) so the first tab lines
           // up with the terminal card's left edge below it.
-          "terminal-tabs-scroll flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden py-[3px] pr-1 pl-2",
+          "terminal-tabs-scroll flex min-w-0 items-center gap-1 overflow-hidden py-[3px] pl-2",
           // In draggable mode the scroll area shrinks to its tabs so the empty
           // remainder (the spacer below) becomes a window-drag region.
           draggable ? "[-webkit-app-region:no-drag]" : "flex-1"
@@ -471,51 +471,56 @@ export function WorkspaceTabBar({
             ))}
           </SortableContext>
         </DndContext>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label="New terminal"
-                className="group/add sticky right-0 grid h-[28px] w-8 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/[0.12] hover:text-foreground"
-              >
-                <span className="grid size-5 place-items-center rounded-sm">
-                  <Plus className="size-3.5" />
-                </span>
-              </button>
-            }
-          />
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem className="gap-2" onClick={() => onAdd()}>
-              <TerminalSquare className="size-3.5" />
-              Terminal
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {AGENT_TERMINAL_OPTIONS.map((agent) => (
-              <DropdownMenuItem
-                key={agent.value}
-                className="gap-2"
-                onClick={() => onAdd(agent.value)}
-              >
-                <AgentIcon agent={agent.value} className="size-3.5" />
-                {agent.label}
-              </DropdownMenuItem>
-            ))}
-            {onConfigureAgents ? (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="gap-2"
-                  onClick={onConfigureAgents}
-                >
-                  <Settings className="size-3.5" />
-                  Configure agents…
-                </DropdownMenuItem>
-              </>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              aria-label="New terminal"
+              // The add button sits outside the scrolling tab list so it stays
+              // fully visible and never overlaps tabs when they overflow — the
+              // tabs scroll within the bounded area to its left. mx-2 keeps an
+              // equal gap on both sides: from the last tab on the left, and from
+              // the right edge / sidebar on the right when the tabs fill the bar.
+              className={cn(
+                "group/add mx-2 grid h-[28px] w-8 shrink-0 place-items-center self-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/[0.12] hover:text-foreground",
+                draggable && "[-webkit-app-region:no-drag]"
+              )}
+            >
+              <span className="grid size-5 place-items-center rounded-sm">
+                <Plus className="size-3.5" />
+              </span>
+            </button>
+          }
+        />
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem className="gap-2" onClick={() => onAdd()}>
+            <TerminalSquare className="size-3.5" />
+            Terminal
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {AGENT_TERMINAL_OPTIONS.map((agent) => (
+            <DropdownMenuItem
+              key={agent.value}
+              className="gap-2"
+              onClick={() => onAdd(agent.value)}
+            >
+              <AgentIcon agent={agent.value} className="size-3.5" />
+              {agent.label}
+            </DropdownMenuItem>
+          ))}
+          {onConfigureAgents ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="gap-2" onClick={onConfigureAgents}>
+                <Settings className="size-3.5" />
+                Configure agents…
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {draggable && <div className="min-w-0 flex-1 self-stretch" />}
       {trailing && (
         <div className="flex shrink-0 items-center">{trailing}</div>

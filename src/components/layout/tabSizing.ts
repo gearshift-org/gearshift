@@ -2,9 +2,13 @@ import { useEffect, useState, type CSSProperties } from "react"
 
 export const TAB_WIDTH_CLASS = "w-[180px] min-w-[120px] shrink-0"
 
+// Chrome-style variant: each tab prefers 180px but shrinks equally (flex-shrink)
+// as more tabs are added, down to a small floor, so the strip never scrolls.
+export const TAB_WIDTH_SHRINK_CLASS = "w-[180px] min-w-[40px] shrink"
+
 export const TAB_LABEL_CLASS = "project-tab-label min-w-0 flex-1 truncate"
 
-export const TAB_NAME_TOOLTIP_DELAY_MS = 700
+export const TAB_NAME_TOOLTIP_DELAY_MS = 300
 
 export const TAB_OPEN_TRANSITION_CLASS =
   "transition-[width,min-width,padding] duration-150 ease-out"

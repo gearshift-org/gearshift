@@ -121,7 +121,15 @@ export function PaneHeader({
     <div
       ref={setNodeRef}
       style={style}
-      onMouseDown={onFocus}
+      onMouseDown={(e) => {
+        // Clicking the header marks this pane active but must NOT pull DOM focus
+        // off the terminal — the active-pane border tracks terminal focus, so a
+        // plain blur would make it disappear. preventDefault keeps xterm focused.
+        // Buttons and the rename input stopPropagation, so this only covers the
+        // header background and the title/drag handle.
+        e.preventDefault()
+        onFocus()
+      }}
       onDoubleClick={(e) => {
         e.stopPropagation()
         startEdit()
@@ -157,7 +165,9 @@ export function PaneHeader({
             else if (e.key === "Escape") cancel()
           }}
           onBlur={commit}
-          className="h-5 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 font-mono text-[11px] text-foreground ring-1 ring-ring/40 outline-none"
+          // Seamless inline edit: no input chrome, blends with the header so it
+          // reads like the title text (just selectable/editable).
+          className="h-5 min-w-0 flex-1 bg-transparent px-0 font-mono text-[11px] text-foreground outline-none"
         />
       ) : (
         // The name span is the ONLY drag handle. Buttons sit outside the

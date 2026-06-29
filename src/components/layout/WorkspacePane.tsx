@@ -418,7 +418,11 @@ function TerminalTabContent({
 
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null)
   const [tabBarDropRect, setTabBarDropRect] = useState<DOMRect | null>(null)
-  const [focusedTerminalPaneId, setFocusedTerminalPaneId] = useState<string | null>(null)
+  // The pane that currently holds focus anywhere within it — the terminal body,
+  // its header, or the rename input. Drives the active-pane border: it shows
+  // while you're engaged with the pane and hides once focus leaves it (e.g. the
+  // right sidebar or another app).
+  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null)
   const [expandedPaneId, setExpandedPaneId] = useState<string | null>(null)
   const splitBlocked = expandedPaneId !== null
   const draggingPane = draggingPaneId
@@ -426,7 +430,7 @@ function TerminalTabContent({
     : undefined
 
   useEffect(() => {
-    if (!isActive) setFocusedTerminalPaneId(null)
+    if (!isActive) setFocusedPaneId(null)
   }, [isActive])
 
   useEffect(() => {
@@ -465,10 +469,6 @@ function TerminalTabContent({
 
   const handleTerminalFocusChange = useCallback(
     (paneId: string, focused: boolean) => {
-      setFocusedTerminalPaneId((current) => {
-        if (focused) return paneId
-        return current === paneId ? null : current
-      })
       onTerminalFocusChange?.(tab.id, paneId, focused)
     },
     [onTerminalFocusChange, tab.id]
@@ -566,8 +566,12 @@ function TerminalTabContent({
   const renderLeaf = (paneId: string) => {
     const pane = tab.panes.find((p) => p.id === paneId)
     if (!pane) return null
+    // Show the focus ring only while this active pane actually holds focus
+    // (terminal, header, or rename input). Focus-within — rather than the
+    // xterm's own focus — keeps the border up while editing the title or
+    // clicking the header, but still drops it when focus leaves the pane.
     const activePane =
-      isActive && tab.activePaneId === paneId && focusedTerminalPaneId === paneId
+      isActive && tab.activePaneId === paneId && focusedPaneId === paneId
     // Pulse the pane border instead of a header dot when the agent finished or
     // needs attention. Driven by the same status flags as the sidebar indicators,
     // so it clears the same way (viewing the pane with the app focused).
@@ -577,6 +581,14 @@ function TerminalTabContent({
       !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
     return (
       <div
+        onFocus={() => setFocusedPaneId(paneId)}
+        onBlur={(e) => {
+          // Only clear when focus truly leaves the pane (not when it moves
+          // between the terminal, header, and rename input inside it).
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            setFocusedPaneId((current) => (current === paneId ? null : current))
+          }
+        }}
         className={cn(
           "relative flex h-full flex-col overflow-hidden rounded-md border bg-[var(--xterm-bg)]",
           activePane ? "border-transparent" : "border-border"

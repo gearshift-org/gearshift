@@ -24,7 +24,7 @@ import {
 } from "@/lib/historySummary"
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
-import { useTheme } from "@/components/theme-provider"
+import { THEME_FAMILIES, useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import { CommandPalette } from "./CommandPalette"
@@ -504,7 +504,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const router = useRouter()
   const queryClient = useQueryClient()
-  const { resolvedTheme } = useTheme()
+  const { resolvedTheme, themeFamily, setThemeFamily } = useTheme()
   const params = useParams({ strict: false }) as {
     projectId?: string
     tabId?: string
@@ -3161,6 +3161,17 @@ export function AppShell() {
           e.preventDefault()
           saveAutoHideTitleBar(!autoHideTitleBar)
           break
+        case "theme.cycle": {
+          e.preventDefault()
+          // Cycle to the next theme family. Because setThemeFamily keeps the
+          // current mode (light/dark), this effectively cycles through the
+          // themes of whichever appearance is active.
+          const current = THEME_FAMILIES.findIndex((f) => f.id === themeFamily)
+          const next =
+            THEME_FAMILIES[(current + 1) % THEME_FAMILIES.length]
+          setThemeFamily(next.id)
+          break
+        }
         default:
           break
       }
@@ -3193,6 +3204,8 @@ export function AppShell() {
     openRightSidebar,
     toggleRightSidebar,
     toggleProjectSidebar,
+    themeFamily,
+    setThemeFamily,
   ])
 
   const sidebarTopActions = useMemo(

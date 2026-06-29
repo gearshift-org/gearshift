@@ -13,6 +13,7 @@ export type ActionId =
   | "nav.forward"
   | "settings.open"
   | "titlebar.togglePin"
+  | "theme.cycle"
 
 export type Scope = "renderer" | "electron-menu"
 
@@ -121,6 +122,14 @@ export const ACTIONS: readonly ActionDef[] = [
     label: "Pin/Unpin Title Bar",
     description: "Toggle the auto-hide title bar between pinned and hidden",
     defaultAccelerator: "CmdOrCtrl+Shift+S",
+    scope: "renderer",
+  },
+  {
+    id: "theme.cycle",
+    label: "Cycle Theme",
+    description:
+      "Cycle through the theme families for the current appearance (light or dark)",
+    defaultAccelerator: "CmdOrCtrl+Shift+T",
     scope: "renderer",
   },
 ] as const

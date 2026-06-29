@@ -976,7 +976,12 @@ export function WorkspacePane({
     <div
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-md",
-        activeTab?.kind === "terminal" ? "bg-transparent" : "bg-card"
+        // Terminal panes frame themselves (each split pane has its own
+        // rounded border). For file/diff/preview tabs the WorkspacePane is the
+        // frame, so give it the same rounded border as a terminal pane.
+        activeTab?.kind === "terminal"
+          ? "bg-transparent"
+          : "border border-border bg-card"
       )}
     >
       {!hideSharedHeader && (

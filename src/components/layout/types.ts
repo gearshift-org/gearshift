@@ -51,6 +51,8 @@ export type TerminalAgentStatus = {
   agentSessionId?: string
   /** Human-readable session title resolved from the agent's transcript (AI title or first prompt). */
   agentSessionTitle?: string
+  /** Timestamp of the user's most recent message submitted to the agent in this pane. */
+  lastSubmitAt?: number
 }
 
 export type TerminalTab = {

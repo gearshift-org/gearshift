@@ -833,6 +833,7 @@ export function TerminalView({
       ...next,
       agentSessionId: next.agentSessionId ?? agentSessionIdRef.current,
       agentSessionTitle: next.agentSessionTitle ?? agentSessionTitleRef.current,
+      lastSubmitAt: lastAgentSubmitAtRef.current || next.lastSubmitAt,
     }
     const prev = agentStatusRef.current
     if (
@@ -844,7 +845,8 @@ export function TerminalView({
       prev.completed === merged.completed &&
       prev.needsAttention === merged.needsAttention &&
       prev.agentSessionId === merged.agentSessionId &&
-      prev.agentSessionTitle === merged.agentSessionTitle
+      prev.agentSessionTitle === merged.agentSessionTitle &&
+      prev.lastSubmitAt === merged.lastSubmitAt
     ) {
       return
     }
@@ -1605,6 +1607,12 @@ export function TerminalView({
           dismissRecap()
           // A new prompt supersedes the post-task commit affordance.
           setCommitUi((s) => (s === "open" ? "closing" : s))
+          // If a coding agent is live here, re-emit so the "last message sent
+          // here" split badge moves to this pane right away. Gated on running
+          // to avoid churn on ordinary shell commands.
+          if (agentStatusRef.current.running) {
+            emitAgentStatus(agentStatusRef.current)
+          }
         } else {
           suppressAgentActivityUntilRef.current =
             now + USER_INPUT_ECHO_SUPPRESS_MS

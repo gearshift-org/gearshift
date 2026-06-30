@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -401,6 +402,24 @@ function TerminalTabContent({
   onProjectActivity?: (projectId: string) => void
 }) {
   const multi = tab.panes.length > 1
+  // Among splits with a live agent, mark the one the user most recently
+  // submitted a message to, so it's easy to spot which split to return to.
+  // Only meaningful when the tab is actually split into multiple panes.
+  const lastSubmittedPaneId = useMemo(() => {
+    if (!multi) return null
+    let bestId: string | null = null
+    let bestAt = 0
+    for (const pane of tab.panes) {
+      const status = pane.agentStatus
+      if (!status?.running) continue
+      const at = status.lastSubmitAt ?? 0
+      if (at > bestAt) {
+        bestAt = at
+        bestId = pane.id
+      }
+    }
+    return bestId
+  }, [multi, tab.panes])
   // Share the terminal body's background with each pane's header (and the leaf
   // card) so the chrome blends with the terminal instead of the app surface.
   // The terminal body uses the theme's --sidebar token (see TerminalView), so
@@ -539,6 +558,7 @@ function TerminalTabContent({
       pane={pane}
       index={idx}
       isActive={tab.activePaneId === pane.id}
+      isLastSubmitted={pane.id === lastSubmittedPaneId}
       showSplit={
         tab.activePaneId === pane.id && !!onSplitTerminal && !splitBlocked
       }

@@ -1,6 +1,7 @@
 import * as React from "react"
 import { useDraggable } from "@dnd-kit/core"
 import {
+  CornerDownLeft,
   Maximize2,
   Minimize2,
   SplitSquareHorizontal,
@@ -30,6 +31,8 @@ type Props = {
   pane: TerminalPane
   index: number
   isActive: boolean
+  /** This split is where the user most recently submitted a message to the agent. */
+  isLastSubmitted?: boolean
   showSplit: boolean
   showExpand?: boolean
   showClose?: boolean
@@ -47,6 +50,7 @@ export function PaneHeader({
   pane,
   index,
   isActive,
+  isLastSubmitted = false,
   showSplit,
   showExpand = false,
   showClose = true,
@@ -182,6 +186,21 @@ export function PaneHeader({
           {paneDisplayName(pane, index)}
         </span>
       )}
+      {isLastSubmitted && !editing ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                aria-label="Last message sent here"
+                className="grid shrink-0 place-items-center text-ring"
+              >
+                <CornerDownLeft className="size-3.5" />
+              </span>
+            }
+          />
+          <TooltipContent>Last message sent here</TooltipContent>
+        </Tooltip>
+      ) : null}
       {showExpand && !editing ? (
         <Tooltip>
           <TooltipTrigger

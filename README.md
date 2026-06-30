@@ -16,7 +16,7 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 - Agent activity detection for supported CLI coding agents.
 - Configurable default launch options for supported coding-agent terminals.
 - Desktop and in-app notifications when background agent work finishes.
-- Theme settings with system/light/dark modes, selectable color themes, appearance controls, and keybinding settings.
+- Theme settings with system/light/dark modes, selectable color themes, appearance controls, and searchable keybinding settings.
 
 ## Tech Stack
 

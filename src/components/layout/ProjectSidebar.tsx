@@ -16,18 +16,32 @@ import { CSS } from "@dnd-kit/utilities"
 import {
   ArrowDownUp,
   ChevronDown,
+  ChevronsUpDown,
   EllipsisVertical,
   Focus,
+  FolderInput,
   GitBranch,
+  Layers2,
   PanelLeft,
   Pin,
   PinOff,
+  Plus,
   Search,
   Settings,
+  Trash2,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Tooltip,
   TooltipContent,
@@ -41,14 +55,21 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
@@ -59,6 +80,8 @@ import {
   loadPinnedProjectPaths,
   loadProjectSidebarGroupOpen,
   loadProjectSidebarSort,
+  DEFAULT_SPACE_ID,
+  DEFAULT_SPACE_NAME,
   randomizeProjectColor,
   savePinnedProjectPaths,
   saveProjectSidebarGroupOpen,
@@ -66,6 +89,7 @@ import {
   setProjectAvatarImagePath,
   type ProjectSortMode,
   type RecentProject,
+  type StoredSpace,
 } from "@/lib/projects"
 import {
   projectHasAttentionAgent,
@@ -82,8 +106,15 @@ import type { Project } from "./types"
 type Props = {
   projects: Project[]
   activeId: string
+  spaces: StoredSpace[]
+  activeSpaceId: string
   recents: RecentProject[]
   onSelect: (id: string) => void
+  onSelectSpace: (id: string) => void
+  onCreateSpace: (name?: string) => string | null
+  onRenameSpace: (id: string, name: string) => boolean
+  onDeleteSpace: (id: string) => boolean
+  onMoveProjectToSpace: (projectId: string, spaceId: string) => void
   onAdd: () => void
   onDropFolders?: (paths: string[]) => void
   onPickRecent: (recent: RecentProject) => void
@@ -102,6 +133,237 @@ type Props = {
   onFocusProject?: (id: string) => void
   onRemoveFromFocus?: (id: string) => void
   onExitFocus?: () => void
+}
+
+function SpaceSwitcher({
+  spaces,
+  activeSpaceId,
+  onSelectSpace,
+  onOpenCreateSpace,
+  onOpenSpaceSettings,
+}: {
+  spaces: StoredSpace[]
+  activeSpaceId: string
+  onSelectSpace: (id: string) => void
+  onOpenCreateSpace: () => void
+  onOpenSpaceSettings: () => void
+}) {
+  const activeSpace =
+    spaces.find((space) => space.id === activeSpaceId) ?? spaces[0]
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Switch space"
+        className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
+      >
+        <Layers2 className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">
+          {activeSpace?.name ?? DEFAULT_SPACE_NAME}
+        </span>
+        <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[220px]">
+        <DropdownMenuRadioGroup
+          value={activeSpaceId}
+          onValueChange={onSelectSpace}
+        >
+          {spaces.map((space) => (
+            <DropdownMenuRadioItem key={space.id} value={space.id}>
+              {space.name}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onOpenSpaceSettings}>
+          <Settings className="size-3.5" />
+          Space Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onOpenCreateSpace}>
+          <Plus className="size-3.5" />
+          New Space
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function SpaceSettingsDialog({
+  open,
+  space,
+  onOpenChange,
+  onRename,
+  onDelete,
+}: {
+  open: boolean
+  space: StoredSpace | undefined
+  onOpenChange: (open: boolean) => void
+  onRename: (id: string, name: string) => boolean
+  onDelete: (id: string) => boolean
+}) {
+  const [name, setName] = useState("")
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setName(space?.name ?? "")
+      setConfirmDelete(false)
+    }
+  }, [open, space?.name])
+
+  const close = () => {
+    setName(space?.name ?? "")
+    setConfirmDelete(false)
+    onOpenChange(false)
+  }
+
+  const submit = () => {
+    const trimmed = name.trim()
+    if (!space || !trimmed) return
+    if (onRename(space.id, trimmed)) {
+      onOpenChange(false)
+    }
+  }
+
+  const unchanged = name.trim() === (space?.name ?? "")
+  const canDelete = !!space && space.id !== DEFAULT_SPACE_ID
+
+  const deleteSpace = () => {
+    if (!space || !canDelete) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    if (onDelete(space.id)) {
+      close()
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) onOpenChange(true)
+        else close()
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Space Settings</DialogTitle>
+          <DialogDescription>
+            Rename the current space or delete it.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            submit()
+          }}
+        >
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Space name"
+            aria-label="Space name"
+          />
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium">Delete Space</p>
+              <p className="text-xs text-muted-foreground">
+                Projects in this space will move back to the default space.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={deleteSpace}
+              disabled={!canDelete}
+              className="self-start"
+            >
+              <Trash2 data-icon="inline-start" />
+              {confirmDelete ? "Confirm Delete" : "Delete Space"}
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name.trim() || unchanged}>
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CreateSpaceDialog({
+  open,
+  onOpenChange,
+  onCreate,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCreate: (name: string) => void
+}) {
+  const [name, setName] = useState("")
+
+  const close = () => {
+    setName("")
+    onOpenChange(false)
+  }
+
+  const submit = () => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    onCreate(trimmed)
+    setName("")
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) onOpenChange(true)
+        else close()
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New Space</DialogTitle>
+          <DialogDescription>
+            Create a space to group related projects.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            submit()
+          }}
+        >
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Work, Personal, Client..."
+            aria-label="Space name"
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={close}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name.trim()}>
+              Create
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 type SidebarGroupHeaderProps = {
@@ -208,6 +470,9 @@ type RowProps = {
   onTogglePin: (path: string) => void
   compact: boolean
   dragDisabled: boolean
+  spaces: StoredSpace[]
+  onOpenCreateSpace: (projectId?: string) => void
+  onMoveProjectToSpace: (projectId: string, spaceId: string) => void
 }
 
 function ProjectSidebarRow({
@@ -232,6 +497,9 @@ function ProjectSidebarRow({
   onTogglePin,
   compact,
   dragDisabled,
+  spaces,
+  onOpenCreateSpace,
+  onMoveProjectToSpace,
 }: RowProps) {
   const [, setColorVersion] = useState(0)
   const {
@@ -314,7 +582,7 @@ function ProjectSidebarRow({
           <div className="flex min-w-0 items-center gap-1.5">
             <span
               className={cn(
-                "min-w-0 text-sm leading-tight font-medium truncate",
+                "min-w-0 truncate text-sm leading-tight font-medium",
                 compact && "flex-1"
               )}
             >
@@ -337,15 +605,18 @@ function ProjectSidebarRow({
             </span>
           )}
         </div>
-        {compact && changeCount > 0 && !hasWorkingAgent && !hasCompletedAgent && (
-          <span
-            title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
-            className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums transition-opacity group-hover:opacity-0"
-          >
-            <GitBranch className="size-3" />
-            {changeCount}
-          </span>
-        )}
+        {compact &&
+          changeCount > 0 &&
+          !hasWorkingAgent &&
+          !hasCompletedAgent && (
+            <span
+              title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
+              className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums transition-opacity group-hover:opacity-0"
+            >
+              <GitBranch className="size-3" />
+              {changeCount}
+            </span>
+          )}
         {hasCompletedAgent && (
           <span
             aria-label="Coding agent done"
@@ -435,10 +706,30 @@ function ProjectSidebarRow({
           <Focus className="size-3.5" />
           {isFocusMode ? "Remove from Focus" : "Focus Mode"}
         </ContextMenuItem>
-        <ContextMenuItem
-          onClick={() => onClose?.(p.id)}
-          disabled={!canClose}
-        >
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <FolderInput className="size-3.5" />
+            Move to Space
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="min-w-[180px]">
+            <ContextMenuRadioGroup
+              value={p.spaceId}
+              onValueChange={(spaceId) => onMoveProjectToSpace(p.id, spaceId)}
+            >
+              {spaces.map((space) => (
+                <ContextMenuRadioItem key={space.id} value={space.id}>
+                  {space.name}
+                </ContextMenuRadioItem>
+              ))}
+            </ContextMenuRadioGroup>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => onOpenCreateSpace(p.id)}>
+              <Plus className="size-3.5" />
+              New Space
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuItem onClick={() => onClose?.(p.id)} disabled={!canClose}>
           <X className="size-3.5" />
           Remove
         </ContextMenuItem>
@@ -509,8 +800,15 @@ function ProjectSidebarRow({
 export function ProjectSidebar({
   projects,
   activeId,
+  spaces,
+  activeSpaceId,
   recents,
   onSelect,
+  onSelectSpace,
+  onCreateSpace,
+  onRenameSpace,
+  onDeleteSpace,
+  onMoveProjectToSpace,
   onAdd,
   onDropFolders,
   onPickRecent,
@@ -534,6 +832,11 @@ export function ProjectSidebar({
   const paletteShortcut = useActionAccelerator("palette.open")
   const [isFileDragOver, setIsFileDragOver] = useState(false)
   const [filter, setFilter] = useState("")
+  const [createSpaceOpen, setCreateSpaceOpen] = useState(false)
+  const [spaceSettingsOpen, setSpaceSettingsOpen] = useState(false)
+  const [moveAfterCreateProjectId, setMoveAfterCreateProjectId] = useState<
+    string | null
+  >(null)
   const [pinnedOpen, setPinnedOpen] = useState(
     () => loadProjectSidebarGroupOpen().pinned
   )
@@ -698,122 +1001,221 @@ export function ProjectSidebar({
     onReorder?.(String(active.id), String(over.id))
   }
 
+  const openCreateSpaceDialog = (projectId?: string) => {
+    setMoveAfterCreateProjectId(projectId ?? null)
+    setCreateSpaceOpen(true)
+  }
+
+  const createSpaceFromDialog = (name: string) => {
+    const spaceId = onCreateSpace(name)
+    if (!spaceId) return
+    if (moveAfterCreateProjectId) {
+      onMoveProjectToSpace(moveAfterCreateProjectId, spaceId)
+    }
+    setMoveAfterCreateProjectId(null)
+    setCreateSpaceOpen(false)
+  }
+
+  const activeSpace =
+    spaces.find((space) => space.id === activeSpaceId) ?? spaces[0]
+
   return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={cn(
-        "flex h-full w-full shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]",
-        isFileDragOver && "bg-accent/30 ring-1 ring-primary/35 ring-inset"
-      )}
-    >
-      {/* Reserve the top-left area for the macOS traffic lights. A search
+    <>
+      <SpaceSettingsDialog
+        open={spaceSettingsOpen}
+        space={activeSpace}
+        onOpenChange={setSpaceSettingsOpen}
+        onRename={onRenameSpace}
+        onDelete={onDeleteSpace}
+      />
+      <CreateSpaceDialog
+        open={createSpaceOpen}
+        onOpenChange={(open) => {
+          setCreateSpaceOpen(open)
+          if (!open) setMoveAfterCreateProjectId(null)
+        }}
+        onCreate={createSpaceFromDialog}
+      />
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "flex h-full w-full shrink-0 flex-col border-r border-border bg-sidebar [-webkit-app-region:no-drag]",
+          isFileDragOver && "bg-accent/30 ring-1 ring-primary/35 ring-inset"
+        )}
+      >
+        {/* Reserve the top-left area for the macOS traffic lights. A search
           control sits just past them; the nav/collapse controls are pinned to
           the right edge. */}
-      <div className="flex h-[34px] shrink-0 items-center justify-between gap-0.5 pr-3 [-webkit-app-region:drag]">
-        <div className="flex items-center [-webkit-app-region:no-drag]">
-          <div className="w-[88px] shrink-0 self-stretch [-webkit-app-region:drag]" />
-          {onOpenCommandPalette && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={onOpenCommandPalette}
-                    aria-label="Search"
-                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
-                  >
-                    <Search className="size-3.5" />
-                  </button>
-                }
-              />
-              <TooltipContent>
-                {"Search" + (paletteShortcut ? ` (${paletteShortcut})` : "")}
-              </TooltipContent>
-            </Tooltip>
-          )}
+        <div className="flex h-[34px] shrink-0 items-center justify-between gap-0.5 pr-3 [-webkit-app-region:drag]">
+          <div className="flex items-center [-webkit-app-region:no-drag]">
+            <div className="w-[88px] shrink-0 self-stretch [-webkit-app-region:drag]" />
+            {onOpenCommandPalette && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={onOpenCommandPalette}
+                      aria-label="Search"
+                      className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+                    >
+                      <Search className="size-3.5" />
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {"Search" + (paletteShortcut ? ` (${paletteShortcut})` : "")}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5 [-webkit-app-region:no-drag]">
+            <HistoryNavButtons />
+            {onCollapse && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={onCollapse}
+                      aria-label="Collapse sidebar"
+                      className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:bg-foreground/15 hover:text-foreground"
+                    >
+                      <PanelLeft className="size-3.5" />
+                    </button>
+                  }
+                />
+                <TooltipContent>
+                  {"Collapse sidebar" +
+                    (collapseShortcut ? ` (${collapseShortcut})` : "")}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-0.5 [-webkit-app-region:no-drag]">
-          <HistoryNavButtons />
-        {onCollapse && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
+        <div className="shrink-0 px-3 pt-2 pb-2">
+          <div className="flex flex-col gap-2">
+            <SpaceSwitcher
+              spaces={spaces}
+              activeSpaceId={activeSpaceId}
+              onSelectSpace={onSelectSpace}
+              onOpenCreateSpace={() => openCreateSpaceDialog()}
+              onOpenSpaceSettings={() => setSpaceSettingsOpen(true)}
+            />
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault()
+                    setFilter("")
+                    e.currentTarget.blur()
+                  }
+                }}
+                placeholder="Filter projects"
+                aria-label="Filter projects"
+                // Use the sidebar's own border token (not the global --input) so the
+                // resting border stays subtle against the sidebar surface in every
+                // theme — some light themes set --input to pure white, which pops on
+                // the grey sidebar.
+                className="h-7 border-sidebar-border pl-7 text-xs md:text-xs"
+              />
+              {filter && (
                 <button
                   type="button"
-                  onClick={onCollapse}
-                  aria-label="Collapse sidebar"
-                  className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:bg-foreground/15 hover:text-foreground"
+                  onClick={() => setFilter("")}
+                  aria-label="Clear filter"
+                  className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
                 >
-                  <PanelLeft className="size-3.5" />
+                  <X className="size-3" />
                 </button>
-              }
-            />
-            <TooltipContent>
-              {"Collapse sidebar" +
-                (collapseShortcut ? ` (${collapseShortcut})` : "")}
-            </TooltipContent>
-          </Tooltip>
-        )}
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="shrink-0 px-3 pt-2 pb-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault()
-                setFilter("")
-                e.currentTarget.blur()
-              }
-            }}
-            placeholder="Filter projects"
-            aria-label="Filter projects"
-            // Use the sidebar's own border token (not the global --input) so the
-            // resting border stays subtle against the sidebar surface in every
-            // theme — some light themes set --input to pure white, which pops on
-            // the grey sidebar.
-            className="h-7 border-sidebar-border pl-7 text-xs md:text-xs"
-          />
-          {filter && (
-            <button
-              type="button"
-              onClick={() => setFilter("")}
-              aria-label="Clear filter"
-              className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-3 pb-3">
+          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+            <SortableContext
+              items={visibleProjects.map((p) => p.id)}
+              strategy={verticalListSortingStrategy}
             >
-              <X className="size-3" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-3 pb-3">
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <SortableContext
-            items={visibleProjects.map((p) => p.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            {pinnedProjects.length > 0 && (
-              <>
-                <SidebarGroupHeader
-                  label="Pinned"
-                  isOpen={pinnedOpen}
-                  onToggle={() => setPinnedOpen((open) => !open)}
-                />
-                {pinnedOpen &&
-                  pinnedProjects.map((p, i) => (
+              {pinnedProjects.length > 0 && (
+                <>
+                  <SidebarGroupHeader
+                    label="Pinned"
+                    isOpen={pinnedOpen}
+                    onToggle={() => setPinnedOpen((open) => !open)}
+                  />
+                  {pinnedOpen &&
+                    pinnedProjects.map((p, i) => (
+                      <ProjectSidebarRow
+                        key={`${p.id}-${isFocusMode}`}
+                        index={i}
+                        project={p}
+                        total={projects.length}
+                        isActive={p.id === activeId}
+                        canClose={!!onClose}
+                        hasItemsBelow={i < visibleProjects.length - 1}
+                        onSelect={onSelect}
+                        onClose={onClose}
+                        onCloseAllTerminals={onCloseAllTerminals}
+                        onCloseOthers={onCloseOthers}
+                        onCloseToRight={onCloseToRight}
+                        onOpenInVSCode={onOpenInVSCode}
+                        onRevealInFinder={onRevealInFinder}
+                        isFocusMode={isFocusMode}
+                        animate={animateFocus}
+                        onFocusProject={onFocusProject}
+                        onRemoveFromFocus={onRemoveFromFocus}
+                        isPinned={true}
+                        onTogglePin={togglePin}
+                        compact={compact}
+                        dragDisabled={dragDisabled}
+                        spaces={spaces}
+                        onOpenCreateSpace={openCreateSpaceDialog}
+                        onMoveProjectToSpace={onMoveProjectToSpace}
+                      />
+                    ))}
+                </>
+              )}
+              <SidebarGroupHeader
+                label="Projects"
+                isOpen={projectsOpen}
+                onToggle={() => setProjectsOpen((open) => !open)}
+                action={
+                  <div className="flex items-center gap-0.5">
+                    <ProjectSortMenu
+                      mode={sortMode}
+                      onChange={changeSortMode}
+                    />
+                    <AddProjectMenu
+                      variant="sidebar-icon"
+                      recents={recents}
+                      onOpenDialog={onAdd}
+                      onPickRecent={onPickRecent}
+                      onRemoveRecent={onRemoveRecent}
+                      compact={compact}
+                    />
+                  </div>
+                }
+              />
+              {projectsOpen &&
+                unpinnedProjects.map((p, i) => {
+                  const visibleIndex =
+                    (pinnedOpen ? pinnedProjects.length : 0) + i
+                  return (
                     <ProjectSidebarRow
                       key={`${p.id}-${isFocusMode}`}
-                      index={i}
+                      index={visibleIndex}
                       project={p}
                       total={projects.length}
                       isActive={p.id === activeId}
                       canClose={!!onClose}
-                      hasItemsBelow={i < visibleProjects.length - 1}
+                      hasItemsBelow={visibleIndex < visibleProjects.length - 1}
                       onSelect={onSelect}
                       onClose={onClose}
                       onCloseAllTerminals={onCloseAllTerminals}
@@ -825,107 +1227,61 @@ export function ProjectSidebar({
                       animate={animateFocus}
                       onFocusProject={onFocusProject}
                       onRemoveFromFocus={onRemoveFromFocus}
-                      isPinned={true}
+                      isPinned={false}
                       onTogglePin={togglePin}
                       compact={compact}
                       dragDisabled={dragDisabled}
+                      spaces={spaces}
+                      onOpenCreateSpace={openCreateSpaceDialog}
+                      onMoveProjectToSpace={onMoveProjectToSpace}
                     />
-                  ))}
-              </>
-            )}
-            <SidebarGroupHeader
-              label="Projects"
-              isOpen={projectsOpen}
-              onToggle={() => setProjectsOpen((open) => !open)}
-              action={
-                <div className="flex items-center gap-0.5">
-                  <ProjectSortMenu mode={sortMode} onChange={changeSortMode} />
-                  <AddProjectMenu
-                    variant="sidebar-icon"
-                    recents={recents}
-                    onOpenDialog={onAdd}
-                    onPickRecent={onPickRecent}
-                    onRemoveRecent={onRemoveRecent}
-                    compact={compact}
-                  />
-                </div>
-              }
-            />
-            {projectsOpen &&
-              unpinnedProjects.map((p, i) => {
-                const visibleIndex =
-                  (pinnedOpen ? pinnedProjects.length : 0) + i
-                return (
-                  <ProjectSidebarRow
-                    key={`${p.id}-${isFocusMode}`}
-                    index={visibleIndex}
-                    project={p}
-                    total={projects.length}
-                    isActive={p.id === activeId}
-                    canClose={!!onClose}
-                    hasItemsBelow={visibleIndex < visibleProjects.length - 1}
-                    onSelect={onSelect}
-                    onClose={onClose}
-                    onCloseAllTerminals={onCloseAllTerminals}
-                    onCloseOthers={onCloseOthers}
-                    onCloseToRight={onCloseToRight}
-                    onOpenInVSCode={onOpenInVSCode}
-                    onRevealInFinder={onRevealInFinder}
-                    isFocusMode={isFocusMode}
-                    animate={animateFocus}
-                    onFocusProject={onFocusProject}
-                    onRemoveFromFocus={onRemoveFromFocus}
-                    isPinned={false}
-                    onTogglePin={togglePin}
-                    compact={compact}
-                    dragDisabled={dragDisabled}
-                  />
-                )
-              })}
-          </SortableContext>
-        </DndContext>
-        {isFocusMode && (
-          <button
-            type="button"
-            onClick={onExitFocus}
-            aria-label="Exit focus mode"
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-sm px-2 text-left text-sm leading-tight font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
-              compact ? "py-1.5" : "py-2",
-              animateFocus &&
-                "animate-in duration-200 fade-in slide-in-from-left-2"
-            )}
-          >
-            <span
+                  )
+                })}
+            </SortableContext>
+          </DndContext>
+          {isFocusMode && (
+            <button
+              type="button"
+              onClick={onExitFocus}
+              aria-label="Exit focus mode"
               className={cn(
-                "grid shrink-0 place-items-center rounded-sm bg-sidebar-accent",
-                compact ? "size-5" : "size-6"
+                "flex w-full items-center gap-2.5 rounded-sm px-2 text-left text-sm leading-tight font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
+                compact ? "py-1.5" : "py-2",
+                animateFocus &&
+                  "animate-in duration-200 fade-in slide-in-from-left-2"
               )}
             >
-              <Focus className="size-3.5" />
-            </span>
-            <span className="truncate">Exit Focus Mode</span>
-          </button>
-        )}
-      </div>
-      <div className="shrink-0 px-3 pt-1.5 pb-3">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                aria-label="Open settings"
-                className="flex h-7 w-fit items-center gap-2 rounded-sm px-2 text-left text-sm leading-tight font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+              <span
+                className={cn(
+                  "grid shrink-0 place-items-center rounded-sm bg-sidebar-accent",
+                  compact ? "size-5" : "size-6"
+                )}
               >
-                <Settings className="size-3.5 shrink-0" />
-                <span className="truncate">Settings</span>
-              </button>
-            }
-          />
-          <TooltipContent>Settings</TooltipContent>
-        </Tooltip>
+                <Focus className="size-3.5" />
+              </span>
+              <span className="truncate">Exit Focus Mode</span>
+            </button>
+          )}
+        </div>
+        <div className="shrink-0 px-3 pt-1.5 pb-3">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  aria-label="Open settings"
+                  className="flex h-7 w-fit items-center gap-2 rounded-sm px-2 text-left text-sm leading-tight font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+                >
+                  <Settings className="size-3.5 shrink-0" />
+                  <span className="truncate">Settings</span>
+                </button>
+              }
+            />
+            <TooltipContent>Settings</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
-    </div>
+    </>
   )
 }

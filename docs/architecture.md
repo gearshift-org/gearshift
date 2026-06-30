@@ -31,6 +31,12 @@ Terminal panes detect supported coding agents by asking the Electron main proces
 
 The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications. For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
 
+## Project spaces
+
+Spaces are local project metadata stored with the renderer project snapshot in `gearshift.projects` and `gearshift.spaces`. A fresh install always has the built-in `Personal` space (`space-personal`), and older projects without a `spaceId` hydrate into that space automatically.
+
+The project sidebar filters projects by the active space before applying focus mode, text filtering, pinned grouping, and manual/recent sorting. Creating a space selects it immediately, even before it has projects. Space settings can rename the active space, with blank and duplicate names rejected. The default space cannot be deleted; deleting another space moves its projects back to the default space before removing it. Moving a project between spaces only changes the project's `spaceId`; terminal panes, tabs, notes, chat history, and project IDs stay unchanged. Workspace panes stay mounted across spaces, and space switches optimistically update the active project while URL navigation catches up. A `Cycle Spaces` keybinding action can switch to the next space in sidebar order, but it is unset by default.
+
 ### Chat history redaction
 
 User prompts are captured in `electron/inputCapture.ts` and saved through `electron/db/appDb.ts`. `appendMessage` redacts likely secrets before writing to `gearshift.db`, and history reads redact again before returning rows so older stored messages are not shown with raw secrets. The redactor masks credential-looking fields (`password`, `api_key`, `token`, etc.), `Authorization` headers, and common key formats with `********`. Stored history bodies are capped at 500 characters, and users can delete individual history items or clear a whole session/project.
@@ -53,12 +59,12 @@ agent|GEARSHIFT_SESSION_ID|event|body|agentSessionId
 
 Where each agent's id is sourced (all in `electron/agentHooks.ts`):
 
-| Agent | Source | Notes |
-|-------|--------|-------|
-| **Claude** | bash hook reads stdin JSON, greps `"session_id"` | Reliable. Hook JSON includes `session_id` on every event. |
-| **Codex** | same bash hook (`"session_id"` grep) | Best-effort — works if Codex's hook JSON uses the same key. |
-| **OpenCode** | plugin's `event.properties.sessionID` / `info.id` (the root, non-child session) | Reliable. Format `ses_…`. |
-| **pi** | `ctx.sessionManager.getSessionId()` on the handler context (NOT the event payload) | pi events carry no session id; it lives on the `ExtensionContext`. Confirmed via pi's `dist/core/extensions/types.d.ts` → `ExtensionContext.sessionManager: ReadonlySessionManager`. |
+| Agent        | Source                                                                             | Notes                                                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Claude**   | bash hook reads stdin JSON, greps `"session_id"`                                   | Reliable. Hook JSON includes `session_id` on every event.                                                                                                                            |
+| **Codex**    | same bash hook (`"session_id"` grep)                                               | Best-effort — works if Codex's hook JSON uses the same key.                                                                                                                          |
+| **OpenCode** | plugin's `event.properties.sessionID` / `info.id` (the root, non-child session)    | Reliable. Format `ses_…`.                                                                                                                                                            |
+| **pi**       | `ctx.sessionManager.getSessionId()` on the handler context (NOT the event payload) | pi events carry no session id; it lives on the `ExtensionContext`. Confirmed via pi's `dist/core/extensions/types.d.ts` → `ExtensionContext.sessionManager: ReadonlySessionManager`. |
 
 The shared bash hook reads a **bounded** slice of stdin (`head -c 65536`) so capturing the id on every event (including `start`/`UserPromptSubmit`) never blocks on huge `Stop` payloads. The id is only populated once an agent fires its first `start` hook (i.e. on prompt submit) — merely opening the TUI does not set it.
 
@@ -66,12 +72,12 @@ The shared bash hook reads a **bounded** slice of stdin (`head -c 65536`) so cap
 
 The stored `agentSessionId` is used to resolve a human-readable **session title** that becomes the pane/tab name. `electron/agentSessionTitle.ts` (`getAgentSessionTitle`, exposed over IPC as `term:agentSessionTitle`) locates the agent's session file by id and returns a title in two tiers:
 
-| Agent | Title source |
-|-------|--------------|
-| **Claude** | last `"type":"ai-title"` line in `~/.claude/projects/<cwd>/<id>.jsonl` |
-| **OpenCode** | `"title"` field in `~/.local/share/opencode/storage/session/<projectID>/<id>.json` |
-| **Codex** | first real user message in `~/.codex/sessions/**/rollout-…-<id>.jsonl` (skips the injected `AGENTS.md`/instructions envelope) |
-| **pi** | first user message in `~/.pi/agent/sessions/<cwd>/<ts>_<id>.jsonl` |
+| Agent        | Title source                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Claude**   | last `"type":"ai-title"` line in `~/.claude/projects/<cwd>/<id>.jsonl`                                                        |
+| **OpenCode** | `"title"` field in `~/.local/share/opencode/storage/session/<projectID>/<id>.json`                                            |
+| **Codex**    | first real user message in `~/.codex/sessions/**/rollout-…-<id>.jsonl` (skips the injected `AGENTS.md`/instructions envelope) |
+| **pi**       | first user message in `~/.pi/agent/sessions/<cwd>/<ts>_<id>.jsonl`                                                            |
 
 Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The title precedence in `terminalName.ts` is: **`customName` (explicit user name) → `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. So a user-set name always wins; otherwise the agent's own title replaces the generic TUI title (e.g. "✳ Claude Code").
 

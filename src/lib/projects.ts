@@ -61,7 +61,8 @@ function parseStoredAgentStatus(value: unknown): StoredAgentStatus | undefined {
   if (v.completed === true) stored.completed = true
   if (typeof v.completedAt === "number") stored.completedAt = v.completedAt
   if (v.needsAttention === true) stored.needsAttention = true
-  if (typeof v.workStartedAt === "number") stored.workStartedAt = v.workStartedAt
+  if (typeof v.workStartedAt === "number")
+    stored.workStartedAt = v.workStartedAt
   if (typeof v.lastSubmitAt === "number") stored.lastSubmitAt = v.lastSubmitAt
   return Object.keys(stored).length > 0 ? stored : undefined
 }
@@ -119,6 +120,7 @@ export type StoredProject = {
   id: string
   name: string
   path: string
+  spaceId?: string
   updatedAt?: number
   tabs?: StoredTab[]
   activeTabId?: string
@@ -128,8 +130,20 @@ export type StoredProject = {
   agentNeedsAttention?: boolean
 }
 
+export type StoredSpace = {
+  id: string
+  name: string
+  createdAt: number
+  updatedAt?: number
+}
+
+export const DEFAULT_SPACE_ID = "space-personal"
+export const DEFAULT_SPACE_NAME = "Personal"
+
 const KEY = "gearshift.projects"
 const ACTIVE_KEY = "gearshift.activeProjectId"
+const SPACES_KEY = "gearshift.spaces"
+const ACTIVE_SPACE_KEY = "gearshift.activeSpaceId"
 const LAST_LOCATION_KEY = "gearshift.lastLocation"
 const LAST_AGENT_TERMINAL_KEY = "gearshift.lastAgentTerminal"
 const RECENTS_KEY = "gearshift.recentProjects"
@@ -150,6 +164,92 @@ export function stableProjectId(projectPath: string): string {
     hashB = Math.imul(hashB, 0x811c9dc5)
   }
   return `project-${(hashA >>> 0).toString(36)}${(hashB >>> 0).toString(36)}`
+}
+
+function defaultSpace(): StoredSpace {
+  return {
+    id: DEFAULT_SPACE_ID,
+    name: DEFAULT_SPACE_NAME,
+    createdAt: 0,
+  }
+}
+
+function normalizeSpaces(value: unknown): StoredSpace[] {
+  const defaultEntry = defaultSpace()
+  const spaces: StoredSpace[] = []
+  const seen = new Set<string>()
+  const pushSpace = (space: StoredSpace) => {
+    if (seen.has(space.id)) return
+    seen.add(space.id)
+    spaces.push(space)
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        typeof (item as StoredSpace).id !== "string" ||
+        typeof (item as StoredSpace).name !== "string"
+      ) {
+        continue
+      }
+      const id = (item as StoredSpace).id.trim()
+      const name = (item as StoredSpace).name.trim()
+      if (!id || !name) continue
+      pushSpace({
+        id,
+        name,
+        createdAt:
+          typeof (item as StoredSpace).createdAt === "number"
+            ? (item as StoredSpace).createdAt
+            : Date.now(),
+        ...(typeof (item as StoredSpace).updatedAt === "number"
+          ? { updatedAt: (item as StoredSpace).updatedAt }
+          : {}),
+      })
+    }
+  }
+
+  if (!seen.has(DEFAULT_SPACE_ID)) {
+    return [defaultEntry, ...spaces]
+  }
+
+  return spaces
+}
+
+export function loadSpaces(): StoredSpace[] {
+  try {
+    const raw = store.get(SPACES_KEY)
+    if (!raw) return [defaultSpace()]
+    return normalizeSpaces(JSON.parse(raw))
+  } catch {
+    return [defaultSpace()]
+  }
+}
+
+export function saveSpaces(spaces: StoredSpace[]): void {
+  store.set(SPACES_KEY, JSON.stringify(normalizeSpaces(spaces)))
+}
+
+export function loadActiveSpaceId(spaces = loadSpaces()): string {
+  try {
+    const raw = store.get(ACTIVE_SPACE_KEY)
+    return raw && spaces.some((space) => space.id === raw)
+      ? raw
+      : DEFAULT_SPACE_ID
+  } catch {
+    return DEFAULT_SPACE_ID
+  }
+}
+
+export function saveActiveSpaceId(id: string): void {
+  try {
+    if (id) store.set(ACTIVE_SPACE_KEY, id)
+    else store.remove(ACTIVE_SPACE_KEY)
+  } catch {
+    // ignore
+  }
 }
 
 export type PaletteRecents = {
@@ -298,6 +398,10 @@ export function loadProjects(): StoredProject[] {
       )
       .map((p) => ({
         ...p,
+        spaceId:
+          typeof p.spaceId === "string" && p.spaceId
+            ? p.spaceId
+            : DEFAULT_SPACE_ID,
         ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
         tabs: Array.isArray(p.tabs)
           ? p.tabs
@@ -352,7 +456,9 @@ export function loadProjects(): StoredProject[] {
                             ? { customName: pp.customName }
                             : {}),
                           ...(parseTerminalAgentName(pp.agentName)
-                            ? { agentName: parseTerminalAgentName(pp.agentName) }
+                            ? {
+                                agentName: parseTerminalAgentName(pp.agentName),
+                              }
                             : {}),
                           ...(typeof pp.agentSessionId === "string"
                             ? { agentSessionId: pp.agentSessionId }

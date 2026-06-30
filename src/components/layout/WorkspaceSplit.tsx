@@ -24,6 +24,7 @@ const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
 const SIDEBAR_WIDTH_TRANSITION_MS = 200
 const TERMINAL_RESIZE_SETTLE_MS = 120
+const BACKGROUND_GIT_PREFETCH_STALE_MS = 30_000
 
 function clampWidth(n: number): number {
   return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, n))
@@ -166,6 +167,7 @@ export function WorkspaceSplit({
       void queryClient.prefetchQuery({
         queryKey: gitQueryKey(project.path),
         queryFn: () => fetchGitQueryData(project.path),
+        staleTime: BACKGROUND_GIT_PREFETCH_STALE_MS,
       })
     }
   }, [activeProjectId, projects, queryClient])

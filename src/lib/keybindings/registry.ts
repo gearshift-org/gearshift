@@ -11,6 +11,7 @@ export type ActionId =
   | "terminal.copyPath"
   | "nav.back"
   | "nav.forward"
+  | "spaces.cycle"
   | "settings.open"
   | "titlebar.togglePin"
   | "theme.cycle"
@@ -93,7 +94,8 @@ export const ACTIONS: readonly ActionDef[] = [
   {
     id: "terminal.copyPath",
     label: "Copy Terminal Path",
-    description: "Copy the active terminal's current directory to the clipboard",
+    description:
+      "Copy the active terminal's current directory to the clipboard",
     defaultAccelerator: "CmdOrCtrl+Shift+C",
     scope: "renderer",
   },
@@ -109,6 +111,13 @@ export const ACTIONS: readonly ActionDef[] = [
     label: "Navigate Forward",
     description: "Go forward to the next project/tab in history.",
     defaultAccelerator: "CmdOrCtrl+Shift+ArrowRight",
+    scope: "renderer",
+  },
+  {
+    id: "spaces.cycle",
+    label: "Cycle Spaces",
+    description: "Switch to the next space in the project sidebar.",
+    defaultAccelerator: "",
     scope: "renderer",
   },
   {

@@ -8,7 +8,10 @@ import {
 } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
-import { acceleratorLabel, matchesAccelerator } from "@/lib/keybindings/registry"
+import {
+  acceleratorLabel,
+  matchesAccelerator,
+} from "@/lib/keybindings/registry"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { toast } from "sonner"
 import { PanelLeft, PanelRight, Search, X } from "lucide-react"
@@ -56,7 +59,9 @@ import type {
   WorkspaceTab,
 } from "./types"
 import {
+  DEFAULT_SPACE_ID,
   loadActiveProjectId,
+  loadActiveSpaceId,
   loadLastLocation,
   loadAutoHideTitleBar,
   loadOpenFilesInOwnTab,
@@ -67,6 +72,7 @@ import {
   loadProjectSidebarOpen,
   loadProjectSidebarWidth,
   loadRecentProjects,
+  loadSpaces,
   loadRightSidebarTab,
   loadSidebarOpen,
   pushRecentPaletteFile,
@@ -74,6 +80,7 @@ import {
   pushRecentPaletteTab,
   pushRecentProject,
   saveActiveProjectId,
+  saveActiveSpaceId,
   saveAutoHideTitleBar,
   saveLastAgentTerminals,
   saveFocusedProjectIds,
@@ -83,6 +90,7 @@ import {
   saveRecentProjects,
   saveRightSidebarTab,
   saveSidebarOpen,
+  saveSpaces,
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
   OPEN_FILES_IN_OWN_TAB_EVENT,
@@ -93,6 +101,7 @@ import {
   type RecentProject,
   type RightSidebarTab,
   type StoredProject,
+  type StoredSpace,
   type StoredTab,
 } from "@/lib/projects"
 import { parseSettingsSection } from "@/routes/settings/settingsSections"
@@ -106,7 +115,16 @@ import { cn } from "@/lib/utils"
 
 type ProjectIdMigration = { from: string; to: string }
 
-function hydrateProjectSnapshot(): {
+function projectSpaceId(
+  spaceId: string | undefined,
+  spaces: StoredSpace[]
+): string {
+  return spaceId && spaces.some((space) => space.id === spaceId)
+    ? spaceId
+    : DEFAULT_SPACE_ID
+}
+
+function hydrateProjectSnapshot(spaces = loadSpaces()): {
   projects: Project[]
   migrations: ProjectIdMigration[]
 } {
@@ -122,6 +140,7 @@ function hydrateProjectSnapshot(): {
         id,
         name: p.name,
         path: p.path,
+        spaceId: projectSpaceId(p.spaceId, spaces),
         ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
         tabs: (p.tabs ?? []).flatMap((t): WorkspaceTab[] => {
           // Preview tabs (file/diff/commit) restore from their descriptor.
@@ -234,10 +253,7 @@ const PROJECT_SIDEBAR_DEFAULT_PX = 248
 const PROJECT_SIDEBAR_MIN_PX = 180
 const PROJECT_SIDEBAR_MAX_PX = 480
 function clampProjectSidebarWidth(n: number): number {
-  return Math.min(
-    PROJECT_SIDEBAR_MAX_PX,
-    Math.max(PROJECT_SIDEBAR_MIN_PX, n)
-  )
+  return Math.min(PROJECT_SIDEBAR_MAX_PX, Math.max(PROJECT_SIDEBAR_MIN_PX, n))
 }
 // Must match the wrapper's `duration-200` margin transition below.
 const PROJECT_SIDEBAR_TRANSITION_MS = 200
@@ -416,6 +432,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
       id: p.id,
       name: p.name,
       path: p.path,
+      spaceId: p.spaceId || DEFAULT_SPACE_ID,
       ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
       // Persist whatever tab is active — preview tabs included — so reload
       // returns to it.
@@ -589,10 +606,18 @@ export function AppShell() {
   }
   const routeProjectId = params.projectId ?? null
   const routeTabId = params.tabId ?? null
-  const initialProjectSnapshot = useMemo(() => hydrateProjectSnapshot(), [])
+  const initialSpaces = useMemo(() => loadSpaces(), [])
+  const initialProjectSnapshot = useMemo(
+    () => hydrateProjectSnapshot(initialSpaces),
+    [initialSpaces]
+  )
 
   const [projects, setProjects] = useState<Project[]>(
     () => initialProjectSnapshot.projects
+  )
+  const [spaces, setSpaces] = useState<StoredSpace[]>(() => initialSpaces)
+  const [activeSpaceId, setActiveSpaceId] = useState(() =>
+    loadActiveSpaceId(initialSpaces)
   )
   const [recents, setRecents] = useState<RecentProject[]>(() =>
     loadRecentProjects()
@@ -612,7 +637,9 @@ export function AppShell() {
   )
   const [projectSidebarWidth, setProjectSidebarWidth] = useState(() => {
     const stored = loadProjectSidebarWidth()
-    return stored ? clampProjectSidebarWidth(stored) : PROJECT_SIDEBAR_DEFAULT_PX
+    return stored
+      ? clampProjectSidebarWidth(stored)
+      : PROJECT_SIDEBAR_DEFAULT_PX
   })
   const projectSidebarPanelRef = useRef<HTMLDivElement>(null)
   const projectSidebarDragRef = useRef<{
@@ -651,6 +678,10 @@ export function AppShell() {
   const [openingTerminalTabId, setOpeningTerminalTabId] = useState<
     string | null
   >(null)
+  const [pendingNavigation, setPendingNavigation] = useState<{
+    projectId: string | null
+    tabId?: string
+  } | null>(null)
 
   useEffect(() => {
     if (initialProjectSnapshot.migrations.length === 0) return
@@ -665,13 +696,16 @@ export function AppShell() {
   useEffect(
     () =>
       store.onReady(() => {
-        const snapshot = hydrateProjectSnapshot()
+        const storedSpaces = loadSpaces()
+        const snapshot = hydrateProjectSnapshot(storedSpaces)
         const hydrated = snapshot.projects
         if (snapshot.migrations.length > 0) {
           saveProjects(serializeProjects(hydrated))
           void window.term.history.migrateProjectIds(snapshot.migrations)
         }
         setProjects(hydrated)
+        setSpaces(storedSpaces)
+        setActiveSpaceId(loadActiveSpaceId(storedSpaces))
         setRecents(loadRecentProjects())
         setPaletteRecents(loadPaletteRecents())
         setSidebarOpen(loadSidebarOpen())
@@ -702,7 +736,9 @@ export function AppShell() {
         if (lastLocation?.pathname === "/settings" && !params.projectId) {
           void navigate({
             to: "/settings",
-            search: { section: parseSettingsSection(lastLocation.search.section) },
+            search: {
+              section: parseSettingsSection(lastLocation.search.section),
+            },
             replace: true,
           })
         } else if (validStoredActiveId && !params.projectId) {
@@ -753,6 +789,12 @@ export function AppShell() {
   useEffect(() => {
     saveSidebarOpen(sidebarOpen)
   }, [sidebarOpen])
+  useEffect(() => {
+    saveSpaces(spaces)
+  }, [spaces])
+  useEffect(() => {
+    saveActiveSpaceId(activeSpaceId)
+  }, [activeSpaceId])
   // Native window drags can dispatch dozens of layout resizes per second.
   // Mark that short window so terminals skip expensive per-frame refits and do
   // a single settle fit, keeping the fixed-width right sidebar from appearing
@@ -913,10 +955,33 @@ export function AppShell() {
     projects.some((p) => p.id === restoredActiveProjectId)
       ? restoredActiveProjectId
       : null
+  const routedProject = routeProjectId
+    ? projects.find((p) => p.id === routeProjectId)
+    : undefined
+  const pendingProject = pendingNavigation?.projectId
+    ? projects.find((p) => p.id === pendingNavigation.projectId)
+    : undefined
+  const hasPendingNavigation = pendingNavigation !== null
+  const visibleSpaceId =
+    pendingProject?.spaceId ??
+    (hasPendingNavigation && pendingNavigation.projectId === null
+      ? activeSpaceId
+      : (routedProject?.spaceId ?? activeSpaceId))
+  const activeSpaceProjects = useMemo(
+    () => projects.filter((p) => p.spaceId === visibleSpaceId),
+    [projects, visibleSpaceId]
+  )
   const activeProjectId =
-    (routeProjectId && projects.some((p) => p.id === routeProjectId)
-      ? routeProjectId
-      : (restoredProjectId ?? projects[0]?.id)) ?? ""
+    (pendingProject
+      ? pendingProject.id
+      : hasPendingNavigation && pendingNavigation.projectId === null
+        ? ""
+        : routedProject
+          ? routedProject.id
+          : restoredProjectId &&
+              activeSpaceProjects.some((p) => p.id === restoredProjectId)
+            ? restoredProjectId
+            : activeSpaceProjects[0]?.id) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
 
@@ -961,6 +1026,13 @@ export function AppShell() {
 
   const activeTabId = (() => {
     if (!activeProject) return ""
+    if (
+      pendingProject &&
+      pendingNavigation?.tabId &&
+      activeProject.tabs.some((t) => t.id === pendingNavigation.tabId)
+    ) {
+      return pendingNavigation.tabId
+    }
     if (routeTabId && activeProject.tabs.some((t) => t.id === routeTabId)) {
       return routeTabId
     }
@@ -981,6 +1053,7 @@ export function AppShell() {
   const navigateToProject = useCallback(
     (id: string | null, tabId?: string) => {
       if (stateRestored) saveActiveProjectId(id ?? "")
+      setPendingNavigation({ projectId: id, tabId })
       // Mark the switch as a non-urgent transition so React renders the new
       // workspace tree (all the kept-alive terminals re-evaluating isActive)
       // without blocking the main thread. Keeps sidebar animations like the
@@ -1005,6 +1078,20 @@ export function AppShell() {
     },
     [navigate, stateRestored]
   )
+
+  useEffect(() => {
+    if (!pendingNavigation) return
+    const currentProjectId = routeProjectId ?? null
+    if (currentProjectId !== pendingNavigation.projectId) return
+    if (
+      pendingNavigation.projectId &&
+      pendingNavigation.tabId &&
+      routeTabId !== pendingNavigation.tabId
+    ) {
+      return
+    }
+    setPendingNavigation(null)
+  }, [pendingNavigation, routeProjectId, routeTabId])
 
   const navigateToTab = useCallback(
     (tabId: string) => {
@@ -1415,6 +1502,7 @@ export function AppShell() {
     async (path: string, name?: string) => {
       const existing = projectsRef.current.find((p) => p.path === path)
       if (existing) {
+        setActiveSpaceId(existing.spaceId)
         if (focusedProjectIdsRef.current.length > 0)
           setFocusedProjectIds((ids) =>
             ids.includes(existing.id) ? ids : [...ids, existing.id]
@@ -1432,6 +1520,7 @@ export function AppShell() {
           id,
           name: resolvedName,
           path,
+          spaceId: visibleSpaceId,
           updatedAt: Date.now(),
           tabs: [
             {
@@ -1457,7 +1546,7 @@ export function AppShell() {
         sessionId: paneId,
       })
     },
-    [navigateToProject, resolvedTheme]
+    [navigateToProject, resolvedTheme, visibleSpaceId]
   )
 
   useEffect(() => {
@@ -1507,8 +1596,149 @@ export function AppShell() {
 
   const selectProject = (id: string) => {
     const p = projects.find((x) => x.id === id)
+    if (p?.spaceId) setActiveSpaceId(p.spaceId)
     navigateToProject(id, p?.activeTabId || undefined)
   }
+
+  const createSpace = useCallback(
+    (name?: string): string | null => {
+      const trimmed =
+        name === undefined
+          ? (() => {
+              const existingNames = new Set(
+                spaces.map((space) => space.name.toLowerCase())
+              )
+              const base = "New Space"
+              if (!existingNames.has(base.toLowerCase())) return base
+              let index = 2
+              while (existingNames.has(`${base} ${index}`.toLowerCase())) {
+                index += 1
+              }
+              return `${base} ${index}`
+            })()
+          : name.trim()
+      if (!trimmed) return null
+      const existing = spaces.find(
+        (space) => space.name.toLowerCase() === trimmed.toLowerCase()
+      )
+      if (existing) {
+        setActiveSpaceId(existing.id)
+        const nextProject = projects.find((p) => p.spaceId === existing.id)
+        navigateToProject(nextProject?.id ?? null, nextProject?.activeTabId)
+        toast.info(`Switched to ${existing.name}`)
+        return existing.id
+      }
+      const id = `space-${makeId()}`
+      const space: StoredSpace = {
+        id,
+        name: trimmed,
+        createdAt: Date.now(),
+      }
+      setSpaces((prev) => [...prev, space])
+      setActiveSpaceId(id)
+      navigateToProject(null)
+      return id
+    },
+    [navigateToProject, projects, spaces]
+  )
+
+  const renameSpace = useCallback(
+    (id: string, name: string): boolean => {
+      const trimmed = name.trim()
+      if (!trimmed) return false
+      const current = spaces.find((space) => space.id === id)
+      if (!current) return false
+      if (current.name === trimmed) return true
+      const duplicate = spaces.some(
+        (space) =>
+          space.id !== id && space.name.toLowerCase() === trimmed.toLowerCase()
+      )
+      if (duplicate) {
+        toast.error("A space with that name already exists")
+        return false
+      }
+      setSpaces((prev) =>
+        prev.map((space) =>
+          space.id === id ? { ...space, name: trimmed } : space
+        )
+      )
+      return true
+    },
+    [spaces]
+  )
+
+  const deleteSpace = useCallback(
+    (id: string): boolean => {
+      const space = spaces.find((candidate) => candidate.id === id)
+      if (!space) return false
+      if (id === DEFAULT_SPACE_ID) {
+        toast.error("The default space cannot be deleted")
+        return false
+      }
+
+      const nextProjects = projects.map((project) =>
+        project.spaceId === id
+          ? { ...project, spaceId: DEFAULT_SPACE_ID }
+          : project
+      )
+      const nextProject =
+        nextProjects.find(
+          (project) =>
+            project.id === activeProjectId &&
+            project.spaceId === DEFAULT_SPACE_ID
+        ) ??
+        nextProjects.find((project) => project.spaceId === DEFAULT_SPACE_ID) ??
+        null
+
+      setProjects(nextProjects)
+      setSpaces((prev) => prev.filter((candidate) => candidate.id !== id))
+      setActiveSpaceId(DEFAULT_SPACE_ID)
+      navigateToProject(nextProject?.id ?? null, nextProject?.activeTabId)
+      toast.success(`Deleted ${space.name}`)
+      return true
+    },
+    [activeProjectId, navigateToProject, projects, spaces]
+  )
+
+  const selectSpace = useCallback(
+    (id: string) => {
+      if (!spaces.some((space) => space.id === id)) return
+      setActiveSpaceId(id)
+      if (activeProject?.spaceId === id) return
+      const nextProject = projects.find((p) => p.spaceId === id)
+      navigateToProject(nextProject?.id ?? null, nextProject?.activeTabId)
+    },
+    [activeProject?.spaceId, navigateToProject, projects, spaces]
+  )
+
+  const cycleSpace = useCallback(() => {
+    if (spaces.length < 2) return
+    const currentIndex = spaces.findIndex(
+      (space) => space.id === visibleSpaceId
+    )
+    const nextSpace =
+      spaces[((currentIndex >= 0 ? currentIndex : 0) + 1) % spaces.length]
+    if (!nextSpace) return
+    setActiveSpaceId(nextSpace.id)
+    const nextProject = projects.find((p) => p.spaceId === nextSpace.id)
+    navigateToProject(nextProject?.id ?? null, nextProject?.activeTabId)
+  }, [navigateToProject, projects, spaces, visibleSpaceId])
+
+  const moveProjectToSpace = useCallback(
+    (projectId: string, spaceId: string) => {
+      if (!spaces.some((space) => space.id === spaceId)) return
+      const movedProject = projects.find((p) => p.id === projectId)
+      if (!movedProject || movedProject.spaceId === spaceId) return
+      setProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, spaceId } : p))
+      )
+      if (projectId === activeProjectId) {
+        setActiveSpaceId(spaceId)
+        navigateToProject(projectId, movedProject.activeTabId)
+      }
+    },
+    [activeProjectId, navigateToProject, projects, spaces]
+  )
 
   const closeProject = async (id: string) => {
     const target = projects.find((p) => p.id === id)
@@ -1518,7 +1748,7 @@ export function AppShell() {
       if (target) for (const t of target.tabs) killAllPanes(t)
       const next = prev.filter((p) => p.id !== id)
       if (id === activeProjectId) {
-        const nextActive = next[0]
+        const nextActive = next.find((p) => p.spaceId === visibleSpaceId)
         if (nextActive) {
           navigateToProject(nextActive.id, nextActive.activeTabId || undefined)
         } else {
@@ -1531,7 +1761,8 @@ export function AppShell() {
 
   const closeAllProjectTerminals = async (id: string) => {
     const project = projects.find((p) => p.id === id)
-    const terminalTabs = project?.tabs.filter((t) => t.kind === "terminal") ?? []
+    const terminalTabs =
+      project?.tabs.filter((t) => t.kind === "terminal") ?? []
     if (
       terminalTabs.length === 0 ||
       !(await confirmCloseTabsWithAgents(terminalTabs))
@@ -1569,9 +1800,10 @@ export function AppShell() {
   }
 
   const closeProjectsToRight = async (id: string) => {
-    const idx = projects.findIndex((p) => p.id === id)
+    const scopedProjects = projects.filter((p) => p.spaceId === visibleSpaceId)
+    const idx = scopedProjects.findIndex((p) => p.id === id)
     if (idx < 0) return
-    const toClose = projects.slice(idx + 1)
+    const toClose = scopedProjects.slice(idx + 1)
     if (
       toClose.length === 0 ||
       !(await confirmCloseTabsWithAgents(toClose.flatMap((p) => p.tabs)))
@@ -1766,7 +1998,9 @@ export function AppShell() {
   }
 
   const closeOtherProjects = async (keepId: string) => {
-    const toClose = projects.filter((p) => p.id !== keepId)
+    const toClose = projects.filter(
+      (p) => p.spaceId === visibleSpaceId && p.id !== keepId
+    )
     if (!(await confirmCloseTabsWithAgents(toClose.flatMap((p) => p.tabs)))) {
       return
     }
@@ -1776,8 +2010,8 @@ export function AppShell() {
         if (!closedIds.has(p.id)) continue
         for (const t of p.tabs) killAllPanes(t)
       }
-      const next = prev.filter((p) => p.id === keepId)
-      const keep = next[0]
+      const next = prev.filter((p) => !closedIds.has(p.id))
+      const keep = next.find((p) => p.id === keepId)
       navigateToProject(keepId, keep?.activeTabId || undefined)
       return next
     })
@@ -2526,11 +2760,11 @@ export function AppShell() {
   // switcher dropdown only. The tabs/sidebar keep their manual drag order.
   const switcherProjects = useMemo(() => {
     const order = new Map(paletteRecents.projects.map((path, i) => [path, i]))
-    return [...projects].sort(
+    return [...activeSpaceProjects].sort(
       (a, b) =>
         (order.get(a.path) ?? Infinity) - (order.get(b.path) ?? Infinity)
     )
-  }, [projects, paletteRecents.projects])
+  }, [activeSpaceProjects, paletteRecents.projects])
 
   const commandPaletteRecents = useMemo<PaletteRecents>(() => {
     const projectsRecent = activeProjectPath
@@ -3142,6 +3376,10 @@ export function AppShell() {
           e.preventDefault()
           router.history.forward()
           break
+        case "spaces.cycle":
+          e.preventDefault()
+          cycleSpace()
+          break
         case "settings.open":
           e.preventDefault()
           void navigate({ to: "/settings" })
@@ -3156,8 +3394,7 @@ export function AppShell() {
           // current mode (light/dark), this effectively cycles through the
           // themes of whichever appearance is active.
           const current = THEME_FAMILIES.findIndex((f) => f.id === themeFamily)
-          const next =
-            THEME_FAMILIES[(current + 1) % THEME_FAMILIES.length]
+          const next = THEME_FAMILIES[(current + 1) % THEME_FAMILIES.length]
           setThemeFamily(next.id)
           break
         }
@@ -3178,6 +3415,7 @@ export function AppShell() {
     openRightSidebar,
     toggleRightSidebar,
     toggleProjectSidebar,
+    cycleSpace,
     themeFamily,
     setThemeFamily,
   ])
@@ -3257,8 +3495,10 @@ export function AppShell() {
           <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-active:bg-foreground/40" />
         </div>
         <ProjectSidebar
-          projects={projects}
+          projects={activeSpaceProjects}
           activeId={activeProjectId}
+          spaces={spaces}
+          activeSpaceId={visibleSpaceId}
           recents={recents.filter((r) =>
             // In focus mode, open-but-unfocused projects stay listed so they
             // can be re-added to the focus list.
@@ -3269,6 +3509,11 @@ export function AppShell() {
               : !projects.some((p) => p.path === r.path)
           )}
           onSelect={selectProject}
+          onSelectSpace={selectSpace}
+          onCreateSpace={createSpace}
+          onRenameSpace={renameSpace}
+          onDeleteSpace={deleteSpace}
+          onMoveProjectToSpace={moveProjectToSpace}
           onAdd={addProject}
           onDropFolders={(paths) => void dropProjectFolders(paths)}
           onPickRecent={pickRecent}
@@ -3322,7 +3567,9 @@ export function AppShell() {
               />
               <TooltipContent>
                 {"Expand sidebar" +
-                  (projectSidebarShortcut ? ` (${projectSidebarShortcut})` : "")}
+                  (projectSidebarShortcut
+                    ? ` (${projectSidebarShortcut})`
+                    : "")}
               </TooltipContent>
             </Tooltip>
           ) : null

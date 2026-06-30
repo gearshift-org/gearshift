@@ -145,6 +145,7 @@ export type Project = {
   id: string
   name: string
   path: string
+  spaceId: string
   /** Local activity timestamp used by "Most recent" sidebar sort. */
   updatedAt?: number
   tabs: WorkspaceTab[]

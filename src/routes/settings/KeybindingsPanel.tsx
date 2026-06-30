@@ -1,9 +1,15 @@
 import * as React from "react"
+import { Search, X } from "lucide-react"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
-import { ACTIONS, type ActionId } from "@/lib/keybindings/registry"
+import {
+  ACTIONS,
+  defaultBindings,
+  type ActionId,
+} from "@/lib/keybindings/registry"
 import { KeyChip } from "@/components/keybindings/KeyChip"
 import { KeyCapture } from "@/components/keybindings/KeyCapture"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 function sameAccelerators(a: readonly string[], b: readonly string[]) {
   return a.length === b.length && a.every((v, i) => v === b[i])
@@ -22,12 +28,24 @@ export function KeybindingsPanel() {
   const [pendingPerRow, setPendingPerRow] = React.useState<
     Record<string, string>
   >({})
+  const [filter, setFilter] = React.useState("")
+  const defaults = React.useMemo(() => defaultBindings(), [])
+  const normalizedFilter = filter.trim().toLowerCase()
+  const visibleActions = React.useMemo(() => {
+    if (!normalizedFilter) return ACTIONS
+    return ACTIONS.filter((action) => {
+      const shortcuts = bindings[action.id].join(" ")
+      return [
+        action.label,
+        action.description ?? "",
+        action.id,
+        shortcuts,
+      ].some((value) => value.toLowerCase().includes(normalizedFilter))
+    })
+  }, [bindings, normalizedFilter])
 
   const isDefault = (id: ActionId) => {
-    const action = ACTIONS.find((a) => a.id === id)
-    return action
-      ? sameAccelerators([action.defaultAccelerator], bindings[id])
-      : false
+    return sameAccelerators(defaults[id], bindings[id])
   }
 
   const conflictLabel = (id: ActionId): string | null => {
@@ -64,6 +82,33 @@ export function KeybindingsPanel() {
           Reset all to defaults
         </Button>
       </div>
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault()
+              setFilter("")
+              e.currentTarget.blur()
+            }
+          }}
+          placeholder="Filter keybindings"
+          aria-label="Filter keybindings"
+          className="pr-8 pl-7"
+        />
+        {filter ? (
+          <button
+            type="button"
+            onClick={() => setFilter("")}
+            aria-label="Clear keybinding filter"
+            className="absolute top-1/2 right-2 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
@@ -74,7 +119,17 @@ export function KeybindingsPanel() {
             </tr>
           </thead>
           <tbody>
-            {ACTIONS.map((action) => {
+            {visibleActions.length === 0 ? (
+              <tr className="border-t border-border">
+                <td
+                  colSpan={3}
+                  className="px-3 py-8 text-center text-sm text-muted-foreground"
+                >
+                  No keybindings match that filter.
+                </td>
+              </tr>
+            ) : null}
+            {visibleActions.map((action) => {
               const editing = editingId === action.id
               const conflict = conflictLabel(action.id)
               const pending = pendingPerRow[action.id]

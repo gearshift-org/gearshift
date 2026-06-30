@@ -21,6 +21,7 @@ import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
+import { onRequestTerminalClipboardPaste } from "./terminalSignals"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type { TerminalAgentName, TerminalAgentStatus } from "./types"
 import {
@@ -1798,6 +1799,21 @@ export function TerminalView({
     writeColorSchemeReport,
     writeTerminalReply,
   ])
+
+  useEffect(
+    () =>
+      onRequestTerminalClipboardPaste(sessionId, (text) => {
+        const term = termRef.current
+        if (!term) return
+        if (text) {
+          pasteText(term, sessionId, text, agentStatusRef.current.agentName)
+          safeTerminalFocus(term)
+          return
+        }
+        void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+      }),
+    [sessionId]
+  )
 
   useEffect(() => {
     const term = termRef.current

@@ -38,6 +38,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { paneDisplayName, tabDisplayName } from "./terminalName"
+import { requestTerminalClipboardPaste } from "./terminalSignals"
 import {
   ensureLayout,
   insertBeside,
@@ -591,7 +592,8 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
     tag === "INPUT" ||
     tag === "TEXTAREA" ||
     tag === "SELECT" ||
-    el.isContentEditable
+    el.isContentEditable ||
+    !!el.closest('[contenteditable="true"]')
   )
 }
 
@@ -1113,6 +1115,60 @@ export function AppShell() {
       ) ?? activeProject.tabs.find((t) => t.kind === "terminal")
     if (terminal) navigateToTab(terminal.id)
   }, [activeProject, navigateToTab])
+
+  const getTerminalPasteTarget = useCallback(() => {
+    const visible = visibleTerminalRef.current
+    if (visible) return visible
+    if (!activeProject) return null
+
+    const lastTerminalId = lastTerminalByProjectRef.current[activeProject.id]
+    const terminal =
+      activeProject.tabs.find(
+        (t) => t.kind === "terminal" && t.id === lastTerminalId
+      ) ?? activeProject.tabs.find((t) => t.kind === "terminal")
+    if (!terminal || terminal.kind !== "terminal") return null
+
+    const activePane = terminal.panes.find(
+      (pane) => pane.id === terminal.activePaneId && pane.sessionId
+    )
+    const pane = activePane ?? terminal.panes.find((p) => p.sessionId)
+    if (!pane?.sessionId) return null
+
+    return {
+      tabId: terminal.id,
+      paneId: pane.id,
+      sessionId: pane.sessionId,
+    }
+  }, [activeProject])
+
+  const focusTerminalPasteTarget = useCallback(
+    (target: { tabId: string; paneId: string }) => {
+      if (!activeProjectId) return
+      lastTerminalByProjectRef.current[activeProjectId] = target.tabId
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProjectId
+            ? {
+                ...p,
+                tabs: p.tabs.map((t) =>
+                  t.id === target.tabId && t.kind === "terminal"
+                    ? { ...t, activePaneId: target.paneId }
+                    : t
+                ),
+              }
+            : p
+        )
+      )
+      navigateToTab(target.tabId)
+      terminalFocusRequestNonceRef.current += 1
+      setTerminalFocusRequest({
+        tabId: target.tabId,
+        paneId: target.paneId,
+        nonce: terminalFocusRequestNonceRef.current,
+      })
+    },
+    [activeProjectId, navigateToTab]
+  )
 
   const rememberAgentTerminal = useCallback(
     (projectId: string, tabId: string, paneId: string) => {
@@ -3278,7 +3334,7 @@ export function AppShell() {
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
+      const target = e.target instanceof HTMLElement ? e.target : null
       if (target?.dataset?.keycapture === "true") return
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.shiftKey && !e.altKey && (e.key === "f" || e.key === "F")) {
@@ -3402,9 +3458,37 @@ export function AppShell() {
           break
       }
     }
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null
+      if (target?.dataset?.keycapture === "true") return
+      if (
+        focusConsumesTyping(target) ||
+        (activeElement !== target && focusConsumesTyping(activeElement))
+      ) {
+        return
+      }
+
+      const terminalTarget = getTerminalPasteTarget()
+      if (!terminalTarget) return
+
+      e.preventDefault()
+      focusTerminalPasteTarget(terminalTarget)
+      requestTerminalClipboardPaste(
+        terminalTarget.sessionId,
+        e.clipboardData?.getData("text/plain") || undefined
+      )
+    }
+
     window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("paste", onPaste)
     return () => {
       window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("paste", onPaste)
     }
   }, [
     bindings,
@@ -3418,6 +3502,8 @@ export function AppShell() {
     cycleSpace,
     themeFamily,
     setThemeFamily,
+    getTerminalPasteTarget,
+    focusTerminalPasteTarget,
   ])
 
   const sidebarTopActions = useMemo(

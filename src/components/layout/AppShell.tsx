@@ -86,6 +86,7 @@ import {
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
   OPEN_FILES_IN_OWN_TAB_EVENT,
+  toStoredAgentStatus,
   type LastAgentTerminal,
   type LastAgentTerminalsByProject,
   type PaletteRecents,
@@ -175,6 +176,17 @@ function hydrateProjectSnapshot(): {
             ...(sp.agentSessionTitle
               ? { agentSessionTitle: sp.agentSessionTitle }
               : {}),
+            // Restore the persisted status markers. running/working start false
+            // and are re-detected from the live PTY once the pane attaches.
+            ...(sp.agentStatus
+              ? {
+                  agentStatus: {
+                    running: false,
+                    working: false,
+                    ...sp.agentStatus,
+                  },
+                }
+              : {}),
           }))
           const activePaneId =
             (t.activePaneId && panes.some((pp) => pp.id === t.activePaneId)
@@ -193,6 +205,10 @@ function hydrateProjectSnapshot(): {
           ]
         }),
         activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
+        ...(p.agentDone === true ? { agentDone: true } : {}),
+        ...(p.agentNeedsAttention === true
+          ? { agentNeedsAttention: true }
+          : {}),
       },
     ]
   })
@@ -379,6 +395,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           // pending one for panes the user hasn't activated yet — that way
           // a relaunch can still try to adopt them.
           const sid = pp.sessionId ?? pp.pendingSessionId
+          const agentStatus = toStoredAgentStatus(pp.agentStatus)
           return {
             id: pp.id,
             ...(sid ? { sessionId: sid } : {}),
@@ -389,6 +406,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
             ...(pp.agentSessionTitle
               ? { agentSessionTitle: pp.agentSessionTitle }
               : {}),
+            ...(agentStatus ? { agentStatus } : {}),
           }
         }),
       }
@@ -403,6 +421,10 @@ function serializeProjects(projects: Project[]): StoredProject[] {
       // returns to it.
       activeTabId: activeTab?.id ?? tabs[0]?.id ?? "",
       tabs,
+      // Sidebar agent markers survive a restart so the completed/needs-input
+      // dots don't vanish on relaunch.
+      ...(p.agentDone ? { agentDone: true } : {}),
+      ...(p.agentNeedsAttention ? { agentNeedsAttention: true } : {}),
     }
   })
 }

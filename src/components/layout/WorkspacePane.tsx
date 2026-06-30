@@ -407,12 +407,14 @@ function TerminalTabContent({
   // Only meaningful when the tab is actually split into multiple panes.
   const lastSubmittedPaneId = useMemo(() => {
     if (!multi) return null
+    // lastSubmitAt is only recorded while a coding agent was running, so the
+    // pane with the greatest timestamp is the split the user last messaged.
+    // Gating on the timestamp (not the live `running` flag) lets the marker
+    // survive a restart, where `running` is re-detected asynchronously.
     let bestId: string | null = null
     let bestAt = 0
     for (const pane of tab.panes) {
-      const status = pane.agentStatus
-      if (!status?.running) continue
-      const at = status.lastSubmitAt ?? 0
+      const at = pane.agentStatus?.lastSubmitAt ?? 0
       if (at > bestAt) {
         bestAt = at
         bestId = pane.id

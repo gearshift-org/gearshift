@@ -1864,6 +1864,9 @@ export function TerminalView({
             completedAt: current.completedAt,
             completed: current.completed,
             needsAttention: current.needsAttention,
+            // Carry the persisted/last-known submit marker through detection so
+            // the "last message sent here" badge survives a restart.
+            lastSubmitAt: current.lastSubmitAt,
           })
           return
         }
@@ -1891,19 +1894,27 @@ export function TerminalView({
               ? false
               : current.completed,
           needsAttention: detected.running ? current.needsAttention : false,
+          lastSubmitAt: current.lastSubmitAt,
         })
       } catch {
         if (!cancelled) {
           // Don't clobber hook state on a transient IPC failure either.
+          const current = agentStatusRef.current
           const hookAuthoritative =
             activeHookWorkRef.current ||
             Date.now() - lastHookEventAtRef.current <
               HOOK_AUTHORITATIVE_WINDOW_MS
           if (!hookAuthoritative) {
+            // Preserve the persisted/last-known completed + submit markers on a
+            // transient failure instead of wiping them.
             emitAgentStatus({
               running: false,
               working: false,
-              completed: false,
+              completed: current.completed,
+              completedAt: current.completedAt,
+              needsAttention: current.needsAttention,
+              lastSubmitAt: current.lastSubmitAt,
+              agentName: current.agentName,
             })
           }
         }

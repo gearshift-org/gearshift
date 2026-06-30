@@ -1,8 +1,21 @@
 import { store } from "./store"
 import type {
   TerminalAgentName,
+  TerminalAgentStatus,
   TerminalLayout,
 } from "@/components/layout/types"
+
+// Subset of the (otherwise ephemeral) agent status that's worth persisting so
+// the "last message sent here" indicator and the completed/needs-input markers
+// survive an app restart. Live fields (running/working/agentName) are always
+// re-detected from the PTY on launch, so they're intentionally omitted.
+export type StoredAgentStatus = {
+  completed?: boolean
+  completedAt?: number
+  needsAttention?: boolean
+  workStartedAt?: number
+  lastSubmitAt?: number
+}
 
 export type StoredPane = {
   /** Stable DOM-key id assigned at create time. Persists across restarts. */
@@ -19,6 +32,38 @@ export type StoredPane = {
   agentSessionId?: string
   /** Human-readable agent session title (AI title or first prompt) shown as the pane title. */
   agentSessionTitle?: string
+  /** Persisted agent-status subset (completed/needs-input/last-submit markers). */
+  agentStatus?: StoredAgentStatus
+}
+
+// Build the persistable subset of a runtime agent status (drops live fields and
+// returns undefined when there's nothing worth saving).
+export function toStoredAgentStatus(
+  status: TerminalAgentStatus | undefined
+): StoredAgentStatus | undefined {
+  if (!status) return undefined
+  const stored: StoredAgentStatus = {}
+  if (status.completed) stored.completed = true
+  if (typeof status.completedAt === "number")
+    stored.completedAt = status.completedAt
+  if (status.needsAttention) stored.needsAttention = true
+  if (typeof status.workStartedAt === "number")
+    stored.workStartedAt = status.workStartedAt
+  if (typeof status.lastSubmitAt === "number")
+    stored.lastSubmitAt = status.lastSubmitAt
+  return Object.keys(stored).length > 0 ? stored : undefined
+}
+
+function parseStoredAgentStatus(value: unknown): StoredAgentStatus | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const v = value as Record<string, unknown>
+  const stored: StoredAgentStatus = {}
+  if (v.completed === true) stored.completed = true
+  if (typeof v.completedAt === "number") stored.completedAt = v.completedAt
+  if (v.needsAttention === true) stored.needsAttention = true
+  if (typeof v.workStartedAt === "number") stored.workStartedAt = v.workStartedAt
+  if (typeof v.lastSubmitAt === "number") stored.lastSubmitAt = v.lastSubmitAt
+  return Object.keys(stored).length > 0 ? stored : undefined
 }
 
 const TERMINAL_AGENT_NAMES = new Set<TerminalAgentName>([
@@ -77,6 +122,10 @@ export type StoredProject = {
   updatedAt?: number
   tabs?: StoredTab[]
   activeTabId?: string
+  /** Sidebar "agent finished" marker — persisted so it survives a restart. */
+  agentDone?: boolean
+  /** Sidebar "agent needs input" marker — persisted so it survives a restart. */
+  agentNeedsAttention?: boolean
 }
 
 const KEY = "gearshift.projects"
@@ -287,27 +336,33 @@ export function loadProjects(): StoredProject[] {
                         (pp: unknown): pp is StoredPane =>
                           !!pp && typeof (pp as StoredPane).id === "string"
                       )
-                      .map((pp) => ({
-                        id: pp.id,
-                        ...(typeof pp.sessionId === "string"
-                          ? { sessionId: pp.sessionId }
-                          : {}),
-                        ...(typeof pp.autoTitle === "string"
-                          ? { autoTitle: pp.autoTitle }
-                          : {}),
-                        ...(typeof pp.customName === "string"
-                          ? { customName: pp.customName }
-                          : {}),
-                        ...(parseTerminalAgentName(pp.agentName)
-                          ? { agentName: parseTerminalAgentName(pp.agentName) }
-                          : {}),
-                        ...(typeof pp.agentSessionId === "string"
-                          ? { agentSessionId: pp.agentSessionId }
-                          : {}),
-                        ...(typeof pp.agentSessionTitle === "string"
-                          ? { agentSessionTitle: pp.agentSessionTitle }
-                          : {}),
-                      }))
+                      .map((pp) => {
+                        const agentStatus = parseStoredAgentStatus(
+                          pp.agentStatus
+                        )
+                        return {
+                          id: pp.id,
+                          ...(typeof pp.sessionId === "string"
+                            ? { sessionId: pp.sessionId }
+                            : {}),
+                          ...(typeof pp.autoTitle === "string"
+                            ? { autoTitle: pp.autoTitle }
+                            : {}),
+                          ...(typeof pp.customName === "string"
+                            ? { customName: pp.customName }
+                            : {}),
+                          ...(parseTerminalAgentName(pp.agentName)
+                            ? { agentName: parseTerminalAgentName(pp.agentName) }
+                            : {}),
+                          ...(typeof pp.agentSessionId === "string"
+                            ? { agentSessionId: pp.agentSessionId }
+                            : {}),
+                          ...(typeof pp.agentSessionTitle === "string"
+                            ? { agentSessionTitle: pp.agentSessionTitle }
+                            : {}),
+                          ...(agentStatus ? { agentStatus } : {}),
+                        }
+                      })
                   : [{ id: t.id }]
                 return {
                   id: t.id,

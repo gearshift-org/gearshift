@@ -699,7 +699,24 @@ export function TerminalView({
   const { appearance } = useTerminalAppearance()
   const isDark = resolvedTheme === "dark"
   const themeId: ThemeId = theme
-  const themeObj = useMemo(() => getTerminalTheme(themeId), [themeId])
+  // Derive the terminal background from the active theme's --sidebar token so
+  // the terminal reads as its own (darker) surface, distinct from the panel.
+  // xterm needs a concrete color, so resolve the CSS var after the theme is
+  // applied to the DOM (passive effect runs after the provider's layout
+  // effect that sets data-theme/.dark).
+  const readSidebarBg = () =>
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--sidebar")
+      .trim() || null
+  const [sidebarBg, setSidebarBg] = useState<string | null>(readSidebarBg)
+  useEffect(() => {
+    setSidebarBg(readSidebarBg())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themeId, resolvedTheme])
+  const themeObj = useMemo(() => {
+    const base = getTerminalTheme(themeId)
+    return sidebarBg ? { ...base, background: sidebarBg } : base
+  }, [themeId, sidebarBg])
   const themeRef = useRef({ isDark, theme: themeObj })
   const colorSchemeSubscribedRef = useRef(false)
   const writeTerminalReply = useCallback(

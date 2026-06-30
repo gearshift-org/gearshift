@@ -25,8 +25,7 @@ import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import { cn } from "@/lib/utils"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { matchesModifierChord } from "@/lib/keybindings/registry"
-import { TerminalView, getTerminalTheme } from "./TerminalView"
-import { useTheme } from "@/components/theme-provider"
+import { TerminalView } from "./TerminalView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import { CommitDiff } from "./CommitDiff"
 import {
@@ -404,8 +403,9 @@ function TerminalTabContent({
   const multi = tab.panes.length > 1
   // Share the terminal body's background with each pane's header (and the leaf
   // card) so the chrome blends with the terminal instead of the app surface.
-  const { theme } = useTheme()
-  const terminalBg = getTerminalTheme(theme).background
+  // The terminal body uses the theme's --sidebar token (see TerminalView), so
+  // reuse it here directly — it stays in sync with the theme automatically.
+  const terminalBg = "var(--sidebar)"
   const layout = ensureLayout(
     tab.layout,
     tab.panes.map((p) => p.id)

@@ -2088,22 +2088,6 @@ export function TerminalView({
     return () => cancelAnimationFrame(id)
   }, [focusRequest, isActive, searchOpen])
 
-  // Paste redirected from the app shell when the user pastes with idle focus.
-  // Runs the same agent-aware paste path as Cmd+V inside the terminal.
-  useEffect(() => {
-    const onShellPaste = (e: Event) => {
-      const detail = (e as CustomEvent<{ sessionId: string }>).detail
-      if (detail?.sessionId !== sessionId) return
-      const term = termRef.current
-      if (term) {
-        void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
-      }
-    }
-    window.addEventListener("gearshift:terminal-paste", onShellPaste)
-    return () =>
-      window.removeEventListener("gearshift:terminal-paste", onShellPaste)
-  }, [sessionId])
-
   const runSearch = useCallback(
     (q: string, direction: "next" | "prev" = "next") => {
       const search = searchRef.current

@@ -482,6 +482,62 @@ function buildDocumentTitle(activeProject: Project | undefined): string {
   return `${APP_TITLE} - ${activeProject.name}`
 }
 
+// Shared in-app agent notification card. Both the "finished" and "needs input"
+// toasts render through this so they share an identical size and layout: a
+// project-name header, a muted status line, and an optional message preview.
+function agentToastCard(opts: {
+  id: string | number
+  projectName: string
+  projectPath: string
+  statusLabel: string
+  statusMeta?: string | null
+  bodyPreview?: string | null
+  onOpen: () => void
+}) {
+  return (
+    <div className="relative flex w-[320px] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg">
+      <button
+        type="button"
+        onClick={opts.onOpen}
+        className="flex min-w-0 flex-1 items-start gap-2 text-left"
+      >
+        <ProjectAvatar
+          name={opts.projectName}
+          path={opts.projectPath}
+          className="mt-0.5 size-8 shrink-0 rounded-md text-xs"
+        />
+        <span className="flex min-w-0 flex-col gap-0.5 pr-5">
+          <span className="truncate text-sm font-semibold">
+            {opts.projectName}
+          </span>
+          <span className="flex min-w-0 items-baseline gap-1 text-[11px] text-muted-foreground">
+            <span className="shrink-0">{opts.statusLabel}</span>
+            {opts.statusMeta ? (
+              <>
+                <span className="shrink-0">·</span>
+                <span className="min-w-0 truncate">{opts.statusMeta}</span>
+              </>
+            ) : null}
+          </span>
+          {opts.bodyPreview ? (
+            <span className="line-clamp-2 pt-0.5 text-[11px] leading-snug text-foreground/80">
+              {opts.bodyPreview}
+            </span>
+          ) : null}
+        </span>
+      </button>
+      <button
+        type="button"
+        aria-label="Close notification"
+        onClick={() => toast.dismiss(opts.id)}
+        className="absolute top-1 right-1 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
 // True when the keystroke target is a real text field (input, textarea,
 // contenteditable) where Cmd+Shift+Arrow should keep its native
 // extend-selection behavior instead of navigating. The terminal is excluded:
@@ -2035,39 +2091,17 @@ export function AppShell() {
       const terminalName = tabDisplayName(tab)
 
       if (isAppVisibleAndFocused()) {
-        toast.custom((id) => (
-          <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
-            <button
-              type="button"
-              onClick={() => openAgentDoneTarget(project.id, tabId, paneId, id)}
-              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-            >
-              <ProjectAvatar
-                name={project.name}
-                path={project.path}
-                className="size-10 shrink-0 rounded-md text-sm"
-              />
-              <span className="flex min-w-0 flex-col justify-center gap-0.5 pr-6">
-                <span className="truncate text-xs font-medium">
-                  {shortCommand}
-                </span>
-                <span className="flex min-w-0 items-baseline gap-1 text-[11px] text-muted-foreground">
-                  <span className="shrink-0">Finished in {seconds}s</span>
-                  <span className="shrink-0">·</span>
-                  <span className="min-w-0 truncate">{terminalName}</span>
-                </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              aria-label="Close notification"
-              onClick={() => toast.dismiss(id)}
-              className="absolute top-1.5 right-1.5 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        ))
+        toast.custom((id) =>
+          agentToastCard({
+            id,
+            projectName: project.name,
+            projectPath: project.path,
+            statusLabel: `Finished in ${seconds}s`,
+            statusMeta: terminalName,
+            bodyPreview: shortCommand,
+            onOpen: () => openAgentDoneTarget(project.id, tabId, paneId, id),
+          })
+        )
         return
       }
 
@@ -2643,52 +2677,17 @@ export function AppShell() {
       const showCompletionNotification = (latestPrompt: string | null) => {
         console.info("Agent complete: showing in-app toast")
         toast.custom(
-          (id) => (
-            <div className="relative flex w-[320px] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg">
-              <button
-                type="button"
-                onClick={() =>
-                  openAgentDoneTarget(targetProject.id, tabId, paneId, id)
-                }
-                className="flex min-w-0 flex-1 items-start gap-2 text-left"
-              >
-                <ProjectAvatar
-                  name={targetProject.name}
-                  path={targetProject.path}
-                  className="mt-0.5 size-8 shrink-0 rounded-md text-xs"
-                />
-                <span className="flex min-w-0 flex-col gap-0.5 pr-5">
-                  <span className="truncate text-sm font-semibold">
-                    {targetProject.name}
-                  </span>
-                  <span className="flex min-w-0 items-baseline gap-1 text-[11px] text-muted-foreground">
-                    <span className="shrink-0">Agent finished</span>
-                    {elapsedTime && (
-                      <>
-                        <span className="shrink-0">·</span>
-                        <span className="shrink-0">
-                          Completed in {elapsedTime}
-                        </span>
-                      </>
-                    )}
-                  </span>
-                  {latestPrompt && (
-                    <span className="line-clamp-2 pt-0.5 text-[11px] leading-snug text-foreground/80">
-                      {latestPrompt}
-                    </span>
-                  )}
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-label="Close notification"
-                onClick={() => toast.dismiss(id)}
-                className="absolute top-1 right-1 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          ),
+          (id) =>
+            agentToastCard({
+              id,
+              projectName: targetProject.name,
+              projectPath: targetProject.path,
+              statusLabel: "Agent finished",
+              statusMeta: elapsedTime ? `Completed in ${elapsedTime}` : null,
+              bodyPreview: latestPrompt,
+              onOpen: () =>
+                openAgentDoneTarget(targetProject.id, tabId, paneId, id),
+            }),
           {
             id: toastId,
             duration: Infinity,
@@ -2765,51 +2764,33 @@ export function AppShell() {
           agentDoneToastsByProjectRef.current.delete(targetProject.id)
         }
       }
-      toast.custom(
-        (id) => (
-          <div className="relative flex w-[380px] rounded-md border border-border bg-popover p-2.5 text-popover-foreground shadow-lg">
-            <button
-              type="button"
-              onClick={() =>
-                openAgentDoneTarget(targetProject.id, tabId, paneId, id)
-              }
-              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-            >
-              <ProjectAvatar
-                name={targetProject.name}
-                path={targetProject.path}
-                className="size-10 shrink-0 rounded-md text-sm"
-              />
-              <span className="flex min-w-0 flex-col justify-center gap-0.5 pr-6">
-                <span className="text-xs font-medium">Agent needs input</span>
-                <span className="flex min-w-0 items-baseline gap-1 text-xs">
-                  <span className="max-w-28 truncate font-semibold text-foreground">
-                    {targetProject.name}
-                  </span>
-                  <span className="shrink-0 text-muted-foreground">·</span>
-                  <span className="min-w-0 truncate text-muted-foreground">
-                    {terminalName}
-                  </span>
-                </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              aria-label="Close notification"
-              onClick={() => toast.dismiss(id)}
-              className="absolute top-1.5 right-1.5 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        ),
-        {
-          id: toastId,
-          duration: Infinity,
-          onDismiss: cleanupToast,
-          onAutoClose: cleanupToast,
-        }
-      )
+      const showNeedsInputNotification = (latestPrompt: string | null) => {
+        toast.custom(
+          (id) =>
+            agentToastCard({
+              id,
+              projectName: targetProject.name,
+              projectPath: targetProject.path,
+              statusLabel: "Agent needs input",
+              statusMeta: terminalName,
+              bodyPreview: latestPrompt,
+              onOpen: () =>
+                openAgentDoneTarget(targetProject.id, tabId, paneId, id),
+            }),
+          {
+            id: toastId,
+            duration: Infinity,
+            onDismiss: cleanupToast,
+            onAutoClose: cleanupToast,
+          }
+        )
+      }
+      const historySessionId = fallbackPane?.sessionId ?? paneId
+      void window.term.history
+        .list(historySessionId)
+        .then((rows) => promptPreview(latestPromptBody(rows)))
+        .catch(() => null)
+        .then(showNeedsInputNotification)
 
       if (!appVisibleAndFocused) {
         // Keep bouncing the dock until the user returns — input is required.
@@ -3068,27 +3049,6 @@ export function AppShell() {
       // example, CodeMirror's Mod+S save binding calls preventDefault(), so the
       // sidebar shortcut should not also run while the editor handles saving.
       if (e.defaultPrevented) return
-      // Cmd/Ctrl+V with idle focus: redirect the paste into the visible
-      // terminal. Handled here too (not just the paste listener) because a
-      // native paste event doesn't fire when focus is on a non-editable element.
-      if (
-        mod &&
-        !e.altKey &&
-        !e.shiftKey &&
-        (e.key === "v" || e.key === "V") &&
-        !focusConsumesTyping(target)
-      ) {
-        const sessionId = focusVisibleTerminal()
-        if (sessionId) {
-          e.preventDefault()
-          window.dispatchEvent(
-            new CustomEvent("gearshift:terminal-paste", {
-              detail: { sessionId },
-            })
-          )
-          return
-        }
-      }
       const action = findActionForEvent(e)
       if (!action) {
         // No shortcut matched. If the user just typed a plain printable
@@ -3183,24 +3143,9 @@ export function AppShell() {
           break
       }
     }
-    // Paste with idle focus: route it into the visible terminal. Dispatch a
-    // custom event the matching TerminalView handles so its full paste logic
-    // (agent-aware, image, bracketed paste) runs instead of a raw PTY write.
-    const onPaste = (e: ClipboardEvent) => {
-      const target = e.target as HTMLElement | null
-      if (focusConsumesTyping(target)) return
-      const sessionId = focusVisibleTerminal()
-      if (!sessionId) return
-      e.preventDefault()
-      window.dispatchEvent(
-        new CustomEvent("gearshift:terminal-paste", { detail: { sessionId } })
-      )
-    }
     window.addEventListener("keydown", onKeyDown)
-    window.addEventListener("paste", onPaste)
     return () => {
       window.removeEventListener("keydown", onKeyDown)
-      window.removeEventListener("paste", onPaste)
     }
   }, [
     bindings,

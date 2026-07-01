@@ -79,6 +79,7 @@ type Props = {
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onOpenDiffTab: (path: string, staged: boolean) => void
   onOpenFileTab: (path: string) => void
+  onOpenDevPreviewTab?: (url: string) => void
   onOpenCommitTab: (commit: {
     hash: string
     shortHash: string
@@ -122,6 +123,7 @@ export function WorkspaceSplit({
   onExtractPaneToTab,
   onOpenDiffTab,
   onOpenFileTab,
+  onOpenDevPreviewTab,
   onOpenCommitTab,
   onSummarizeHistory,
   onSummarizeChat,
@@ -300,6 +302,7 @@ export function WorkspaceSplit({
               onExtractPaneToTab={onExtractPaneToTab}
               onProjectActivity={onProjectActivity}
               onOpenFile={onOpenFileTab}
+              onOpenDevPreview={onOpenDevPreviewTab}
               fileReveal={fileReveal}
             />
           </div>

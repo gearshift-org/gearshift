@@ -7,15 +7,18 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command"
-import {
-  FileDiff,
-  FolderGit2,
-  TerminalSquare,
-} from "lucide-react"
+import { FileDiff, FolderGit2, MonitorPlay, TerminalSquare } from "lucide-react"
 import Fuse from "fuse.js"
 import type { IFuseOptions } from "fuse.js"
 import { FileIcon } from "@/components/icons/FileIcon"
-import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import {
+  Fragment,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { shortenHomePath } from "@/lib/pathDisplay"
 import type { PaletteRecents } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
@@ -67,7 +70,9 @@ const STRONG_FILE_SCORE = 0.1
 
 function tabIcon(t: WorkspaceTab) {
   if (t.kind === "diff") return <FileDiff />
-  if (t.kind === "file") return <FileIcon name={t.path.split("/").pop() ?? t.path} />
+  if (t.kind === "file")
+    return <FileIcon name={t.path.split("/").pop() ?? t.path} />
+  if (t.kind === "devPreview") return <MonitorPlay />
   return <TerminalSquare />
 }
 
@@ -83,6 +88,7 @@ function tabCommandValue(t: WorkspaceTab): string {
 function tabCommandKeywords(t: WorkspaceTab): string[] {
   const title = tabDisplayName(t)
   if (t.kind === "diff" || t.kind === "file") return [title, t.path]
+  if (t.kind === "devPreview") return [title, t.url]
   return [title, ...terminalSessionIds(t)]
 }
 
@@ -114,7 +120,11 @@ function fileEntry(path: string): FileEntry {
   }
 }
 
-function fileNameRank(entry: FileEntry, query: string, compactQuery: string): number {
+function fileNameRank(
+  entry: FileEntry,
+  query: string,
+  compactQuery: string
+): number {
   const name = entry.name.toLowerCase()
   const path = entry.path.toLowerCase()
   const compactName = compactSearchValue(entry.name)
@@ -147,17 +157,15 @@ function fileNameRank(entry: FileEntry, query: string, compactQuery: string): nu
 function rankFileEntries(
   entries: FileEntry[],
   query: string,
-  compactQuery: string,
+  compactQuery: string
 ): FileEntry[] {
-  return entries
-    .slice()
-    .sort((a, b) => {
-      const rankDiff =
-        fileNameRank(a, query, compactQuery) -
-        fileNameRank(b, query, compactQuery)
-      if (rankDiff !== 0) return rankDiff
-      return a.path.localeCompare(b.path)
-    })
+  return entries.slice().sort((a, b) => {
+    const rankDiff =
+      fileNameRank(a, query, compactQuery) -
+      fileNameRank(b, query, compactQuery)
+    if (rankDiff !== 0) return rankDiff
+    return a.path.localeCompare(b.path)
+  })
 }
 
 export function CommandPalette({
@@ -237,19 +245,36 @@ export function CommandPalette({
 
   const filteredTabs = useMemo(() => {
     const tabs = activeProject?.tabs ?? []
-    const recentTabs = paletteRecents.tabsByProject[activeProject?.path ?? ""] ?? []
+    const recentTabs =
+      paletteRecents.tabsByProject[activeProject?.path ?? ""] ?? []
     const byRecency = (items: WorkspaceTab[]) =>
-      items.slice().sort((a, b) => recencyIndex(recentTabs, a.id) - recencyIndex(recentTabs, b.id))
+      items
+        .slice()
+        .sort(
+          (a, b) =>
+            recencyIndex(recentTabs, a.id) - recencyIndex(recentTabs, b.id)
+        )
     if (!qLower) return byRecency(tabs)
-    return byRecency(tabs.filter((t) => {
-      const hay = (
-        tabDisplayName(t) +
-        " " +
-        (t.kind === "diff" || t.kind === "file" ? t.path : "")
-      ).toLowerCase()
-      return hay.includes(qLower)
-    }))
-  }, [activeProject?.path, activeProject?.tabs, paletteRecents.tabsByProject, qLower])
+    return byRecency(
+      tabs.filter((t) => {
+        const hay = (
+          tabDisplayName(t) +
+          " " +
+          (t.kind === "diff" || t.kind === "file"
+            ? t.path
+            : t.kind === "devPreview"
+              ? t.url
+              : "")
+        ).toLowerCase()
+        return hay.includes(qLower)
+      })
+    )
+  }, [
+    activeProject?.path,
+    activeProject?.tabs,
+    paletteRecents.tabsByProject,
+    qLower,
+  ])
 
   const filteredProjects = useMemo(() => {
     const byRecency = (items: Project[]) =>
@@ -258,15 +283,15 @@ export function CommandPalette({
         .sort(
           (a, b) =>
             recencyIndex(paletteRecents.projects, a.path) -
-            recencyIndex(paletteRecents.projects, b.path),
+            recencyIndex(paletteRecents.projects, b.path)
         )
     if (!qLower) return byRecency(projects)
     return byRecency(
       projects.filter(
         (p) =>
           p.name.toLowerCase().includes(qLower) ||
-          shortenHomePath(p.path).toLowerCase().includes(qLower),
-      ),
+          shortenHomePath(p.path).toLowerCase().includes(qLower)
+      )
     )
   }, [paletteRecents.projects, projects, qLower])
 
@@ -278,14 +303,17 @@ export function CommandPalette({
   }, [fileEntries])
 
   const { filteredFiles, bestFileScore } = useMemo(() => {
-    if (!files.length) return { filteredFiles: [] as string[], bestFileScore: 1 }
-    const recentFiles = paletteRecents.filesByProject[activeProject?.path ?? ""] ?? []
+    if (!files.length)
+      return { filteredFiles: [] as string[], bestFileScore: 1 }
+    const recentFiles =
+      paletteRecents.filesByProject[activeProject?.path ?? ""] ?? []
     if (!qLower) {
       return {
         filteredFiles: files
           .slice()
           .sort(
-            (a, b) => recencyIndex(recentFiles, a) - recencyIndex(recentFiles, b),
+            (a, b) =>
+              recencyIndex(recentFiles, a) - recencyIndex(recentFiles, b)
           )
           .slice(0, MAX_FILE_RESULTS),
         bestFileScore: 0,
@@ -296,7 +324,7 @@ export function CommandPalette({
       ? fileEntries.filter(
           (entry) =>
             entry.compactPath.includes(compactQuery) ||
-            entry.compactPluralPath.includes(compactQuery),
+            entry.compactPluralPath.includes(compactQuery)
         )
       : []
     // Fuse finds fuzzy candidates; then our light ranker makes close basename
@@ -304,7 +332,9 @@ export function CommandPalette({
     const seen = new Set<string>()
     const candidates = [
       ...compactMatches,
-      ...fileFuse.search(qLower, { limit: MAX_FILE_RESULTS * 3 }).map((r) => r.item),
+      ...fileFuse
+        .search(qLower, { limit: MAX_FILE_RESULTS * 3 })
+        .map((r) => r.item),
     ].filter((entry) => {
       if (seen.has(entry.path)) return false
       seen.add(entry.path)
@@ -312,10 +342,10 @@ export function CommandPalette({
     })
     const rankedFiles = rankFileEntries(candidates, qLower, compactQuery).slice(
       0,
-      MAX_FILE_RESULTS,
+      MAX_FILE_RESULTS
     )
     const results = rankedFiles.filter(
-      (entry) => !compactMatches.some((match) => match.path === entry.path),
+      (entry) => !compactMatches.some((match) => match.path === entry.path)
     )
     return {
       filteredFiles: rankedFiles.map((entry) => entry.path),
@@ -437,7 +467,7 @@ export function CommandPalette({
               {m.text}
             </span>
             <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">
-              {(m.path.split("/").pop() ?? m.path)}:{m.line}
+              {m.path.split("/").pop() ?? m.path}:{m.line}
             </span>
           </CommandItem>
         ))}
@@ -465,9 +495,7 @@ export function CommandPalette({
         onValueChange={setQuery}
       />
       <CommandList ref={listRef}>
-        <CommandEmpty>
-          {filesLoading ? "Loading…" : "No matches."}
-        </CommandEmpty>
+        <CommandEmpty>{filesLoading ? "Loading…" : "No matches."}</CommandEmpty>
 
         {filteredProjects.length > 0 && (
           <CommandGroup heading="Projects">
@@ -496,10 +524,7 @@ export function CommandPalette({
               </CommandGroup>
             )}
             {filteredDiffTabs.length > 0 && (
-              <CommandGroup
-                heading="Diffs"
-                className="border-t border-border"
-              >
+              <CommandGroup heading="Diffs" className="border-t border-border">
                 {renderTabItems(filteredDiffTabs)}
               </CommandGroup>
             )}

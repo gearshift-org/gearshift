@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import {
   FileDiff,
   GitCommitVertical,
+  MonitorPlay,
   Plus,
   Settings,
   TerminalSquare,
@@ -131,6 +132,8 @@ function TabIcon({
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
   if (tab.kind === "commit")
     return <GitCommitVertical className="size-3.5 shrink-0" />
+  if (tab.kind === "devPreview")
+    return <MonitorPlay className="size-3.5 shrink-0" />
   if (tab.kind === "file") {
     return (
       <FileIcon
@@ -196,7 +199,9 @@ function WorkspaceTabItem({
       ? pane.agentStatus?.agentName
       : undefined
   const activeAgentName = isTerminal
-    ? paneAgent(t.panes.find((pane) => pane.id === t.activePaneId) ?? t.panes[0])
+    ? paneAgent(
+        t.panes.find((pane) => pane.id === t.activePaneId) ?? t.panes[0]
+      )
     : undefined
   const {
     attributes,
@@ -228,7 +233,7 @@ function WorkspaceTabItem({
           isActive
             ? "bg-foreground/[0.12] text-foreground"
             : "text-muted-foreground hover:bg-foreground/[0.12] hover:text-foreground",
-          isDragging && "opacity-80 shadow-lg",
+          isDragging && "opacity-80 shadow-lg"
         )}
         onClick={() => onSelect(t.id)}
         onDoubleClick={() => {
@@ -288,8 +293,8 @@ function WorkspaceTabItem({
               onClose?.(t.id)
             }}
             className={cn(
-              "-mr-1 ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors hover:bg-foreground/15 hover:text-foreground group-hover:opacity-100",
-              isActive && "opacity-60",
+              "-mr-1 ml-auto grid size-5 place-items-center rounded-sm opacity-0 transition-colors group-hover:opacity-100 hover:bg-foreground/15 hover:text-foreground",
+              isActive && "opacity-60"
             )}
           >
             <X className="size-3.5" />
@@ -373,13 +378,13 @@ export function WorkspaceTabBar({
   const [draft, setDraft] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
   const previousTabsRef = useRef<{ scopeKey: string; ids: Set<string> } | null>(
-    null,
+    null
   )
   const previousTabs = previousTabsRef.current
   const openingTabIds = new Set(
     previousTabs?.scopeKey === animationScopeKey
       ? tabs.filter((tab) => !previousTabs.ids.has(tab.id)).map((tab) => tab.id)
-      : [],
+      : []
   )
 
   useEffect(() => {
@@ -409,7 +414,7 @@ export function WorkspaceTabBar({
   }
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   )
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -426,9 +431,7 @@ export function WorkspaceTabBar({
         draggable && "[-webkit-app-region:drag]"
       )}
     >
-      {leading && (
-        <div className="flex shrink-0 items-center">{leading}</div>
-      )}
+      {leading && <div className="flex shrink-0 items-center">{leading}</div>}
       <div
         className={cn(
           // Left inset matches the workspace's p-2 (8px) so the first tab lines
@@ -522,9 +525,7 @@ export function WorkspaceTabBar({
         </DropdownMenuContent>
       </DropdownMenu>
       {draggable && <div className="min-w-0 flex-1 self-stretch" />}
-      {trailing && (
-        <div className="flex shrink-0 items-center">{trailing}</div>
-      )}
+      {trailing && <div className="flex shrink-0 items-center">{trailing}</div>}
     </div>
   )
 }

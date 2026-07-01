@@ -128,7 +128,20 @@ export type CommitTab = {
   preview?: boolean
 }
 
-export type WorkspaceTab = TerminalTab | DiffTab | FileTab | CommitTab
+export type DevPreviewTab = {
+  kind: "devPreview"
+  id: string
+  name: string
+  /** Local dev-server URL rendered in the in-app preview. */
+  url: string
+}
+
+export type WorkspaceTab =
+  | TerminalTab
+  | DiffTab
+  | FileTab
+  | CommitTab
+  | DevPreviewTab
 
 /**
  * A request to reveal (scroll to + select) a specific line of a file, e.g. from

@@ -144,7 +144,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
         spaceId: projectSpaceId(p.spaceId, spaces),
         ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
         tabs: (p.tabs ?? []).flatMap((t): WorkspaceTab[] => {
-          // Preview tabs (file/diff/commit) restore from their descriptor.
+          // Preview tabs restore from their descriptor.
           if (t.kind === "file") {
             if (!t.path) return []
             return [
@@ -180,6 +180,17 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 hash: t.hash,
                 shortHash: t.shortHash ?? t.hash.slice(0, 7),
                 ...(t.preview ? { preview: true } : {}),
+              },
+            ]
+          }
+          if (t.kind === "devPreview") {
+            if (!t.url) return []
+            return [
+              {
+                kind: "devPreview" as const,
+                id: t.id,
+                name: t.name,
+                url: t.url,
               },
             ]
           }
@@ -337,6 +348,15 @@ function basename(p: string) {
   return p.replace(/\/+$/, "").split("/").pop() || p
 }
 
+function devPreviewName(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return `Dev Preview · ${parsed.host || parsed.hostname}`
+  } catch {
+    return "Dev Preview"
+  }
+}
+
 function killAllPanes(tab: WorkspaceTab) {
   if (tab.kind !== "terminal") return
   for (const pane of tab.panes) {
@@ -398,6 +418,14 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           hash: t.hash,
           shortHash: t.shortHash,
           ...(t.preview ? { preview: true } : {}),
+        }
+      }
+      if (t.kind === "devPreview") {
+        return {
+          kind: "devPreview",
+          id: t.id,
+          name: t.name,
+          url: t.url,
         }
       }
       return {
@@ -774,7 +802,7 @@ export function AppShell() {
   const terminalAgentStatusRef = useRef(new Map<string, TerminalAgentStatus>())
   const terminalFocusRequestNonceRef = useRef(0)
   // The terminal pane currently visible (active tab is a terminal). Null when
-  // the active tab is a file/diff/commit preview or there is no terminal. Read
+  // the active tab is a preview/non-terminal tab or there is no terminal. Read
   // by the global key/paste handlers to redirect stray typing into the terminal.
   const visibleTerminalRef = useRef<{
     tabId: string
@@ -2443,11 +2471,11 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // Reuse the existing preview diff tab if any (VS Code-style) — unless the
-      // user opted into a dedicated tab per file/diff.
-      const preview = openFilesInOwnTab
-        ? undefined
-        : activeProject.tabs.find((t) => t.kind === "diff" && t.preview)
+      // Diff opens always reuse one shared preview tab so browsing changes does
+      // not keep adding tabs.
+      const preview = activeProject.tabs.find(
+        (t) => t.kind === "diff" && t.preview
+      )
       if (preview) {
         setProjects((prev) =>
           prev.map((p) =>
@@ -2481,7 +2509,7 @@ export function AppShell() {
                     name: basename(path),
                     path,
                     staged,
-                    preview: !openFilesInOwnTab,
+                    preview: true,
                   },
                 ],
                 activeTabId: id,
@@ -2491,7 +2519,7 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab, openFilesInOwnTab]
+    [activeProject, navigateToTab]
   )
 
   const openFileTab = useCallback(
@@ -2509,11 +2537,11 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // Reuse the existing preview file tab if any — unless the user opted into
-      // a dedicated tab per file.
-      const preview = openFilesInOwnTab
-        ? undefined
-        : activeProject.tabs.find((t) => t.kind === "file" && t.preview)
+      // File opens always reuse one shared preview tab so switching through the
+      // file tree does not keep adding tabs.
+      const preview = activeProject.tabs.find(
+        (t) => t.kind === "file" && t.preview
+      )
       if (preview) {
         setProjects((prev) =>
           prev.map((p) =>
@@ -2546,7 +2574,7 @@ export function AppShell() {
                     id,
                     name: basename(path),
                     path,
-                    preview: !openFilesInOwnTab,
+                    preview: true,
                   },
                 ],
                 activeTabId: id,
@@ -2556,7 +2584,56 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab, openFilesInOwnTab]
+    [activeProject, navigateToTab]
+  )
+
+  const openDevPreviewTab = useCallback(
+    (url: string) => {
+      if (!activeProject) return
+      const name = devPreviewName(url)
+      const preview = activeProject.tabs.find((t) => t.kind === "devPreview")
+      if (preview) {
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === activeProject.id
+              ? {
+                  ...p,
+                  tabs: p.tabs.map((t) =>
+                    t.id === preview.id && t.kind === "devPreview"
+                      ? { ...t, url, name }
+                      : t
+                  ),
+                  activeTabId: preview.id,
+                }
+              : p
+          )
+        )
+        navigateToTab(preview.id)
+        return
+      }
+      const id = makeId()
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === activeProject.id
+            ? {
+                ...p,
+                tabs: [
+                  ...p.tabs,
+                  {
+                    kind: "devPreview" as const,
+                    id,
+                    name,
+                    url,
+                  },
+                ],
+                activeTabId: id,
+              }
+            : p
+        )
+      )
+      navigateToTab(id)
+    },
+    [activeProject, navigateToTab]
   )
 
   const openCommitTab = useCallback(
@@ -2570,7 +2647,7 @@ export function AppShell() {
         return
       }
       // Reuse the existing preview commit tab if any — unless the user opted
-      // into a dedicated tab per file/diff/commit.
+      // into a dedicated tab per diff/commit.
       const preview = openFilesInOwnTab
         ? undefined
         : activeProject.tabs.find((t) => t.kind === "commit" && t.preview)
@@ -3813,6 +3890,7 @@ export function AppShell() {
               onExtractPaneToTab={extractPaneToTab}
               onOpenDiffTab={openDiffTab}
               onOpenFileTab={openFileTab}
+              onOpenDevPreviewTab={openDevPreviewTab}
               onOpenCommitTab={openCommitTab}
               onSummarizeHistory={summarizeHistory}
               onSummarizeChat={summarizeChat}

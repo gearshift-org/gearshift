@@ -53,6 +53,7 @@ type Props = {
   initialAgentStatus?: TerminalAgentStatus
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
   onClose?: () => void
+  onOpenDevPreview?: (url: string) => void
 }
 
 const DARK_THEME = {
@@ -457,9 +458,47 @@ function recoverTerminalRenderer(term: Terminal) {
   refreshTerminalViewport(term)
 }
 
-function openTerminalUrl(term: Terminal, event: MouseEvent, uri: string): void {
+function isLocalDevUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+      return false
+    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+    return (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname === "::1"
+    )
+  } catch {
+    return false
+  }
+}
+
+function normalizeDevUrl(value: string): string {
+  try {
+    const parsed = new URL(value)
+    if (parsed.hostname === "0.0.0.0") parsed.hostname = "127.0.0.1"
+    return parsed.toString()
+  } catch {
+    return value
+  }
+}
+
+function openTerminalUrl(
+  term: Terminal,
+  event: MouseEvent,
+  uri: string,
+  onOpenDevPreview?: (url: string) => void
+): void {
   event.preventDefault()
-  void window.shellApi.openExternal(expandWrappedTerminalUrl(term, uri))
+  const expanded = expandWrappedTerminalUrl(term, uri)
+  if (onOpenDevPreview && isLocalDevUrl(expanded)) {
+    onOpenDevPreview(normalizeDevUrl(expanded))
+    return
+  }
+  void window.shellApi.openExternal(expanded)
 }
 const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 10000
@@ -687,6 +726,7 @@ export function TerminalView({
   initialAgentStatus,
   onAgentStatusChange,
   onClose,
+  onOpenDevPreview,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -731,6 +771,7 @@ export function TerminalView({
   const onTitleChangeRef = useRef(onTitleChange)
   const onFocusChangeRef = useRef(onFocusChange)
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
+  const onOpenDevPreviewRef = useRef(onOpenDevPreview)
   const agentStatusRef = useRef<TerminalAgentStatus>(
     initialAgentStatus ?? {
       running: false,
@@ -826,6 +867,14 @@ export function TerminalView({
   useEffect(() => {
     onAgentStatusChangeRef.current = onAgentStatusChange
   }, [onAgentStatusChange])
+
+  useEffect(() => {
+    onOpenDevPreviewRef.current = onOpenDevPreview
+  }, [onOpenDevPreview])
+
+  const openDevPreview = useCallback((url: string) => {
+    onOpenDevPreviewRef.current?.(url)
+  }, [])
 
   const emitAgentStatus = useCallback((next: TerminalAgentStatus) => {
     // Carry the last-known agent-native session id onto every status so it
@@ -1078,7 +1127,8 @@ export function TerminalView({
       theme: themeObj,
       allowProposedApi: true,
       linkHandler: {
-        activate: (event, uri) => openTerminalUrl(term, event, uri),
+        activate: (event, uri) =>
+          openTerminalUrl(term, event, uri, openDevPreview),
         hover: () => {},
         leave: () => {},
       },
@@ -1086,7 +1136,7 @@ export function TerminalView({
     const fit = new FitAddon()
     const search = new SearchAddon()
     const webLinks = new WebLinksAddon((event, uri) => {
-      openTerminalUrl(term, event, uri)
+      openTerminalUrl(term, event, uri, openDevPreview)
     })
     term.loadAddon(fit)
     term.loadAddon(search)
@@ -1793,6 +1843,7 @@ export function TerminalView({
   }, [
     sessionId,
     openSearch,
+    openDevPreview,
     markAgentWorking,
     clearAgentWorking,
     emitAgentStatus,

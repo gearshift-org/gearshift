@@ -153,8 +153,8 @@ export function GeneralPanel() {
         />
         <SettingToggle
           icon={Files}
-          label="Open each file in its own tab"
-          description="Open every file and diff in a new tab instead of reusing one shared preview tab. Clicking an already-open file just focuses its tab."
+          label="Open each commit in its own tab"
+          description="Open every commit in a new tab instead of reusing one commit preview tab. File, diff, and dev previews always reuse one tab."
           checked={openFilesInOwnTab}
           onChange={updateOpenFilesInOwnTab}
         />

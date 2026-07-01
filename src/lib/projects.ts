@@ -97,13 +97,13 @@ export type StoredTab = {
   name: string
   customName?: string
   /** Tab kind. Absent on older snapshots, which only ever stored terminals. */
-  kind?: "terminal" | "file" | "diff" | "commit"
+  kind?: "terminal" | "file" | "diff" | "commit" | "devPreview"
   /** Persisted multi-pane state. Falls back to [{ id: tab.id }] for older snapshots. */
   panes?: StoredPane[]
   activePaneId?: string
   /** Persisted recursive split arrangement over pane ids. */
   layout?: TerminalLayout
-  // Preview-tab fields (file/diff/commit). Lets an open preview survive reload.
+  // Preview-tab fields. Lets an open preview survive reload.
   /** Path relative to project root, for file/diff tabs. */
   path?: string
   /** Whether a diff tab shows the staged side. */
@@ -114,6 +114,8 @@ export type StoredTab = {
   shortHash?: string
   /** True for ephemeral "preview" tabs (replaced by the next preview open). */
   preview?: boolean
+  /** Local dev-server URL, for dev preview tabs. */
+  url?: string
 }
 
 export type StoredProject = {
@@ -412,12 +414,13 @@ export function loadProjects(): StoredProject[] {
                   typeof (t as StoredTab).name === "string"
               )
               .map((t) => {
-                // Preview tabs (file/diff/commit) carry a descriptor instead
-                // of panes — pass it through so the preview reopens on reload.
+                // Preview tabs carry a descriptor instead of panes — pass it
+                // through so the preview reopens on reload.
                 if (
                   t.kind === "file" ||
                   t.kind === "diff" ||
-                  t.kind === "commit"
+                  t.kind === "commit" ||
+                  t.kind === "devPreview"
                 ) {
                   return {
                     id: t.id,
@@ -432,6 +435,7 @@ export function loadProjects(): StoredProject[] {
                       ? { shortHash: t.shortHash }
                       : {}),
                     ...(t.preview ? { preview: true } : {}),
+                    ...(typeof t.url === "string" ? { url: t.url } : {}),
                   }
                 }
                 const panes: StoredPane[] = Array.isArray(t.panes)
@@ -839,9 +843,9 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
   }
 }
 
-// When enabled, every file/diff/commit click opens its own tab instead of
-// reusing a single shared preview tab (VS Code-style preview off). Defaults to
-// on for this POC — only an explicit "0" turns it back off.
+// When enabled, commit clicks open their own tab instead of reusing a shared
+// preview tab. File, diff, and dev-preview opens always use singleton preview
+// tabs so browsing does not flood the tab bar.
 export function loadOpenFilesInOwnTab(): boolean {
   try {
     return store.get(OPEN_FILES_IN_OWN_TAB_KEY) !== "0"

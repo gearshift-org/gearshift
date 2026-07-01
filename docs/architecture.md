@@ -87,9 +87,13 @@ The Git tab has subtabs for local Changes, repository PRs, and Commits. When the
 
 The Changes subtab also shows pull request status beside the branch picker for the current branch. If an open pull request exists, it opens that PR. If no PR exists and the branch is pushed upstream, GearShift opens GitHub's pull request creation page.
 
+## Workspace previews
+
+File opens from the tree, command palette, or diff context menu reuse one shared file preview tab. Diff opens from the Git changes list reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
+
 ## Commit history
 
-The Commits subtab lists recent commits from `git:log`, lazily paged (`useInfiniteQuery`, 50 per page) and loaded on scroll via an `IntersectionObserver` sentinel. Clicking a commit opens a `commit` workspace tab that renders its full diff (`git:show`) through the shared `DiffViewer`. Like diff and file tabs, commit tabs are ephemeral preview tabs and are not persisted across restarts.
+The Commits subtab lists recent commits from `git:log`, lazily paged (`useInfiniteQuery`, 50 per page) and loaded on scroll via an `IntersectionObserver` sentinel. Clicking a commit opens a `commit` workspace tab that renders its full diff (`git:show`) through the shared `DiffViewer`.
 
 ## PTY daemon & terminating sessions
 

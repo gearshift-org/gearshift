@@ -88,7 +88,10 @@ type Props = {
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
   onAddTerminal?: () => void
-  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
+  onSplitTerminal?: (
+    tabId: string,
+    direction: "horizontal" | "vertical"
+  ) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onTerminalFocusChange?: (
@@ -113,6 +116,7 @@ type Props = {
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onProjectActivity?: (projectId: string) => void
   onOpenFile?: (path: string) => void
+  onOpenDevPreview?: (url: string) => void
   fileReveal?: FileReveal | null
 }
 
@@ -128,6 +132,7 @@ function TerminalPaneView({
   onClosePane,
   onFocus,
   onTerminalFocusChange,
+  onOpenDevPreview,
 }: {
   tab: TerminalTab
   pane: TerminalPaneType
@@ -144,6 +149,7 @@ function TerminalPaneView({
   onClosePane?: (tabId: string, paneId: string) => void
   onFocus?: () => void
   onTerminalFocusChange?: (paneId: string, focused: boolean) => void
+  onOpenDevPreview?: (url: string) => void
 }) {
   if (pane.pendingStart) {
     const agentLabel = pane.agentName
@@ -183,6 +189,19 @@ function TerminalPaneView({
           onAgentStatusChange?.(tab.id, pane.id, status)
         }
         onClose={() => onClosePane?.(tab.id, pane.id)}
+        onOpenDevPreview={onOpenDevPreview}
+      />
+    </div>
+  )
+}
+
+function DevPreview({ url }: { url: string }) {
+  return (
+    <div className="h-full overflow-hidden bg-card p-2">
+      <iframe
+        src={url}
+        title="Dev Preview"
+        className="h-full w-full rounded border border-border bg-background"
       />
     </div>
   )
@@ -192,13 +211,21 @@ function TerminalPaneView({
 // drop; `preview` is the landing region drawn while hovering. The hit areas
 // tile the pane with no gaps/overlap so exactly one matches the pointer.
 const DROP_ZONES: { zone: DropZone; hit: string; preview: string }[] = [
-  { zone: "top", hit: "inset-x-0 top-0 h-[30%]", preview: "inset-x-0 top-0 h-1/2" },
+  {
+    zone: "top",
+    hit: "inset-x-0 top-0 h-[30%]",
+    preview: "inset-x-0 top-0 h-1/2",
+  },
   {
     zone: "bottom",
     hit: "inset-x-0 bottom-0 h-[30%]",
     preview: "inset-x-0 bottom-0 h-1/2",
   },
-  { zone: "left", hit: "inset-y-[30%] left-0 w-[30%]", preview: "inset-y-0 left-0 w-1/2" },
+  {
+    zone: "left",
+    hit: "inset-y-[30%] left-0 w-[30%]",
+    preview: "inset-y-0 left-0 w-1/2",
+  },
   {
     zone: "right",
     hit: "inset-y-[30%] right-0 w-[30%]",
@@ -237,7 +264,10 @@ function EdgeZone({
   const { setNodeRef, isOver } = useDroppable({ id: dropId(paneId, zone) })
   return (
     <>
-      <div ref={setNodeRef} className={cn("pointer-events-none absolute", hit)} />
+      <div
+        ref={setNodeRef}
+        className={cn("pointer-events-none absolute", hit)}
+      />
       {enabled && isOver ? (
         <div
           className={cn(
@@ -359,6 +389,7 @@ function TerminalTabContent({
   onLayoutChange,
   onExtractPaneToTab,
   onProjectActivity,
+  onOpenDevPreview,
 }: {
   tab: TerminalTab
   cwd?: string
@@ -376,7 +407,10 @@ function TerminalTabContent({
     status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
-  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
+  onSplitTerminal?: (
+    tabId: string,
+    direction: "horizontal" | "vertical"
+  ) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onTerminalFocusChange?: (
@@ -400,6 +434,7 @@ function TerminalTabContent({
   onLayoutChange?: (tabId: string, layout: TerminalLayout) => void
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onProjectActivity?: (projectId: string) => void
+  onOpenDevPreview?: (url: string) => void
 }) {
   const multi = tab.panes.length > 1
   // Among splits with a live agent, mark the one the user most recently
@@ -455,7 +490,10 @@ function TerminalTabContent({
   }, [isActive])
 
   useEffect(() => {
-    if (expandedPaneId && !tab.panes.some((pane) => pane.id === expandedPaneId)) {
+    if (
+      expandedPaneId &&
+      !tab.panes.some((pane) => pane.id === expandedPaneId)
+    ) {
       setExpandedPaneId(null)
     }
   }, [expandedPaneId, tab.panes])
@@ -502,7 +540,9 @@ function TerminalTabContent({
 
   const tabBarDropTarget = (event: DragMoveEvent | DragEndEvent) => {
     const activator = event.activatorEvent
-    if (!(activator instanceof MouseEvent || activator instanceof PointerEvent)) {
+    if (
+      !(activator instanceof MouseEvent || activator instanceof PointerEvent)
+    ) {
       return null
     }
     const x = activator.clientX + event.delta.x
@@ -551,6 +591,7 @@ function TerminalTabContent({
         onClosePane={onClosePane}
         onFocus={() => onFocusPane?.(tab.id, pane.id)}
         onTerminalFocusChange={handleTerminalFocusChange}
+        onOpenDevPreview={onOpenDevPreview}
       />
     </div>
   )
@@ -598,7 +639,8 @@ function TerminalTabContent({
     // needs attention. Driven by the same status flags as the sidebar indicators,
     // so it clears the same way (viewing the pane with the app focused).
     const agentWorking = pane.agentStatus?.working
-    const agentNeedsAttention = !agentWorking && pane.agentStatus?.needsAttention
+    const agentNeedsAttention =
+      !agentWorking && pane.agentStatus?.needsAttention
     const agentDone =
       !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
     return (
@@ -771,6 +813,7 @@ function PaneContent({
   onExtractPaneToTab,
   onProjectActivity,
   onOpenFile,
+  onOpenDevPreview,
   onFileDirtyChange,
   fileReveal,
 }: {
@@ -791,7 +834,10 @@ function PaneContent({
     status: TerminalAgentStatus
   ) => void
   onStartTerminal?: (tabId: string, paneId: string) => void
-  onSplitTerminal?: (tabId: string, direction: "horizontal" | "vertical") => void
+  onSplitTerminal?: (
+    tabId: string,
+    direction: "horizontal" | "vertical"
+  ) => void
   onClosePane?: (tabId: string, paneId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onTerminalFocusChange?: (
@@ -816,6 +862,7 @@ function PaneContent({
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onProjectActivity?: (projectId: string) => void
   onOpenFile?: (path: string) => void
+  onOpenDevPreview?: (url: string) => void
   onFileDirtyChange?: (
     tabId: string,
     status: { dirty: boolean; saving: boolean }
@@ -851,6 +898,7 @@ function PaneContent({
         onLayoutChange={onLayoutChange}
         onExtractPaneToTab={onExtractPaneToTab}
         onProjectActivity={onProjectActivity}
+        onOpenDevPreview={onOpenDevPreview}
       />
     )
   }
@@ -870,6 +918,9 @@ function PaneContent({
     return (
       <CommitDiff cwd={project.path} hash={tab.hash} viewMode={diffViewMode} />
     )
+  }
+  if (tab.kind === "devPreview") {
+    return <DevPreview url={tab.url} />
   }
   return (
     <FilePreview
@@ -909,11 +960,13 @@ export function WorkspacePane({
   onExtractPaneToTab,
   onProjectActivity,
   onOpenFile,
+  onOpenDevPreview,
   fileReveal,
 }: Props) {
   const hasTabs = !!project?.tabs.length
   const resolvedActiveTabId =
-    activeTabIdOverride && project?.tabs.some((t) => t.id === activeTabIdOverride)
+    activeTabIdOverride &&
+    project?.tabs.some((t) => t.id === activeTabIdOverride)
       ? activeTabIdOverride
       : project?.activeTabId
   const activeTab = project?.tabs.find((t) => t.id === resolvedActiveTabId)
@@ -999,7 +1052,7 @@ export function WorkspacePane({
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-md",
         // Terminal panes frame themselves (each split pane has its own
-        // rounded border). For file/diff/preview tabs the WorkspacePane is the
+        // rounded border). For non-terminal preview tabs the WorkspacePane is the
         // frame, so give it the same rounded border as a terminal pane.
         activeTab?.kind === "terminal"
           ? "bg-transparent"
@@ -1124,6 +1177,7 @@ export function WorkspacePane({
                 onExtractPaneToTab={onExtractPaneToTab}
                 onProjectActivity={onProjectActivity}
                 onOpenFile={onOpenFile}
+                onOpenDevPreview={onOpenDevPreview}
                 onFileDirtyChange={handleFileDirtyChange}
                 fileReveal={fileReveal}
               />

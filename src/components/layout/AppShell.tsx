@@ -30,6 +30,7 @@ import { ProjectSwitcher } from "./ProjectSwitcher"
 import { THEME_FAMILIES, useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
+import { SpaceChatView } from "./SpaceChatView"
 import { CommandPalette } from "./CommandPalette"
 import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import {
@@ -633,9 +634,11 @@ export function AppShell() {
   const params = useParams({ strict: false }) as {
     projectId?: string
     tabId?: string
+    spaceId?: string
   }
   const routeProjectId = params.projectId ?? null
   const routeTabId = params.tabId ?? null
+  const routeSpaceChatId = params.spaceId ?? null
   const initialSpaces = useMemo(() => loadSpaces(), [])
   const initialProjectSnapshot = useMemo(
     () => hydrateProjectSnapshot(initialSpaces),
@@ -763,7 +766,22 @@ export function AppShell() {
         // on. Settings wins when it was the last location; otherwise fall back
         // to the stored active project below.
         const lastLocation = loadLastLocation()
-        if (lastLocation?.pathname === "/settings" && !params.projectId) {
+        const lastSpaceChatId =
+          lastLocation?.pathname.match(/^\/spaces\/([^/]+)\/chat$/)?.[1] ?? null
+        if (
+          lastSpaceChatId &&
+          storedSpaces.some((space) => space.id === lastSpaceChatId) &&
+          !params.projectId
+        ) {
+          void navigate({
+            to: "/spaces/$spaceId/chat",
+            params: { spaceId: lastSpaceChatId },
+            replace: true,
+          })
+        } else if (
+          lastLocation?.pathname === "/settings" &&
+          !params.projectId
+        ) {
           void navigate({
             to: "/settings",
             search: {
@@ -988,11 +1006,16 @@ export function AppShell() {
   const routedProject = routeProjectId
     ? projects.find((p) => p.id === routeProjectId)
     : undefined
+  const routedChatSpace = routeSpaceChatId
+    ? spaces.find((space) => space.id === routeSpaceChatId)
+    : undefined
+  const isSpaceChatRoute = !!routedChatSpace
   const pendingProject = pendingNavigation?.projectId
     ? projects.find((p) => p.id === pendingNavigation.projectId)
     : undefined
   const hasPendingNavigation = pendingNavigation !== null
   const visibleSpaceId =
+    routedChatSpace?.id ??
     pendingProject?.spaceId ??
     (hasPendingNavigation && pendingNavigation.projectId === null
       ? activeSpaceId
@@ -1002,16 +1025,18 @@ export function AppShell() {
     [projects, visibleSpaceId]
   )
   const activeProjectId =
-    (pendingProject
-      ? pendingProject.id
-      : hasPendingNavigation && pendingNavigation.projectId === null
-        ? ""
-        : routedProject
-          ? routedProject.id
-          : restoredProjectId &&
-              activeSpaceProjects.some((p) => p.id === restoredProjectId)
-            ? restoredProjectId
-            : activeSpaceProjects[0]?.id) ?? ""
+    (isSpaceChatRoute
+      ? ""
+      : pendingProject
+        ? pendingProject.id
+        : hasPendingNavigation && pendingNavigation.projectId === null
+          ? ""
+          : routedProject
+            ? routedProject.id
+            : restoredProjectId &&
+                activeSpaceProjects.some((p) => p.id === restoredProjectId)
+              ? restoredProjectId
+              : activeSpaceProjects[0]?.id) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
 
@@ -1107,6 +1132,19 @@ export function AppShell() {
       })
     },
     [navigate, stateRestored]
+  )
+
+  const navigateToSpaceChat = useCallback(
+    (spaceId: string) => {
+      if (!spaces.some((space) => space.id === spaceId)) return
+      setActiveSpaceId(spaceId)
+      setPendingNavigation(null)
+      void navigate({
+        to: "/spaces/$spaceId/chat",
+        params: { spaceId },
+      })
+    },
+    [navigate, spaces]
   )
 
   useEffect(() => {
@@ -1407,10 +1445,11 @@ export function AppShell() {
 
   useEffect(() => {
     if (!stateRestored) return
+    if (isSpaceChatRoute) return
     saveActiveProjectId(activeProjectId)
     if (activeProjectPath)
       setPaletteRecents(pushRecentPaletteProject(activeProjectPath))
-  }, [activeProjectId, activeProjectPath, stateRestored])
+  }, [activeProjectId, activeProjectPath, isSpaceChatRoute, stateRestored])
 
   const dismissViewedTerminalNotifications = useCallback(
     (projectId: string, tabId: string, paneId: string) => {
@@ -1566,6 +1605,12 @@ export function AppShell() {
       navigateToProject(activeProjectId || null)
     }
   }, [routeProjectId, projects, activeProjectId, navigateToProject])
+
+  useEffect(() => {
+    if (!routeSpaceChatId) return
+    if (spaces.some((space) => space.id === routeSpaceChatId)) return
+    navigateToSpaceChat(activeSpaceId)
+  }, [activeSpaceId, navigateToSpaceChat, routeSpaceChatId, spaces])
 
   useEffect(() => {
     let next = recents
@@ -1788,11 +1833,22 @@ export function AppShell() {
     (id: string) => {
       if (!spaces.some((space) => space.id === id)) return
       setActiveSpaceId(id)
+      if (isSpaceChatRoute) {
+        navigateToSpaceChat(id)
+        return
+      }
       if (activeProject?.spaceId === id) return
       const nextProject = projects.find((p) => p.spaceId === id)
       navigateToProject(nextProject?.id ?? null, nextProject?.activeTabId)
     },
-    [activeProject?.spaceId, navigateToProject, projects, spaces]
+    [
+      activeProject?.spaceId,
+      isSpaceChatRoute,
+      navigateToProject,
+      navigateToSpaceChat,
+      projects,
+      spaces,
+    ]
   )
 
   const cycleSpace = useCallback(() => {
@@ -3662,6 +3718,7 @@ export function AppShell() {
           activeId={activeProjectId}
           spaces={spaces}
           activeSpaceId={visibleSpaceId}
+          chatActive={isSpaceChatRoute}
           recents={recents.filter((r) =>
             // In focus mode, open-but-unfocused projects stay listed so they
             // can be re-added to the focus list.
@@ -3673,6 +3730,7 @@ export function AppShell() {
           )}
           onSelect={selectProject}
           onSelectSpace={selectSpace}
+          onOpenSpaceChat={() => navigateToSpaceChat(visibleSpaceId)}
           onCreateSpace={createSpace}
           onRenameSpace={renameSpace}
           onDeleteSpace={deleteSpace}
@@ -3835,6 +3893,29 @@ export function AppShell() {
               )}
             </>
           )
+          const chatHeaderLeading = projectSidebarCollapsed ? (
+            <div className="flex items-center gap-0.5 pr-2 [-webkit-app-region:no-drag]">
+              <div className="w-[84px] shrink-0 self-stretch" />
+              {expandProjectSidebarButton}
+              {collapsedSearchButton}
+            </div>
+          ) : undefined
+          const visibleSpace =
+            spaces.find((space) => space.id === visibleSpaceId) ?? spaces[0]
+          if (isSpaceChatRoute && visibleSpace) {
+            return (
+              <SpaceChatView
+                key={visibleSpace.id}
+                space={{ id: visibleSpace.id, name: visibleSpace.name }}
+                projects={activeSpaceProjects.map((project) => ({
+                  id: project.id,
+                  name: project.name,
+                  path: project.path,
+                }))}
+                headerLeading={chatHeaderLeading}
+              />
+            )
+          }
           if (!activeProject) {
             return (
               <>

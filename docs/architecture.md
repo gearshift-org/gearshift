@@ -37,6 +37,14 @@ Spaces are local project metadata stored with the renderer project snapshot in `
 
 The project sidebar filters projects by the active space before applying focus mode, text filtering, pinned grouping, and manual/recent sorting. Creating a space selects it immediately, even before it has projects. Space settings can rename the active space, with blank and duplicate names rejected. The default space cannot be deleted; deleting another space moves its projects back to the default space before removing it. Moving a project between spaces only changes the project's `spaceId`; terminal panes, tabs, notes, chat history, and project IDs stay unchanged. Workspace panes stay mounted across spaces, and space switches optimistically update the active project while URL navigation catches up. A `Cycle Spaces` keybinding action can switch to the next space in sidebar order, but it is unset by default.
 
+## Space chat
+
+Each space has a `Chat` sidebar entry at `/spaces/:spaceId/chat`. The renderer stores the visible chat thread per space in the async state store under `gearshift.spaceChat.<spaceId>`, capped to the most recent messages so reloads restore the conversation without growing the state file indefinitely.
+
+Model calls run in Electron main through `window.spaceChat`; the renderer sends the current space, its projects, and the recent chat messages. Electron main launches `codex app-server` over stdio, checks `account/read`, and uses the user's existing Codex CLI login from `CODEX_HOME`/`~/.codex`. GearShift does not store ChatGPT tokens or OpenAI API keys. Space chat preferences and per-space Codex thread ids are stored in `space-chat-codex.json` under Electron `userData`; `GEARSHIFT_CODEX_MODEL`, `GEARSHIFT_CODEX_BIN`, and `CODEX_HOME` can override the model, Codex binary, and Codex home. Space chat sends Codex turns with low reasoning effort by default.
+
+The first history source is the existing terminal chat-history database. Space chat scopes history to projects in the current space, then injects sanitized, time-windowed snippets into the Codex turn. This lets users ask questions like "what did I do yesterday?" without exposing projects from other spaces.
+
 ### Chat history redaction
 
 User prompts are captured in `electron/inputCapture.ts` and saved through `electron/db/appDb.ts`. `appendMessage` redacts likely secrets before writing to `gearshift.db`, and history reads redact again before returning rows so older stored messages are not shown with raw secrets. The redactor masks credential-looking fields (`password`, `api_key`, `token`, etc.), `Authorization` headers, and common key formats with `********`. Stored history bodies are capped at 500 characters, and users can delete individual history items or clear a whole session/project.

@@ -8,6 +8,7 @@ import type {
   GitApi,
   MenuApi,
   ShellApi,
+  SpaceChatApi,
   StateApi,
   TermApi,
   UpdaterApi,
@@ -21,6 +22,7 @@ declare global {
     clipboardApi: ClipboardApi
     electronUtils: ElectronUtils
     appApi: AppApi
+    spaceChat: SpaceChatApi
     appWindow: AppWindowApi
     git: GitApi
     fsApi: FsApi

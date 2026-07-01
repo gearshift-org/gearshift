@@ -56,10 +56,17 @@ const settingsRoute = createRoute({
   component: SettingsRoute,
 })
 
+const spaceChatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/spaces/$spaceId/chat",
+  component: () => null,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   projectRoute.addChildren([projectIndexRoute, tabRoute]),
   settingsRoute,
+  spaceChatRoute,
 ])
 
 // Boot always lands on "/"; AppShell navigates to the stored active project

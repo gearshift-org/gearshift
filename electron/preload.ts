@@ -15,6 +15,64 @@ export type ProjectNote = {
   updatedAt: number
 }
 
+export type SpaceChatMessage = {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  createdAt: number
+}
+
+export type SpaceChatProject = {
+  id: string
+  name: string
+  path: string
+}
+
+export type SpaceChatSettings = {
+  authenticated: boolean
+  codexAvailable: boolean
+  model: string
+  reasoningEffort: string
+  authLabel?: string
+  authEmail?: string
+  codexBinaryPath?: string
+  codexHomePath?: string
+  error?: string
+}
+
+export type SpaceChatModelOption = {
+  model: string
+  displayName: string
+  isDefault: boolean
+  supportedReasoningEfforts: string[]
+}
+
+export type SpaceChatSendRequest = {
+  space: { id: string; name: string }
+  projects: SpaceChatProject[]
+  messages: SpaceChatMessage[]
+  streamId?: string
+  sessionId?: string
+  activeTurnId?: string
+}
+
+export type SpaceChatDelta = {
+  streamId: string
+  delta: string
+}
+
+export type SpaceChatActiveTurn = {
+  streamId: string
+  status: "running" | "completed" | "error"
+  text: string
+  content?: string
+  error?: string
+} | null
+
+export type SpaceChatSendResult =
+  | { ok: true; message: SpaceChatMessage; historyReads: number }
+  | { ok: false; error: string }
+
 const dialogApi = {
   openProject: () =>
     ipcRenderer.invoke("dialog:openProject") as Promise<string | null>,
@@ -256,6 +314,38 @@ const appApi = {
       ipcRenderer.removeListener("app:open-projects", listener)
     }
   },
+}
+
+const spaceChatApi = {
+  settings: () =>
+    ipcRenderer.invoke("spaceChat:settings") as Promise<SpaceChatSettings>,
+  models: () =>
+    ipcRenderer.invoke("spaceChat:models") as Promise<SpaceChatModelOption[]>,
+  saveSettings: (settings: {
+    model?: string
+    reasoningEffort?: string
+    codexBinaryPath?: string
+    codexHomePath?: string
+  }) =>
+    ipcRenderer.invoke(
+      "spaceChat:saveSettings",
+      settings
+    ) as Promise<SpaceChatSettings>,
+  send: (request: SpaceChatSendRequest) =>
+    ipcRenderer.invoke(
+      "spaceChat:send",
+      request
+    ) as Promise<SpaceChatSendResult>,
+  onDelta: (handler: (payload: SpaceChatDelta) => void) => {
+    const listener = (_e: unknown, payload: SpaceChatDelta) => handler(payload)
+    ipcRenderer.on("spaceChat:delta", listener)
+    return () => ipcRenderer.removeListener("spaceChat:delta", listener)
+  },
+  activeTurn: (activeTurnId: string) =>
+    ipcRenderer.invoke(
+      "spaceChat:activeTurn",
+      activeTurnId
+    ) as Promise<SpaceChatActiveTurn>,
 }
 
 const appWindowApi = {
@@ -627,6 +717,7 @@ contextBridge.exposeInMainWorld("term", termApi)
 contextBridge.exposeInMainWorld("clipboardApi", clipboardApi)
 contextBridge.exposeInMainWorld("electronUtils", electronUtils)
 contextBridge.exposeInMainWorld("appApi", appApi)
+contextBridge.exposeInMainWorld("spaceChat", spaceChatApi)
 contextBridge.exposeInMainWorld("appWindow", appWindowApi)
 contextBridge.exposeInMainWorld("git", gitApi)
 contextBridge.exposeInMainWorld("fsApi", fsApi)
@@ -668,6 +759,7 @@ export type TermApi = typeof termApi
 export type ClipboardApi = typeof clipboardApi
 export type ElectronUtils = typeof electronUtils
 export type AppApi = typeof appApi
+export type SpaceChatApi = typeof spaceChatApi
 export type AppWindowApi = typeof appWindowApi
 export type GitApi = typeof gitApi
 export type FsApi = typeof fsApi

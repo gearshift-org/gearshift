@@ -22,6 +22,7 @@ import {
   FolderInput,
   GitBranch,
   Layers2,
+  MessageSquare,
   PanelLeft,
   Pin,
   PinOff,
@@ -108,9 +109,11 @@ type Props = {
   activeId: string
   spaces: StoredSpace[]
   activeSpaceId: string
+  chatActive?: boolean
   recents: RecentProject[]
   onSelect: (id: string) => void
   onSelectSpace: (id: string) => void
+  onOpenSpaceChat?: () => void
   onCreateSpace: (name?: string) => string | null
   onRenameSpace: (id: string, name: string) => boolean
   onDeleteSpace: (id: string) => boolean
@@ -802,9 +805,11 @@ export function ProjectSidebar({
   activeId,
   spaces,
   activeSpaceId,
+  chatActive = false,
   recents,
   onSelect,
   onSelectSpace,
+  onOpenSpaceChat,
   onCreateSpace,
   onRenameSpace,
   onDeleteSpace,
@@ -1096,14 +1101,33 @@ export function ProjectSidebar({
           </div>
         </div>
         <div className="shrink-0 px-3 pt-2 pb-2">
-          <div className="flex flex-col gap-2">
-            <SpaceSwitcher
-              spaces={spaces}
-              activeSpaceId={activeSpaceId}
-              onSelectSpace={onSelectSpace}
-              onOpenCreateSpace={() => openCreateSpaceDialog()}
-              onOpenSpaceSettings={() => setSpaceSettingsOpen(true)}
-            />
+          <div className="flex flex-col gap-3">
+            {/* Space switcher + Chat form one tight group; the filter sits
+                further below so it reads as a separate control. */}
+            <div className="flex flex-col gap-0.5">
+              <SpaceSwitcher
+                spaces={spaces}
+                activeSpaceId={activeSpaceId}
+                onSelectSpace={onSelectSpace}
+                onOpenCreateSpace={() => openCreateSpaceDialog()}
+                onOpenSpaceSettings={() => setSpaceSettingsOpen(true)}
+              />
+              {onOpenSpaceChat && (
+                <button
+                  type="button"
+                  onClick={onOpenSpaceChat}
+                  aria-current={chatActive ? "page" : undefined}
+                  className={cn(
+                    "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none",
+                    chatActive &&
+                      "bg-sidebar-accent text-sidebar-accent-foreground"
+                  )}
+                >
+                  <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">Chat</span>
+                </button>
+              )}
+            </div>
             <div className="relative">
               <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input

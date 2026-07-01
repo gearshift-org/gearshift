@@ -307,6 +307,980 @@ interface StoredProjectShape {
   tabs?: StoredTabShape[]
 }
 
+type SpaceChatMessage = {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  createdAt: number
+}
+
+type SpaceChatProject = {
+  id: string
+  name: string
+  path: string
+}
+
+type SpaceChatSendRequest = {
+  space: { id: string; name: string }
+  projects: SpaceChatProject[]
+  messages: SpaceChatMessage[]
+  streamId?: string
+  sessionId?: string
+  activeTurnId?: string
+}
+
+type SpaceChatSettingsFile = {
+  model?: string
+  reasoningEffort?: string
+  codexBinaryPath?: string
+  codexHomePath?: string
+  threadIds?: Record<string, string>
+}
+
+type SpaceChatSettingsSummary = {
+  authenticated: boolean
+  codexAvailable: boolean
+  model: string
+  reasoningEffort: string
+  authLabel?: string
+  authEmail?: string
+  codexBinaryPath?: string
+  codexHomePath?: string
+  error?: string
+}
+
+type SpaceChatModelOption = {
+  model: string
+  displayName: string
+  isDefault: boolean
+  supportedReasoningEfforts: string[]
+}
+
+const SPACE_CHAT_REASONING_EFFORTS = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]
+
+type CodexJsonRpcMessage = {
+  id?: number
+  method?: string
+  params?: unknown
+  result?: unknown
+  error?: { message?: string; code?: number }
+}
+
+const DEFAULT_SPACE_CHAT_MODEL = "gpt-5.5"
+const DEFAULT_SPACE_CHAT_REASONING_EFFORT = "low"
+const SPACE_CHAT_SETTINGS_FILE = "space-chat-codex.json"
+
+// In-flight Codex turns keyed by active turn id. The main process owns the turn
+// and keeps accumulating its text even if the renderer reloads mid-stream, so
+// a refreshed UI can recover the result instead of hanging on "Thinking…".
+type SpaceChatActiveTurn = {
+  streamId: string
+  status: "running" | "completed" | "error"
+  text: string
+  content?: string
+  error?: string
+  updatedAt: number
+}
+const spaceChatActiveTurns = new Map<string, SpaceChatActiveTurn>()
+const spaceChatTurnQueues = new Map<string, Promise<void>>()
+
+async function runQueuedSpaceChatTurn<T>(
+  queueKey: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const previous = spaceChatTurnQueues.get(queueKey) ?? Promise.resolve()
+  let releaseCurrent!: () => void
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve
+  })
+  const queued = previous.catch(() => undefined).then(() => current)
+  spaceChatTurnQueues.set(queueKey, queued)
+
+  await previous.catch(() => undefined)
+  try {
+    return await run()
+  } finally {
+    releaseCurrent()
+    if (spaceChatTurnQueues.get(queueKey) === queued) {
+      spaceChatTurnQueues.delete(queueKey)
+    }
+  }
+}
+
+function spaceChatSettingsPath(): string {
+  return path.join(app.getPath("userData"), SPACE_CHAT_SETTINGS_FILE)
+}
+
+async function readSpaceChatSettings(): Promise<SpaceChatSettingsFile> {
+  try {
+    const raw = await fs.readFile(spaceChatSettingsPath(), "utf8")
+    const parsed = JSON.parse(raw) as SpaceChatSettingsFile
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function writeSpaceChatSettings(
+  settings: SpaceChatSettingsFile
+): Promise<void> {
+  await fs.mkdir(path.dirname(spaceChatSettingsPath()), { recursive: true })
+  await fs.writeFile(
+    spaceChatSettingsPath(),
+    JSON.stringify(settings, null, 2),
+    "utf8"
+  )
+}
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+function startOfWeek(d: Date): Date {
+  const x = startOfDay(d)
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
+  return x
+}
+
+function historyBounds(range: unknown): { since?: number; until?: number } {
+  const now = new Date()
+  const nowMs = now.getTime()
+  switch (range) {
+    case "today":
+      return { since: startOfDay(now).getTime(), until: nowMs }
+    case "yesterday": {
+      const today = startOfDay(now)
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      return { since: yesterday.getTime(), until: today.getTime() }
+    }
+    case "this_week":
+      return { since: startOfWeek(now).getTime(), until: nowMs }
+    case "last_week": {
+      const thisWeek = startOfWeek(now)
+      const lastWeek = new Date(thisWeek)
+      lastWeek.setDate(lastWeek.getDate() - 7)
+      return { since: lastWeek.getTime(), until: thisWeek.getTime() }
+    }
+    case "this_month":
+      return {
+        since: new Date(now.getFullYear(), now.getMonth(), 1).getTime(),
+        until: nowMs,
+      }
+    default:
+      return {}
+  }
+}
+
+function trimForPrompt(value: string, max = 500): string {
+  const collapsed = value.replace(/\s+/g, " ").trim()
+  return collapsed.length > max
+    ? `${collapsed.slice(0, max - 1)}...`
+    : collapsed
+}
+
+async function readSpaceHistoryForTool(
+  args: Record<string, unknown>,
+  projects: SpaceChatProject[]
+): Promise<string> {
+  if (projects.length === 0) {
+    return "This space has no projects, so there is no project history to read."
+  }
+  const bounds = historyBounds(args.range)
+  const requestedLimit =
+    typeof args.limit === "number" && Number.isFinite(args.limit)
+      ? Math.floor(args.limit)
+      : 120
+  const totalLimit = Math.min(Math.max(requestedLimit, 1), 500)
+  const perProjectLimit = Math.max(1, Math.ceil(totalLimit / projects.length))
+  const query = typeof args.query === "string" ? args.query : ""
+  const tokens = searchTokens(query)
+  const rows = (
+    await Promise.all(
+      projects.map(async (project) => {
+        const messages = await appDb.queryMessages({
+          projectId: project.id,
+          ...bounds,
+          limit: perProjectLimit,
+          order: "asc",
+        })
+        return messages.map((message) => ({ message, project }))
+      })
+    )
+  )
+    .flat()
+    .filter(({ message, project }) => {
+      if (tokens.length === 0) return true
+      return (
+        hasTokensInOrder(message.body, tokens) ||
+        hasTokensInOrder(project.name, tokens) ||
+        hasTokensInOrder(project.path, tokens)
+      )
+    })
+    .sort((a, b) => a.message.createdAt - b.message.createdAt)
+    .slice(-totalLimit)
+
+  if (rows.length === 0) {
+    return "No recorded terminal chat history matched that request."
+  }
+
+  const lines = rows.map(({ message, project }) => {
+    const when = new Date(message.createdAt).toLocaleString()
+    const agent = message.agent ? ` via ${message.agent}` : ""
+    return `- ${when} · ${project.name}${agent}: ${trimForPrompt(message.body)}`
+  })
+  return `Read ${rows.length} history message(s) from ${projects.length} project(s) in this space:\n${lines.join("\n")}`
+}
+
+function expandHomePath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  if (trimmed === "~") return os.homedir()
+  if (trimmed.startsWith("~/")) return path.join(os.homedir(), trimmed.slice(2))
+  return trimmed
+}
+
+function codexBinaryPath(settings: SpaceChatSettingsFile): string {
+  return (
+    settings.codexBinaryPath?.trim() ||
+    process.env.GEARSHIFT_CODEX_BIN ||
+    "codex"
+  )
+}
+
+// macOS/Linux GUI apps launched from Finder/Dock don't inherit the user's
+// login-shell PATH, so tools like `codex` installed in ~/.local/bin,
+// ~/.vite-plus/bin, Homebrew, etc. can't be found. Resolve the login-shell
+// PATH once so we can locate Codex and pass a working PATH to its process.
+let cachedLoginPath: string | undefined
+async function loginShellPath(): Promise<string> {
+  if (cachedLoginPath !== undefined) return cachedLoginPath
+  const base = process.env.PATH || ""
+  const extras: string[] = []
+  if (process.platform !== "win32") {
+    try {
+      const shell = process.env.SHELL || "/bin/zsh"
+      const marker = "__GS_PATH__"
+      const { stdout } = await execFileP(
+        shell,
+        ["-lic", `printf '%s%s%s' '${marker}' "$PATH" '${marker}'`],
+        { timeout: 5000, maxBuffer: 1024 * 1024 }
+      )
+      const match = stdout.match(new RegExp(`${marker}([^]*?)${marker}`))
+      if (match?.[1]) extras.push(match[1])
+    } catch {
+      // fall back to well-known dirs below
+    }
+  }
+  const home = os.homedir()
+  extras.push(
+    path.join(home, ".vite-plus/bin"),
+    path.join(home, ".local/bin"),
+    path.join(home, "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin"
+  )
+  const seen = new Set<string>()
+  cachedLoginPath = [...extras, ...base.split(":")]
+    .filter((dir) => dir && !seen.has(dir) && seen.add(dir))
+    .join(":")
+  return cachedLoginPath
+}
+
+// Resolve an absolute path to the Codex binary. Honors an explicit override,
+// otherwise asks the login shell where `codex` lives, then falls back to
+// common install locations, then to a bare `codex` (PATH lookup).
+let cachedCodexBin: string | undefined
+async function resolveCodexBinary(
+  settings: SpaceChatSettingsFile
+): Promise<string> {
+  const override = codexBinaryPath(settings)
+  if (override !== "codex") return override
+  if (cachedCodexBin) return cachedCodexBin
+  if (process.platform !== "win32") {
+    try {
+      const shell = process.env.SHELL || "/bin/zsh"
+      const { stdout } = await execFileP(shell, ["-lic", "command -v codex"], {
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+      })
+      const resolved = stdout.trim().split("\n").pop()?.trim()
+      if (resolved && resolved.startsWith("/")) {
+        cachedCodexBin = resolved
+        return resolved
+      }
+    } catch {
+      // fall through to candidate probing
+    }
+  }
+  const home = os.homedir()
+  for (const candidate of [
+    path.join(home, ".vite-plus/bin/codex"),
+    path.join(home, ".local/bin/codex"),
+    "/opt/homebrew/bin/codex",
+    "/usr/local/bin/codex",
+  ]) {
+    try {
+      await fs.access(candidate)
+      cachedCodexBin = candidate
+      return candidate
+    } catch {
+      // try next
+    }
+  }
+  return "codex"
+}
+
+function codexHomePath(settings: SpaceChatSettingsFile): string | undefined {
+  return expandHomePath(settings.codexHomePath || process.env.CODEX_HOME)
+}
+
+function codexModel(settings: SpaceChatSettingsFile): string {
+  return (
+    process.env.GEARSHIFT_CODEX_MODEL ||
+    settings.model ||
+    DEFAULT_SPACE_CHAT_MODEL
+  )
+}
+
+function codexReasoningEffort(settings: SpaceChatSettingsFile): string {
+  const candidate =
+    process.env.GEARSHIFT_CODEX_EFFORT ||
+    settings.reasoningEffort ||
+    DEFAULT_SPACE_CHAT_REASONING_EFFORT
+  return SPACE_CHAT_REASONING_EFFORTS.includes(candidate)
+    ? candidate
+    : DEFAULT_SPACE_CHAT_REASONING_EFFORT
+}
+
+async function listCodexModels(
+  client: CodexAppServerClient
+): Promise<SpaceChatModelOption[]> {
+  const response = await client.request("model/list", { limit: 100 }, 30_000)
+  const data =
+    response && typeof response === "object"
+      ? (response as { data?: unknown }).data
+      : undefined
+  if (!Array.isArray(data)) return []
+  return data.flatMap((entry): SpaceChatModelOption[] => {
+    if (!entry || typeof entry !== "object") return []
+    const row = entry as {
+      model?: unknown
+      displayName?: unknown
+      isDefault?: unknown
+      hidden?: unknown
+      supportedReasoningEfforts?: unknown
+    }
+    if (row.hidden === true) return []
+    const model = typeof row.model === "string" ? row.model : undefined
+    if (!model) return []
+    const efforts = Array.isArray(row.supportedReasoningEfforts)
+      ? row.supportedReasoningEfforts
+          .map((e) =>
+            e && typeof e === "object" ? (e as { effort?: unknown }).effort : e
+          )
+          .filter((e): e is string => typeof e === "string")
+      : []
+    return [
+      {
+        model,
+        displayName:
+          typeof row.displayName === "string" && row.displayName
+            ? row.displayName
+            : model,
+        isDefault: row.isDefault === true,
+        supportedReasoningEfforts: efforts,
+      },
+    ]
+  })
+}
+
+function codexAccountLabel(account: unknown): {
+  label?: string
+  email?: string
+} {
+  if (!account || typeof account !== "object") return {}
+  const record = account as {
+    type?: unknown
+    planType?: unknown
+    email?: unknown
+  }
+  if (record.type === "apiKey") return { label: "OpenAI API Key" }
+  if (record.type === "amazonBedrock") return { label: "Amazon Bedrock" }
+  if (record.type !== "chatgpt") return {}
+  const plan =
+    typeof record.planType === "string"
+      ? record.planType.replace(/_/g, " ")
+      : "ChatGPT"
+  return {
+    label: `${plan} Subscription`,
+    ...(typeof record.email === "string" ? { email: record.email } : {}),
+  }
+}
+
+function isRecoverableCodexResumeError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase()
+  return [
+    "not found",
+    "missing thread",
+    "no such thread",
+    "unknown thread",
+  ].some((snippet) => message.includes(snippet))
+}
+
+class CodexAppServerClient {
+  private child: ReturnType<typeof spawn> | null = null
+  private nextId = 1
+  private buffer = ""
+  private stderr = ""
+  private closed = false
+  private pending = new Map<
+    number,
+    {
+      resolve: (value: unknown) => void
+      reject: (error: Error) => void
+      timer: NodeJS.Timeout
+    }
+  >()
+  private notificationHandlers = new Set<
+    (message: CodexJsonRpcMessage) => void
+  >()
+
+  constructor(
+    private readonly options: {
+      binaryPath: string
+      cwd: string
+      homePath?: string
+      pathEnv?: string
+    }
+  ) {}
+
+  async start(): Promise<void> {
+    if (this.child) return
+    // `-c web_search_mode="live"` overrides Codex's default "cached" web search
+    // (which fails uncached URLs with "Cache miss") so the agent can fetch live.
+    this.child = spawn(
+      this.options.binaryPath,
+      ["app-server", "-c", 'web_search_mode="live"'],
+      {
+        cwd: this.options.cwd,
+        env: {
+          ...process.env,
+          ...(this.options.pathEnv ? { PATH: this.options.pathEnv } : {}),
+          ...(this.options.homePath
+            ? { CODEX_HOME: this.options.homePath }
+            : {}),
+        },
+        shell: process.platform === "win32",
+        stdio: ["pipe", "pipe", "pipe"],
+      }
+    )
+
+    this.child.stdout.setEncoding("utf8")
+    this.child.stdout.on("data", (chunk: string) => this.readStdout(chunk))
+    this.child.stderr.setEncoding("utf8")
+    this.child.stderr.on("data", (chunk: string) => {
+      this.stderr = trimForPrompt(`${this.stderr}${chunk}`, 4000)
+    })
+    this.child.on("error", (error) => this.failAll(error))
+    this.child.on("close", (code) => {
+      this.closed = true
+      this.failAll(
+        new Error(
+          this.stderr ||
+            `Codex app-server exited${typeof code === "number" ? ` with code ${code}` : ""}.`
+        )
+      )
+    })
+
+    await this.request("initialize", {
+      clientInfo: {
+        name: "gearshift_desktop",
+        title: "GearShift Desktop",
+        version: app.getVersion(),
+      },
+      capabilities: {
+        experimentalApi: true,
+      },
+    })
+    this.notify("initialized", undefined)
+  }
+
+  close(): void {
+    this.closed = true
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error("Codex app-server closed."))
+    }
+    this.pending.clear()
+    if (this.child && !this.child.killed) {
+      this.child.kill()
+    }
+    this.child = null
+  }
+
+  onNotification(handler: (message: CodexJsonRpcMessage) => void): () => void {
+    this.notificationHandlers.add(handler)
+    return () => this.notificationHandlers.delete(handler)
+  }
+
+  request(
+    method: string,
+    params: unknown,
+    timeoutMs = 120_000
+  ): Promise<unknown> {
+    if (!this.child || this.closed) {
+      return Promise.reject(new Error("Codex app-server is not running."))
+    }
+    const id = this.nextId++
+    const payload =
+      params === undefined ? { id, method } : { id, method, params }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error(`Codex app-server request timed out: ${method}`))
+      }, timeoutMs)
+      this.pending.set(id, { resolve, reject, timer })
+      this.child!.stdin.write(`${JSON.stringify(payload)}\n`)
+    })
+  }
+
+  notify(method: string, params: unknown): void {
+    if (!this.child || this.closed) return
+    const payload = params === undefined ? { method } : { method, params }
+    this.child.stdin.write(`${JSON.stringify(payload)}\n`)
+  }
+
+  private readStdout(chunk: string): void {
+    this.buffer += chunk
+    for (;;) {
+      const newline = this.buffer.indexOf("\n")
+      if (newline === -1) break
+      const line = this.buffer.slice(0, newline).trim()
+      this.buffer = this.buffer.slice(newline + 1)
+      if (!line) continue
+      this.handleLine(line)
+    }
+  }
+
+  private handleLine(line: string): void {
+    let message: CodexJsonRpcMessage
+    try {
+      message = JSON.parse(line) as CodexJsonRpcMessage
+    } catch {
+      return
+    }
+
+    if (typeof message.id === "number" && message.method) {
+      this.respondToUnsupportedServerRequest(message)
+      return
+    }
+
+    if (typeof message.id === "number") {
+      const pending = this.pending.get(message.id)
+      if (!pending) return
+      this.pending.delete(message.id)
+      clearTimeout(pending.timer)
+      if (message.error) {
+        pending.reject(
+          new Error(
+            message.error.message || `Codex error ${message.error.code ?? ""}`
+          )
+        )
+      } else {
+        pending.resolve(message.result)
+      }
+      return
+    }
+
+    if (message.method) {
+      for (const handler of this.notificationHandlers) handler(message)
+    }
+  }
+
+  private respondToUnsupportedServerRequest(
+    message: CodexJsonRpcMessage
+  ): void {
+    if (!this.child || this.closed || typeof message.id !== "number") return
+    this.child.stdin.write(
+      `${JSON.stringify({
+        id: message.id,
+        error: {
+          code: -32601,
+          message: "GearShift does not handle Codex server requests yet.",
+        },
+      })}\n`
+    )
+  }
+
+  private failAll(error: Error): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(error)
+    }
+    this.pending.clear()
+  }
+}
+
+async function withCodexClient<T>(
+  settings: SpaceChatSettingsFile,
+  cwd: string,
+  fn: (client: CodexAppServerClient) => Promise<T>
+): Promise<T> {
+  const [binaryPath, pathEnv] = await Promise.all([
+    resolveCodexBinary(settings),
+    loginShellPath(),
+  ])
+  const client = new CodexAppServerClient({
+    binaryPath,
+    cwd,
+    pathEnv,
+    ...(codexHomePath(settings) ? { homePath: codexHomePath(settings) } : {}),
+  })
+  try {
+    await client.start()
+    return await fn(client)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("ENOENT")) {
+      throw new Error(
+        "Codex CLI was not found. Install Codex and run `codex login`."
+      )
+    }
+    throw error
+  } finally {
+    client.close()
+  }
+}
+
+async function readCodexAccount(
+  client: CodexAppServerClient
+): Promise<{ account?: unknown; requiresOpenaiAuth?: boolean }> {
+  const response = await client.request("account/read", {}, 30_000)
+  return response && typeof response === "object"
+    ? (response as { account?: unknown; requiresOpenaiAuth?: boolean })
+    : {}
+}
+
+function ensureCodexAuthenticated(account: {
+  account?: unknown
+  requiresOpenaiAuth?: boolean
+}): void {
+  if (account.account) return
+  if (account.requiresOpenaiAuth) {
+    throw new Error(
+      "Codex CLI is not authenticated. Run `codex login` and try again."
+    )
+  }
+}
+
+async function getSpaceChatSettingsSummary(): Promise<SpaceChatSettingsSummary> {
+  const settings = await readSpaceChatSettings()
+  const model = codexModel(settings)
+  const reasoningEffort = codexReasoningEffort(settings)
+  const cwd = process.cwd()
+  try {
+    return await withCodexClient(settings, cwd, async (client) => {
+      const account = await readCodexAccount(client)
+      const auth = codexAccountLabel(account.account)
+      return {
+        authenticated: !!account.account,
+        codexAvailable: true,
+        model,
+        reasoningEffort,
+        ...(auth.label ? { authLabel: auth.label } : {}),
+        ...(auth.email ? { authEmail: auth.email } : {}),
+        ...(settings.codexBinaryPath
+          ? { codexBinaryPath: settings.codexBinaryPath }
+          : {}),
+        ...(settings.codexHomePath
+          ? { codexHomePath: settings.codexHomePath }
+          : {}),
+        ...(!account.account && account.requiresOpenaiAuth
+          ? {
+              error:
+                "Codex CLI is not authenticated. Run `codex login` and try again.",
+            }
+          : {}),
+      }
+    })
+  } catch (error) {
+    return {
+      authenticated: false,
+      codexAvailable: false,
+      model,
+      reasoningEffort,
+      ...(settings.codexBinaryPath
+        ? { codexBinaryPath: settings.codexBinaryPath }
+        : {}),
+      ...(settings.codexHomePath
+        ? { codexHomePath: settings.codexHomePath }
+        : {}),
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to check Codex authentication.",
+    }
+  }
+}
+
+async function listSpaceChatModels(): Promise<SpaceChatModelOption[]> {
+  const settings = await readSpaceChatSettings()
+  try {
+    return await withCodexClient(settings, process.cwd(), (client) =>
+      listCodexModels(client)
+    )
+  } catch {
+    return []
+  }
+}
+
+function inferHistoryRange(prompt: string): string {
+  const lower = prompt.toLowerCase()
+  if (lower.includes("yesterday")) return "yesterday"
+  if (lower.includes("last week")) return "last_week"
+  if (lower.includes("this week") || lower.includes("week")) return "this_week"
+  if (lower.includes("this month") || lower.includes("month"))
+    return "this_month"
+  if (lower.includes("today")) return "today"
+  return "all"
+}
+
+function buildSpaceChatPrompt(input: {
+  request: SpaceChatSendRequest
+  historyContext: string
+}): string {
+  const latestUserMessage = [...input.request.messages]
+    .reverse()
+    .find((message) => message.role === "user")
+  const projects = input.request.projects
+    .filter((project) => project.id && project.name && project.path)
+    .map((project) => `- ${project.name}: ${project.path}`)
+    .join("\n")
+  const recentMessages = input.request.messages
+    .slice(-8, -1)
+    .map(
+      (message) => `${message.role}: ${trimForPrompt(message.content, 1200)}`
+    )
+    .join("\n")
+
+  return [
+    `You are GearShift Chat, a concise helper for the user's "${input.request.space.name}" space.`,
+    "Answer questions about recent and past work using the GearShift project history below.",
+    "Do not modify files or run commands unless the user explicitly asks for coding work outside this space summary chat.",
+    `Current local time: ${new Date().toLocaleString()}.`,
+    "",
+    "Projects in this space:",
+    projects || "- No projects in this space.",
+    "",
+    "Recent chat context:",
+    recentMessages || "- No earlier chat context.",
+    "",
+    "GearShift captured project history:",
+    input.historyContext,
+    "",
+    "User message:",
+    latestUserMessage?.content ?? "",
+  ].join("\n")
+}
+
+function readThreadId(response: unknown): string | null {
+  if (!response || typeof response !== "object") return null
+  const thread = (response as { thread?: unknown }).thread
+  if (!thread || typeof thread !== "object") return null
+  const id = (thread as { id?: unknown }).id
+  return typeof id === "string" && id ? id : null
+}
+
+function readTurnId(response: unknown): string | null {
+  if (!response || typeof response !== "object") return null
+  const turn = (response as { turn?: unknown }).turn
+  if (!turn || typeof turn !== "object") return null
+  const id = (turn as { id?: unknown }).id
+  return typeof id === "string" && id ? id : null
+}
+
+async function openCodexSpaceThread(input: {
+  client: CodexAppServerClient
+  settings: SpaceChatSettingsFile
+  threadKey: string
+  cwd: string
+  model: string
+}): Promise<string> {
+  const startParams = {
+    cwd: input.cwd,
+    approvalPolicy: "untrusted",
+    sandbox: "read-only",
+    model: input.model,
+  }
+  const existingThreadId = input.settings.threadIds?.[input.threadKey]
+  if (existingThreadId) {
+    try {
+      const resumed = await input.client.request("thread/resume", {
+        threadId: existingThreadId,
+        ...startParams,
+      })
+      return readThreadId(resumed) ?? existingThreadId
+    } catch (error) {
+      if (!isRecoverableCodexResumeError(error)) throw error
+    }
+  }
+
+  const started = await input.client.request("thread/start", startParams)
+  const threadId = readThreadId(started)
+  if (!threadId) throw new Error("Codex did not return a thread id.")
+  const nextSettings: SpaceChatSettingsFile = {
+    ...input.settings,
+    threadIds: {
+      ...(input.settings.threadIds ?? {}),
+      [input.threadKey]: threadId,
+    },
+  }
+  await writeSpaceChatSettings(nextSettings)
+  input.settings.threadIds = nextSettings.threadIds
+  return threadId
+}
+
+async function runCodexTurn(input: {
+  client: CodexAppServerClient
+  threadId: string
+  model: string
+  effort: string
+  prompt: string
+  onDelta?: (delta: string) => void
+}): Promise<string> {
+  let activeTurnId: string | null = null
+  let assistantText = ""
+
+  return await new Promise<string>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      dispose()
+      reject(new Error("Codex took too long to finish the turn."))
+    }, 180_000)
+    const dispose = input.client.onNotification((message) => {
+      const params =
+        message.params && typeof message.params === "object"
+          ? (message.params as Record<string, unknown>)
+          : {}
+      if (params.threadId !== input.threadId) return
+
+      if (
+        message.method === "item/agentMessage/delta" &&
+        typeof params.delta === "string"
+      ) {
+        assistantText += params.delta
+        input.onDelta?.(params.delta)
+        return
+      }
+
+      if (message.method === "turn/completed") {
+        const turn = params.turn
+        const completedTurnId =
+          turn && typeof turn === "object"
+            ? (turn as { id?: unknown }).id
+            : undefined
+        if (
+          activeTurnId &&
+          typeof completedTurnId === "string" &&
+          completedTurnId !== activeTurnId
+        ) {
+          return
+        }
+        clearTimeout(timeout)
+        dispose()
+        resolve(assistantText.trim())
+      }
+    })
+
+    input.client
+      .request("turn/start", {
+        threadId: input.threadId,
+        input: [{ type: "text", text: input.prompt }],
+        approvalPolicy: "untrusted",
+        sandboxPolicy: { type: "readOnly" },
+        model: input.model,
+        effort: input.effort,
+      })
+      .then((response) => {
+        activeTurnId = readTurnId(response)
+      })
+      .catch((error) => {
+        clearTimeout(timeout)
+        dispose()
+        reject(error)
+      })
+  })
+}
+
+async function runSpaceChat(
+  request: SpaceChatSendRequest,
+  onDelta?: (delta: string) => void
+): Promise<{
+  message: SpaceChatMessage
+  historyReads: number
+}> {
+  const settings = await readSpaceChatSettings()
+  const model = codexModel(settings)
+  const effort = codexReasoningEffort(settings)
+  const projects = request.projects.filter(
+    (project) => project.id && project.name && project.path
+  )
+  const latestUserMessage = [...request.messages]
+    .reverse()
+    .find((message) => message.role === "user")
+  const historyContext = await readSpaceHistoryForTool(
+    {
+      range: inferHistoryRange(latestUserMessage?.content ?? ""),
+      limit: 160,
+    },
+    projects
+  )
+  const cwd = projects[0]?.path || process.cwd()
+  const content = await withCodexClient(settings, cwd, async (client) => {
+    const account = await readCodexAccount(client)
+    ensureCodexAuthenticated(account)
+    const threadId = await openCodexSpaceThread({
+      client,
+      settings,
+      threadKey: request.sessionId || request.space.id,
+      cwd,
+      model,
+    })
+    return await runCodexTurn({
+      client,
+      threadId,
+      model,
+      effort,
+      prompt: buildSpaceChatPrompt({ request, historyContext }),
+      ...(onDelta ? { onDelta } : {}),
+    })
+  })
+
+  return {
+    historyReads: 1,
+    message: {
+      id: randomUUID(),
+      role: "assistant",
+      content:
+        content ||
+        "Codex finished the turn but did not return a visible response.",
+      createdAt: Date.now(),
+    },
+  }
+}
+
 // Sync read of the persisted project list (id/name/path) for the local history
 // server's id → name enrichment. Reads the state file directly to stay sync and
 // side-effect free; called only on the rare HTTP request.
@@ -1598,6 +2572,118 @@ app.whenReady().then(async () => {
     if (stateWriteTimer) clearTimeout(stateWriteTimer)
     stateWriteTimer = setTimeout(() => void flushState(), 100)
     return { ok: true }
+  })
+
+  ipcMain.handle("spaceChat:settings", async () => {
+    return getSpaceChatSettingsSummary()
+  })
+
+  ipcMain.handle("spaceChat:models", async () => {
+    return listSpaceChatModels()
+  })
+
+  ipcMain.handle(
+    "spaceChat:saveSettings",
+    async (
+      _e,
+      incoming: {
+        model?: string
+        reasoningEffort?: string
+        codexBinaryPath?: string
+        codexHomePath?: string
+      }
+    ) => {
+      const current = await readSpaceChatSettings()
+      const next: SpaceChatSettingsFile = {
+        ...current,
+        model:
+          incoming.model?.trim() || current.model || DEFAULT_SPACE_CHAT_MODEL,
+      }
+      if (
+        typeof incoming.reasoningEffort === "string" &&
+        SPACE_CHAT_REASONING_EFFORTS.includes(incoming.reasoningEffort)
+      ) {
+        next.reasoningEffort = incoming.reasoningEffort
+      }
+      if (typeof incoming.codexBinaryPath === "string") {
+        const trimmed = incoming.codexBinaryPath.trim()
+        if (trimmed) next.codexBinaryPath = trimmed
+        else delete next.codexBinaryPath
+      }
+      if (typeof incoming.codexHomePath === "string") {
+        const trimmed = incoming.codexHomePath.trim()
+        if (trimmed) next.codexHomePath = trimmed
+        else delete next.codexHomePath
+      }
+      await writeSpaceChatSettings(next)
+      return getSpaceChatSettingsSummary()
+    }
+  )
+
+  ipcMain.handle("spaceChat:send", async (e, request: SpaceChatSendRequest) => {
+    const streamId = request.streamId
+    const activeTurnId = request.activeTurnId || request.sessionId
+    const queueKey = request.sessionId || request.space.id
+    if (activeTurnId) {
+      spaceChatActiveTurns.set(activeTurnId, {
+        streamId: streamId ?? "",
+        status: "running",
+        text: "",
+        updatedAt: Date.now(),
+      })
+    }
+    try {
+      const result = await runQueuedSpaceChatTurn(queueKey, () =>
+        runSpaceChat(request, (delta) => {
+          if (activeTurnId) {
+            const turn = spaceChatActiveTurns.get(activeTurnId)
+            if (turn) {
+              turn.text += delta
+              turn.updatedAt = Date.now()
+            }
+          }
+          if (streamId && !e.sender.isDestroyed()) {
+            e.sender.send("spaceChat:delta", { streamId, delta })
+          }
+        })
+      )
+      if (activeTurnId) {
+        const turn = spaceChatActiveTurns.get(activeTurnId)
+        if (turn) {
+          turn.status = "completed"
+          turn.content = result.message.content
+          turn.updatedAt = Date.now()
+        }
+      }
+      return { ok: true, ...result }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : "Space chat failed"
+      if (activeTurnId) {
+        const turn = spaceChatActiveTurns.get(activeTurnId)
+        if (turn) {
+          turn.status = "error"
+          turn.error = error
+          turn.updatedAt = Date.now()
+        }
+      }
+      return { ok: false, error }
+    }
+  })
+
+  // Lets a reloaded renderer recover an interrupted turn: returns the current
+  // status + accumulated/final text the main process holds for a turn.
+  ipcMain.handle("spaceChat:activeTurn", (_e, activeTurnId: string) => {
+    const turn = activeTurnId
+      ? spaceChatActiveTurns.get(activeTurnId)
+      : undefined
+    if (!turn) return null
+    return {
+      streamId: turn.streamId,
+      status: turn.status,
+      text: turn.text,
+      ...(turn.content !== undefined ? { content: turn.content } : {}),
+      ...(turn.error !== undefined ? { error: turn.error } : {}),
+    }
   })
 
   ipcMain.handle("clipboard:hasImage", () => {
@@ -3115,9 +4201,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "term:history:migrateProjectIds",
     async (_event, migrations: Array<{ from: string; to: string }>) => {
-      await appDb.migrateProjectIds(
-        Array.isArray(migrations) ? migrations : []
-      )
+      await appDb.migrateProjectIds(Array.isArray(migrations) ? migrations : [])
       return { ok: true }
     }
   )

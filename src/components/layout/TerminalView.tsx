@@ -486,6 +486,9 @@ function normalizeDevUrl(value: string): string {
   }
 }
 
+// Master switch for the in-app dev preview. Disabled for now.
+const DEV_PREVIEW_ENABLED = false
+
 function openTerminalUrl(
   term: Terminal,
   event: MouseEvent,
@@ -494,7 +497,11 @@ function openTerminalUrl(
 ): void {
   event.preventDefault()
   const expanded = expandWrappedTerminalUrl(term, uri)
-  if (onOpenDevPreview && isLocalDevUrl(expanded)) {
+  // NOTE: In-app dev preview is disabled for now — all terminal links open in
+  // the external browser. Flip DEV_PREVIEW_ENABLED to true to re-enable routing
+  // local dev URLs (localhost/127.0.0.1/etc) to a singleton iframe preview tab.
+  // See isLocalDevUrl/normalizeDevUrl above and openDevPreviewTab in AppShell.tsx.
+  if (DEV_PREVIEW_ENABLED && onOpenDevPreview && isLocalDevUrl(expanded)) {
     onOpenDevPreview(normalizeDevUrl(expanded))
     return
   }

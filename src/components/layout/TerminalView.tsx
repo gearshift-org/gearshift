@@ -817,6 +817,8 @@ export function TerminalView({
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
 
   const [searchOpen, setSearchOpen] = useState(false)
+  // Mirror of searchOpen for handlers created once at terminal init.
+  const searchOpenRef = useRef(false)
   const [searchQuery, setSearchQuery] = useState("")
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [searchResults, setSearchResults] = useState({
@@ -858,6 +860,7 @@ export function TerminalView({
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
+    searchOpenRef.current = true
     requestAnimationFrame(() => {
       searchInputRef.current?.focus()
       searchInputRef.current?.select()
@@ -866,6 +869,7 @@ export function TerminalView({
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
+    searchOpenRef.current = false
     searchRef.current?.clearDecorations()
     const term = termRef.current
     if (term) safeTerminalFocus(term)
@@ -1182,6 +1186,15 @@ export function TerminalView({
     container.addEventListener("focusout", onTerminalFocusOut)
 
     const resultsSub = search.onDidChangeResults((e) => {
+      // The search addon re-runs the last search — recreating highlight
+      // decorations — on its own write/resize debounce. If that lands after
+      // the search overlay was closed, orphaned highlight blocks linger over
+      // the terminal. Every such re-run fires this event, so enforce the
+      // invariant here: no decorations while the overlay is closed.
+      if (!searchOpenRef.current) {
+        if (e.resultCount > 0) search.clearDecorations()
+        return
+      }
       setSearchResults((prev) =>
         prev.resultIndex === e.resultIndex && prev.resultCount === e.resultCount
           ? prev

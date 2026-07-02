@@ -2521,6 +2521,12 @@ app.whenReady().then(async () => {
     }
   )
 
+  // Red count badge on the dock icon (macOS/Linux); 0 clears it.
+  ipcMain.handle("dock:setBadgeCount", (_event, count: number) => {
+    const n = Math.max(0, Math.floor(Number(count) || 0))
+    return { ok: app.setBadgeCount(n) }
+  })
+
   ipcMain.handle(
     "menu:showEditContext",
     (

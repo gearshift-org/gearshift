@@ -27,9 +27,9 @@ Stage, unstage, and discard actions optimistically patch the visible changes lis
 
 ## CLI Agent Activity
 
-Terminal panes detect supported coding agents by asking the Electron main process to inspect the PTY shell's child process tree. GearShift passes each terminal a `GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET` so supported lifecycle hooks can report status back over a local Unix socket. Agent-specific hooks and plugins are normalized into three GearShift lifecycle events: `start`, `stop`, and `needs_attention`.
+Terminal panes detect supported coding agents by asking the Electron main process to inspect the PTY shell's child process tree. GearShift passes each terminal a `GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET` so supported lifecycle hooks can report status back over a local Unix socket. Agent-specific hooks and plugins are normalized into GearShift lifecycle events: `start`, `stop`, `needs_attention`, and (Claude only) `subagent_start`/`subagent_stop`. Claude's `Stop` hook fires whenever the main agent finishes a turn, even while background subagents are still running, so GearShift tracks subagent lifecycles and holds the "completed" notification until the last pending background subagent has stopped.
 
-The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications. For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
+The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications, and the count of unviewed completed agents is mirrored as a red badge on the dock icon (cleared as the flagged panes are viewed). For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
 
 ## Project spaces
 

@@ -7,7 +7,12 @@ export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi"
 
 export type AgentHookEvent = {
   agentName: TerminalAgentName
-  event: "start" | "stop" | "needs_attention"
+  event:
+    | "start"
+    | "stop"
+    | "needs_attention"
+    | "subagent_start"
+    | "subagent_stop"
   body?: string
   /** The agent's own session id (e.g. Claude's resumable session UUID). */
   agentSessionId?: string
@@ -61,7 +66,11 @@ function parseAgentHookPayload(
           eventRaw === "needs attention" ||
           eventRaw === "notification"
         ? "needs_attention"
-        : "stop"
+        : eventRaw === "SubagentStart" || eventRaw === "subagent_start"
+          ? "subagent_start"
+          : eventRaw === "SubagentStop" || eventRaw === "subagent_stop"
+            ? "subagent_stop"
+            : "stop"
   const sessionId = sessionIdRaw?.trim()
   if (!sessionId) return null
   const body = bodyParts
@@ -291,6 +300,19 @@ case "$event" in
     event="start"
     body=""
     ;;
+  SubagentStart|subagent_start|SubagentStop|subagent_stop)
+    case "$event" in
+      SubagentStart|subagent_start) event="subagent_start" ;;
+      *) event="subagent_stop" ;;
+    esac
+    # Carry the subagent id in the body so the renderer can pair start/stop.
+    body=""
+    if [ -n "$input" ]; then
+      body=$(printf '%s' "$input" \\
+        | grep -o '"agent_id":"[^"]*"' \\
+        | head -1 | cut -d'"' -f4 || true)
+    fi
+    ;;
   *)
     event="stop"
     if [ -z "$input" ]; then
@@ -352,6 +374,18 @@ async function installClaudeHooks(scriptPath: string): Promise<void> {
     Stop: mergeMarkedHookEntry(
       hooks.Stop,
       buildCommandHookEntry(cmd("stop"), 10)
+    ),
+    // Stop fires whenever the main agent finishes a turn, even while background
+    // subagents are still running (anthropic/claude-code#25147). Track subagent
+    // lifecycles so the renderer can hold the "completed" signal until the last
+    // background agent is done.
+    SubagentStart: mergeMarkedHookEntry(
+      hooks.SubagentStart,
+      buildCommandHookEntry(cmd("subagent_start"), 5, "*")
+    ),
+    SubagentStop: mergeMarkedHookEntry(
+      hooks.SubagentStop,
+      buildCommandHookEntry(cmd("subagent_stop"), 5, "*")
     ),
     SessionEnd: mergeMarkedHookEntry(
       hooks.SessionEnd,

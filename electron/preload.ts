@@ -134,7 +134,12 @@ const termApi = {
     id: string,
     cb: (event: {
       agentName: "claude" | "codex" | "opencode" | "pi"
-      event: "start" | "stop" | "needs_attention"
+      event:
+        | "start"
+        | "stop"
+        | "needs_attention"
+        | "subagent_start"
+        | "subagent_stop"
       body?: string
       agentSessionId?: string
     }) => void
@@ -144,7 +149,12 @@ const termApi = {
       _e: unknown,
       event: {
         agentName: "claude" | "codex" | "opencode" | "pi"
-        event: "start" | "stop" | "needs_attention"
+        event:
+        | "start"
+        | "stop"
+        | "needs_attention"
+        | "subagent_start"
+        | "subagent_stop"
         body?: string
       }
     ) => cb(event)
@@ -379,6 +389,11 @@ const appWindowApi = {
   // bounces once. No-op on other platforms.
   bounceDock: (type: "informational" | "critical" = "informational") =>
     ipcRenderer.invoke("dock:bounce", type) as Promise<{ ok: boolean }>,
+  // Red count badge on the dock icon (macOS/Linux); 0 clears it.
+  setBadgeCount: (count: number) =>
+    ipcRenderer.invoke("dock:setBadgeCount", count) as Promise<{
+      ok: boolean
+    }>,
 }
 
 const fsApi = {

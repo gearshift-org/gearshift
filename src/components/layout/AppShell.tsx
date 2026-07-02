@@ -1527,6 +1527,25 @@ export function AppShell() {
     []
   )
 
+  // Mirror unviewed agent completions as a red count badge on the dock icon,
+  // driven by the same per-pane completed markers as the in-app indicators.
+  // Viewing a flagged pane clears its marker, which shrinks/clears the badge.
+  const completedAgentCount = useMemo(() => {
+    let count = 0
+    for (const p of projects) {
+      for (const t of p.tabs) {
+        if (t.kind !== "terminal") continue
+        for (const pane of t.panes) {
+          if (pane.agentStatus?.completed === true) count++
+        }
+      }
+    }
+    return count
+  }, [projects])
+  useEffect(() => {
+    window.appWindow?.setBadgeCount(completedAgentCount).catch(() => null)
+  }, [completedAgentCount])
+
   // The focus-change handler below only fires when the terminal gains focus,
   // so a completion that lands while the user is already viewing the pane (or
   // a tab switch without clicking into the terminal) would leave the done/

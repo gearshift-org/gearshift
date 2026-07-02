@@ -513,6 +513,10 @@ const AGENT_WORKING_QUIET_MS = 10000
 // poller is treated as advisory only — it can promote running/agentName but
 // must not downgrade the working flag. Hooks are the authoritative signal.
 const HOOK_AUTHORITATIVE_WINDOW_MS = 30000
+// A pending background subagent older than this is assumed stale (its stop
+// event was lost — e.g. a dropped socket write or an agent crash) and no
+// longer blocks the completion signal.
+const SUBAGENT_PENDING_MAX_MS = 30 * 60 * 1000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
@@ -803,6 +807,10 @@ export function TerminalView({
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(!!initialAgentStatus?.working)
+  // Background subagents currently running (subagent id -> start time). While
+  // non-empty, a Stop hook is treated as a turn boundary, not a completion.
+  const pendingSubagentsRef = useRef<Map<string, number>>(new Map())
+  const anonSubagentSeqRef = useRef(0)
   const recapTimerRef = useRef<number | undefined>(undefined)
   const commitCheckTimerRef = useRef<number | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
@@ -2017,6 +2025,28 @@ export function TerminalView({
       if (event.agentSessionId) {
         agentSessionIdRef.current = event.agentSessionId
       }
+      // Track background subagent lifecycles (Claude's SubagentStart/Stop
+      // hooks). Claude's Stop hook fires when the main agent finishes a turn
+      // even while background subagents are still running, so the stop branch
+      // below holds the "completed" signal while any of these are pending.
+      if (
+        event.event === "subagent_start" ||
+        event.event === "subagent_stop"
+      ) {
+        const pending = pendingSubagentsRef.current
+        if (event.event === "subagent_start") {
+          const id = event.body || `anon-${++anonSubagentSeqRef.current}`
+          pending.set(id, Date.now())
+        } else if (event.body && pending.has(event.body)) {
+          pending.delete(event.body)
+        } else {
+          // Stop payload without a matching id — retire the oldest entry so a
+          // missing agent_id field can't wedge the counter.
+          const oldest = pending.keys().next()
+          if (!oldest.done) pending.delete(oldest.value)
+        }
+        return
+      }
       const current = agentStatusRef.current
       if (event.event === "start") {
         // Authoritative "agent is working" signal from the lifecycle hook
@@ -2073,6 +2103,17 @@ export function TerminalView({
       // completed dot on the project.
       const hadActiveTurn = activeHookWorkRef.current || current.working
       const wasWaitingForInput = current.needsAttention === true
+      if (hadActiveTurn && !wasWaitingForInput) {
+        // Background subagents still running: this Stop only closed the main
+        // agent's turn, not the whole task. Keep the pane working; the real
+        // completion is the Stop that fires after the last subagent finishes.
+        const pending = pendingSubagentsRef.current
+        const now = Date.now()
+        for (const [id, startedAt] of pending) {
+          if (now - startedAt > SUBAGENT_PENDING_MAX_MS) pending.delete(id)
+        }
+        if (pending.size > 0) return
+      }
       activeHookWorkRef.current = false
       lastAgentActivityAtRef.current = 0
       hasSubmittedToAgentRef.current = false

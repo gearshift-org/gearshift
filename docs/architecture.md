@@ -31,6 +31,22 @@ Terminal panes detect supported coding agents by asking the Electron main proces
 
 The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications, and the count of unviewed completed agents is mirrored as a red badge on the dock icon (cleared as the flagged panes are viewed). For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
 
+## Sidebar Toggle Animation
+
+Both sidebar toggles (left project sidebar, right Git sidebar) use a "snap layout, slide compositor" pattern, deliberately chosen after profiling.
+
+**Before:** the toggle animated a layout property (`margin-left` on the left sidebar, `padding-right` on the right) over 200 ms, so the sidebar and workspace moved together pixel by pixel. Every frame relayouted the entire workspace, capping the slide at roughly half the display refresh rate, and when the slide ended the terminal settle-fit synchronously reflowed the whole scrollback buffer (~5000 lines) — a 50–110 ms main-thread freeze that read as lag. The freeze scales with session size, which is why long-running real sessions felt worse than a fresh dev profile.
+
+**Now:** the workspace reserves space via `paddingLeft`/`paddingRight` that snaps with no transition (one layout pass at toggle time), and only the sidebar panel slides, via a `transform` transition. Transforms animate on the GPU compositor, so the slide stays smooth at full refresh rate even while the terminal reflow runs on the main thread underneath it mid-slide.
+
+**Why:** the terminal fundamentally cannot animate its width smoothly — re-wrapping the scrollback is the expensive step — so the workspace size change has to be a single jump somewhere. Putting the jump at the moment of the click (content snaps, panel glides over/away from it, VS Code-style) hides the heavy work under the animation instead of letting it stutter the animation. The visible trade-off is intentional: on expand the workspace shifts immediately and the sidebar glides in behind it. Alternatives considered and rejected: jump-at-end (reads as a laggy finish), floating overlay sidebar (covers terminal content), no animation at all.
+
+Width drag-resizing keeps its own live path (`gs-sidebar-resizing` on `<body>` suppresses per-frame terminal refits; one settle fit runs after the drag pauses).
+
+Hidden terminals don't refit at all: every project's and tab's panes stay mounted but hidden via `opacity-0`, so they are still laid out and would otherwise each run a scrollback reflow on every workspace width change — with many open terminals those stack into one large main-thread stall. `TerminalView` takes an `isVisible` prop (project active && tab active); hidden panes skip fits, flag them as pending, and replay a single authoritative fit when revealed.
+
+Native window resizes fit live (VS Code-like): the visible terminal tracks the window edge with cheap row-only resizes while the expensive column reflow defers to the settle fit, and the native window background color is kept in sync with the renderer theme so newly exposed areas don't flash a mismatched color mid-resize.
+
 ## Project spaces
 
 Spaces are local project metadata stored with the renderer project snapshot in `gearshift.projects` and `gearshift.spaces`. A fresh install always has the built-in `Personal` space (`space-personal`), and older projects without a `spaceId` hydrate into that space automatically.

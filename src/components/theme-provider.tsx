@@ -204,6 +204,14 @@ function applyThemeClass(theme: ThemeId, resolvedTheme: ResolvedTheme) {
   root.classList.remove("light", "dark")
   root.classList.add(resolvedTheme)
   root.dataset.theme = theme
+  // Keep the native window background in sync with the theme. During a native
+  // resize, macOS exposes new window area before Chromium paints it and fills
+  // it with the window's background color — a mismatched color (e.g. the dark
+  // boot color under a light theme) flashes at the edges and reads as shaking.
+  requestAnimationFrame(() => {
+    const bg = getComputedStyle(document.body).backgroundColor
+    if (bg) window.appWindow?.setWindowBackgroundColor?.(bg).catch(() => null)
+  })
 }
 
 type ThemeSettings = {

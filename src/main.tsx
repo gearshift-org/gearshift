@@ -33,6 +33,10 @@ const queryClient = new QueryClient({
 const persister = createSyncStoragePersister({
   storage: window.localStorage,
   key: "gearshift-query-cache-v1",
+  // Serializing the whole cache (git status/diffs for every project) blocks
+  // the main thread ~70ms per write. This is only a warm-start cache — throttle
+  // it well out of interaction paths instead of the default 1s.
+  throttleTime: 10_000,
 })
 
 // Mouse back/forward buttons navigate router history.

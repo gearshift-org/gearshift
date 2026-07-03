@@ -24,6 +24,7 @@ import {
 } from "@dnd-kit/core"
 import logoGrayUrl from "@/assets/logo-gray.svg?url"
 import { cn } from "@/lib/utils"
+import { hiddenLayerClass } from "./hiddenLayer"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { matchesModifierChord } from "@/lib/keybindings/registry"
 import { TerminalView } from "./TerminalView"
@@ -180,6 +181,7 @@ function TerminalPaneView({
         sessionId={pane.sessionId ?? pane.id}
         cwd={cwd}
         isActive={isTabActive && tab.activePaneId === pane.id}
+        isVisible={isTabActive}
         paneCount={tab.panes.length}
         focusRequest={focusRequest}
         onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
@@ -1150,10 +1152,7 @@ export function WorkspacePane({
             <div
               key={t.id}
               aria-hidden={t.id !== resolvedActiveTabId}
-              className={cn(
-                "absolute inset-0 transition-opacity duration-75",
-                t.id !== resolvedActiveTabId && "pointer-events-none opacity-0"
-              )}
+              className={hiddenLayerClass(t.id !== resolvedActiveTabId)}
             >
               <PaneContent
                 tab={t}

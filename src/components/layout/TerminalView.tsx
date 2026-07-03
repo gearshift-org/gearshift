@@ -43,6 +43,11 @@ type Props = {
   // "Commit changes" affordance only appears when there are changes.
   cwd?: string
   isActive?: boolean
+  // Whether this pane is on screen. Inactive projects/tabs stay mounted but
+  // hidden (opacity-0), and their terminals must not refit on every workspace
+  // width change — with many panes those scrollback reflows stack into one big
+  // main-thread stall. Hidden panes defer to a single fit on reveal.
+  isVisible?: boolean
   // Number of panes in this terminal tab. Changes when a split opens/closes;
   // used to force an authoritative refit since the pane resizes without
   // remounting. See the paneCount effect below.
@@ -529,10 +534,13 @@ const COLUMN_REFLOW_DEBOUNCE_LINES = 200
 // How long the user must stay idle on a terminal after its agent finishes (or
 // needs attention) before the floating recap box appears.
 const RECAP_IDLE_DELAY_MS = 30000
-const LIVE_FIT_SUPPRESSING_BODY_CLASSES = [
-  "gs-sidebar-resizing",
-  "gs-window-resizing",
-]
+// Only sidebar drags/toggles suppress live fits. Native window resizes fit
+// live (VS Code-like): the visible terminal tracks the window edge with cheap
+// row-only resizes while the expensive column reflow defers to the settle fit
+// (see deferColumn in fitTerminal). Hidden panes skip fits entirely, so a
+// window resize only ever live-fits the terminals actually on screen.
+// ("gs-window-resizing" still gates decorative CSS animations in index.css.)
+const LIVE_FIT_SUPPRESSING_BODY_CLASSES = ["gs-sidebar-resizing"]
 // Temporarily hide the top-right terminal recap box while testing terminal UX.
 // Keep the full code path intact; flip this back to true to restore it.
 const TERMINAL_RECAP_BOX_ENABLED = false
@@ -730,6 +738,7 @@ export function TerminalView({
   sessionId,
   cwd,
   isActive = true,
+  isVisible = true,
   paneCount = 1,
   focusRequest,
   onTitleChange,
@@ -743,6 +752,11 @@ export function TerminalView({
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const fitTerminalRef = useRef<(() => boolean) | null>(null)
+  // Mirrors the isVisible prop for the fit path (created once at init). When a
+  // fit is skipped because the pane is hidden, it's flagged here and replayed
+  // as one authoritative fit on reveal.
+  const isVisibleRef = useRef(isVisible)
+  const hiddenFitPendingRef = useRef(false)
   const didInitialLayoutRef = useRef(false)
   const webglRef = useRef<WebglAddon | null>(null)
   const searchRef = useRef<SearchAddon | null>(null)
@@ -1517,6 +1531,13 @@ export function TerminalView({
       window.term.resize(sessionId, cols, rows)
     }
     const fitTerminal = (syncPty = true) => {
+      // Hidden panes (inactive project/tab, opacity-0 but still laid out) skip
+      // fits entirely — a workspace width change would otherwise reflow every
+      // mounted terminal's scrollback in the same tick. One fit runs on reveal.
+      if (!isVisibleRef.current) {
+        hiddenFitPendingRef.current = true
+        return false
+      }
       try {
         const dims = fit.proposeDimensions()
         if (
@@ -2212,6 +2233,18 @@ export function TerminalView({
       writeColorSchemeReport()
     }
   }, [themeObj, isDark, writeColorSchemeReport])
+
+  // Replay the fit a hidden pane skipped once it comes back on screen. The rAF
+  // lets the opacity flip land first so the fit reads settled layout.
+  useEffect(() => {
+    isVisibleRef.current = isVisible
+    if (!isVisible || !hiddenFitPendingRef.current) return
+    hiddenFitPendingRef.current = false
+    const id = requestAnimationFrame(() => {
+      fitTerminalRef.current?.()
+    })
+    return () => cancelAnimationFrame(id)
+  }, [isVisible])
 
   useEffect(() => {
     const term = termRef.current

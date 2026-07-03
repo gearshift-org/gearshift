@@ -389,6 +389,12 @@ const appWindowApi = {
   // bounces once. No-op on other platforms.
   bounceDock: (type: "informational" | "critical" = "informational") =>
     ipcRenderer.invoke("dock:bounce", type) as Promise<{ ok: boolean }>,
+  // Sync the native window background with the renderer theme so areas exposed
+  // during native resizes don't flash a mismatched color.
+  setWindowBackgroundColor: (color: string) =>
+    ipcRenderer.invoke("window:setBackgroundColor", color) as Promise<{
+      ok: boolean
+    }>,
   // Red count badge on the dock icon (macOS/Linux); 0 clears it.
   setBadgeCount: (count: number) =>
     ipcRenderer.invoke("dock:setBadgeCount", count) as Promise<{

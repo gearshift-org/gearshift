@@ -268,8 +268,6 @@ const PROJECT_SIDEBAR_MAX_PX = 480
 function clampProjectSidebarWidth(n: number): number {
   return Math.min(PROJECT_SIDEBAR_MAX_PX, Math.max(PROJECT_SIDEBAR_MIN_PX, n))
 }
-// Must match the wrapper's `duration-200` margin transition below.
-const PROJECT_SIDEBAR_TRANSITION_MS = 200
 const WINDOW_RESIZE_SETTLE_MS = 180
 const AGENT_TERMINAL_COMMANDS: Record<TerminalAgentName, string> = {
   claude: "claude",
@@ -675,6 +673,7 @@ export function AppShell() {
       : PROJECT_SIDEBAR_DEFAULT_PX
   })
   const projectSidebarPanelRef = useRef<HTMLDivElement>(null)
+  const workspaceMainRef = useRef<HTMLDivElement>(null)
   const projectSidebarDragRef = useRef<{
     startX: number
     startWidth: number
@@ -844,9 +843,10 @@ export function AppShell() {
     saveActiveSpaceId(activeSpaceId)
   }, [activeSpaceId])
   // Native window drags can dispatch dozens of layout resizes per second.
-  // Mark that short window so terminals skip expensive per-frame refits and do
-  // a single settle fit, keeping the fixed-width right sidebar from appearing
-  // to shake while the app frame is resized.
+  // Mark that short window so decorative CSS animations pause (index.css).
+  // Terminals intentionally keep fitting live during window resizes so the
+  // visible pane tracks the window edge like VS Code; only the expensive
+  // column reflow defers to the settle fit inside TerminalView.
   useEffect(() => {
     let resizeTimer: number | null = null
     const onResize = () => {
@@ -867,18 +867,10 @@ export function AppShell() {
   useEffect(() => {
     saveProjectSidebarOpen(projectSidebarOpen)
   }, [projectSidebarOpen])
-  // Treat the project sidebar's collapse/expand width animation like a sidebar
-  // resize drag (same trick as WorkspaceSplit's right-sidebar toggle): terminals
-  // skip per-frame refits while this class is on <body> and do one settle fit
-  // after the layout stops moving, which keeps the slide smooth.
-  useEffect(() => {
-    document.body.classList.add("gs-sidebar-resizing")
-    const id = window.setTimeout(() => {
-      if (!projectSidebarDragRef.current)
-        document.body.classList.remove("gs-sidebar-resizing")
-    }, PROJECT_SIDEBAR_TRANSITION_MS + 170)
-    return () => window.clearTimeout(id)
-  }, [projectSidebarOpen])
+  // No fit suppression on toggle: the workspace snaps to its final size in one
+  // layout pass at click time, and that single terminal reflow is intentional —
+  // it lands under the compositor slide instead of as a post-animation hitch.
+  // gs-sidebar-resizing is only for width drags (see startProjectSidebarDrag).
   // Persist the resized width once it settles (debounced).
   useEffect(() => {
     const id = window.setTimeout(
@@ -895,8 +887,11 @@ export function AppShell() {
   useEffect(() => {
     const applyDragWidth = () => {
       projectSidebarDragFrameRef.current = null
+      const width = `${projectSidebarDragWidthRef.current}px`
       if (projectSidebarPanelRef.current)
-        projectSidebarPanelRef.current.style.width = `${projectSidebarDragWidthRef.current}px`
+        projectSidebarPanelRef.current.style.width = width
+      if (workspaceMainRef.current)
+        workspaceMainRef.current.style.paddingLeft = width
     }
     const onMove = (e: MouseEvent) => {
       const d = projectSidebarDragRef.current
@@ -923,6 +918,8 @@ export function AppShell() {
         projectSidebarPanelRef.current.style.width = `${width}px`
         projectSidebarPanelRef.current.style.transition = ""
       }
+      if (workspaceMainRef.current)
+        workspaceMainRef.current.style.paddingLeft = `${width}px`
       setProjectSidebarWidth(width)
       setProjectSidebarDragging(false)
       document.body.style.cursor = ""
@@ -3697,20 +3694,23 @@ export function AppShell() {
         onSelectTab={selectTab}
         onOpenFile={openFileFromCommandPalette}
       />
-      {/* Keep the sidebar mounted at its full width and slide it off-screen on
-          collapse via a negative margin, so its contents never reflow — the
-          panel glides left while the workspace expands to fill the space. */}
+      {/* The sidebar is an absolutely-positioned overlay that slides with a
+          compositor-only transform, while the workspace reserves its space via
+          a paddingLeft that SNAPS (no transition). Animating layout (the old
+          margin-left slide) relayouts the whole workspace every frame and the
+          terminal reflow at the end lands as a visible hitch; with a transform
+          slide the main-thread reflow happens under a still-smooth animation. */}
       <div
         ref={projectSidebarPanelRef}
         aria-hidden={!projectSidebarOpen}
         style={{
           width: projectSidebarWidth,
-          marginLeft: projectSidebarOpen ? 0 : -projectSidebarWidth,
+          transform: projectSidebarOpen ? "translateX(0)" : "translateX(-100%)",
         }}
         className={cn(
-          "relative shrink-0 [-webkit-app-region:no-drag]",
+          "absolute inset-y-0 left-0 z-20 bg-background [-webkit-app-region:no-drag]",
           !projectSidebarDragging &&
-            "transition-[margin-left] duration-200 ease-in-out",
+            "transition-transform duration-200 ease-in-out",
           !projectSidebarOpen && "pointer-events-none"
         )}
       >
@@ -3779,7 +3779,11 @@ export function AppShell() {
           onExitFocus={() => setFocusedProjectIds([])}
         />
       </div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        ref={workspaceMainRef}
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        style={{ paddingLeft: projectSidebarOpen ? projectSidebarWidth : 0 }}
+      >
         {(() => {
           const toggleSidebar = () => {
             toggleRightSidebar()

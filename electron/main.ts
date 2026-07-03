@@ -52,6 +52,14 @@ type ParcelSubscription = Awaited<ReturnType<typeof parcelWatcher.subscribe>>
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+// Opt-in CDP endpoint for profiling/automation (e.g.
+// GEARSHIFT_REMOTE_DEBUG_PORT=9224 bun run dev).
+if (process.env.GEARSHIFT_REMOTE_DEBUG_PORT) {
+  app.commandLine.appendSwitch(
+    "remote-debugging-port",
+    process.env.GEARSHIFT_REMOTE_DEBUG_PORT
+  )
+}
 const execFileP = promisify(execFile)
 
 function searchTokens(query: string): string[] {
@@ -2525,6 +2533,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("dock:setBadgeCount", (_event, count: number) => {
     const n = Math.max(0, Math.floor(Number(count) || 0))
     return { ok: app.setBadgeCount(n) }
+  })
+
+  // Sync the native window background with the renderer theme. Newly exposed
+  // areas during a native resize are filled with this color before Chromium
+  // paints; a mismatch (dark boot color under a light theme) flashes at the
+  // window edges and reads as shaking.
+  ipcMain.handle("window:setBackgroundColor", (event, color: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return { ok: false }
+    // setBackgroundColor accepts CSS color strings (hex, rgb(a), hsl, named).
+    if (typeof color !== "string" || !color || color.length > 64) {
+      return { ok: false }
+    }
+    win.setBackgroundColor(color)
+    return { ok: true }
   })
 
   ipcMain.handle(

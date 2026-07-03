@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
+import { hiddenLayerClass } from "./hiddenLayer"
 import { WorkspacePane } from "./WorkspacePane"
 import { RightSidebar } from "./RightSidebar"
 import type { HistoryRange } from "@/lib/historySummary"
@@ -22,8 +23,6 @@ import type {
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
 const SIDEBAR_MAX_PX = 800
-const SIDEBAR_WIDTH_TRANSITION_MS = 200
-const TERMINAL_RESIZE_SETTLE_MS = 120
 const BACKGROUND_GIT_PREFETCH_STALE_MS = 30_000
 
 function clampWidth(n: number): number {
@@ -174,19 +173,9 @@ export function WorkspaceSplit({
     }
   }, [activeProjectId, projects, queryClient])
 
-  // Treat open/close width animations like a sidebar resize drag. Terminals then
-  // ignore intermediate widths and send one PTY resize after the layout settles.
-  useEffect(() => {
-    document.body.classList.add("gs-sidebar-resizing")
-    const id = window.setTimeout(
-      () => {
-        if (!dragRef.current)
-          document.body.classList.remove("gs-sidebar-resizing")
-      },
-      SIDEBAR_WIDTH_TRANSITION_MS + TERMINAL_RESIZE_SETTLE_MS + 50
-    )
-    return () => window.clearTimeout(id)
-  }, [sidebarOpen])
+  // No fit suppression on toggle: the workspace padding snaps in one layout
+  // pass at click time and the single terminal reflow lands under the panel's
+  // compositor slide. gs-sidebar-resizing is only for width drags (startDrag).
 
   useEffect(() => {
     dragWidthRef.current = sidebarWidth
@@ -274,12 +263,9 @@ export function WorkspaceSplit({
           <div
             key={p.id}
             aria-hidden={p.id !== activeProjectId}
-            className={cn(
-              // POC: outside padding detaches the terminal view from the panel
-              // edges; each pane rounds itself and the resize handles add gaps.
-              "absolute inset-0 p-2 transition-opacity duration-75",
-              p.id !== activeProjectId && "pointer-events-none opacity-0"
-            )}
+            // Outside padding (p-2) detaches the terminal view from the panel
+            // edges; each pane rounds itself and the resize handles add gaps.
+            className={hiddenLayerClass(p.id !== activeProjectId, "p-2")}
           >
             <WorkspacePane
               project={p}
@@ -320,12 +306,13 @@ export function WorkspaceSplit({
   // sidebar stays pinned to the app edge while the workspace reserves its space.
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden">
+      {/* The workspace padding SNAPS (no transition): animating it relayouts
+          the workspace every frame at half the refresh rate, and the terminal
+          reflow lands as a hitch. Only the sidebar panel's compositor-driven
+          transform below animates, so the reflow hides under a smooth slide. */}
       <div
         ref={workspacePanelRef}
-        className={cn(
-          "h-full min-w-0",
-          !isDragging && "transition-[padding-right] duration-200 ease-in-out"
-        )}
+        className="h-full min-w-0"
         style={{ paddingRight: sidebarOpen ? sidebarWidth : 0 }}
       >
         {workspaceSection}

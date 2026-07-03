@@ -38,8 +38,10 @@ import {
 } from "./tabSizing"
 import {
   clearProjectAvatarImagePath,
+  getProjectColor,
   randomizeProjectColor,
   setProjectAvatarImagePath,
+  setProjectColor,
   type RecentProject,
 } from "@/lib/projects"
 import {
@@ -187,6 +189,20 @@ function ProjectTabItem({
     setColorVersion((v) => v + 1)
   }
 
+  // Hidden native color input; the "Choose Avatar Color" menu item clicks it
+  // to open the OS color picker. Updates apply live while picking.
+  const colorInputRef = useRef<HTMLInputElement>(null)
+  const chooseAvatarColor = () => {
+    const input = colorInputRef.current
+    if (!input) return
+    input.value = getProjectColor(p.path)
+    input.click()
+  }
+  const onAvatarColorPicked = (color: string) => {
+    setProjectColor(p.path, color)
+    setColorVersion((v) => v + 1)
+  }
+
   const chooseAvatarImage = async () => {
     const imagePath = await window.dialogApi.openProjectAvatarImage()
     if (!imagePath) return
@@ -240,6 +256,19 @@ function ProjectTabItem({
                 )}
               >
                 <ProjectAvatar name={p.name} path={p.path} />
+                {/* Hidden native color input for "Choose Avatar Color".
+                    Lives outside the menu content so it stays mounted (and
+                    the picker stays open) after the context menu closes. */}
+                {/* Anchored below the tab so the OS picker popup opens under
+                    the tab bar instead of covering the avatar being edited. */}
+                <input
+                  ref={colorInputRef}
+                  type="color"
+                  className="pointer-events-none absolute top-10 left-2 size-0 opacity-0"
+                  tabIndex={-1}
+                  aria-hidden
+                  onChange={(e) => onAvatarColorPicked(e.target.value)}
+                />
                 {hasWorkingAgent && <AgentSpinner className="-ml-0.5" />}
                 {hasAttentionAgent && <AgentAttention className="-ml-0.5" />}
                 {!hasWorkingAgent && !hasAttentionAgent && hasDoneAgent && (
@@ -310,10 +339,13 @@ function ProjectTabItem({
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={chooseAvatarImage}>
-          Choose Avatar Image…
+          Choose Avatar Image
         </ContextMenuItem>
         <ContextMenuItem onClick={clearAvatarImage}>
           Remove Avatar Image
+        </ContextMenuItem>
+        <ContextMenuItem onClick={chooseAvatarColor}>
+          Choose Avatar Color
         </ContextMenuItem>
         <ContextMenuItem onClick={randomizeAvatarColor}>
           Randomize Avatar Color

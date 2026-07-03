@@ -1019,6 +1019,14 @@ export function getProjectColor(path: string): string {
   return color
 }
 
+export function setProjectColor(path: string, color: string): void {
+  if (!path || !/^#[0-9a-fA-F]{6}$/.test(color)) return
+  const map = loadProjectColors()
+  map[path] = color
+  saveProjectColors(map)
+  dispatchProjectAvatarChanged(path)
+}
+
 export function randomizeProjectColor(path: string): string {
   if (!path) return "#888888"
   const map = loadProjectColors()

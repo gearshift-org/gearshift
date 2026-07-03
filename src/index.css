@@ -1028,18 +1028,27 @@
   background: var(--xterm-bg) !important;
 }
 
+/* Overlay-style: the thumb is invisible until the user actually scrolls.
+   TerminalView adds .gs-term-scrolling to the host while scrolling and
+   removes it ~1s after the last scroll. */
 .terminal-fit-host .xterm-viewport::-webkit-scrollbar-thumb {
   min-height: 32px;
+  background-color: transparent !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+.terminal-fit-host.gs-term-scrolling .xterm-viewport::-webkit-scrollbar-thumb {
   background-color: color-mix(
     in srgb,
     var(--foreground) 28%,
     transparent
   ) !important;
-  border: 2px solid var(--xterm-bg) !important;
-  background-clip: padding-box !important;
+  border-color: var(--xterm-bg) !important;
 }
 
-.terminal-fit-host .xterm-viewport:hover::-webkit-scrollbar-thumb {
+.terminal-fit-host.gs-term-scrolling
+  .xterm-viewport:hover::-webkit-scrollbar-thumb {
   background-color: color-mix(
     in srgb,
     var(--foreground) 38%,
@@ -1060,16 +1069,29 @@
   background: var(--xterm-bg) !important;
 }
 
+/* xterm's own overlay scrollbar: hidden unless the user is actually
+   scrolling (same .gs-term-scrolling gate as the native viewport thumb),
+   overriding xterm's built-in hover reveal. */
 .terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
+  background-color: transparent !important;
+  border-radius: 999px;
+}
+
+.terminal-fit-host.gs-term-scrolling
+  .xterm-scrollable-element
+  > .xterm-scrollbar
+  > .xterm-slider {
   background-color: color-mix(
     in srgb,
     var(--foreground) 28%,
     transparent
   ) !important;
-  border-radius: 999px;
 }
 
-.terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar:hover > .xterm-slider {
+.terminal-fit-host.gs-term-scrolling
+  .xterm-scrollable-element
+  > .xterm-scrollbar:hover
+  > .xterm-slider {
   background-color: color-mix(
     in srgb,
     var(--foreground) 38%,

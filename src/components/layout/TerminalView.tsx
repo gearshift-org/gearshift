@@ -1179,9 +1179,27 @@ export function TerminalView({
     fitRef.current = fit
     searchRef.current = search
 
+    // Overlay-style scrollbar: only visible while the user is actually
+    // scrolling (wheel/trackpad, or moving through scrollback), fading out
+    // after a short idle. See .gs-term-scrolling in index.css.
+    let scrollbarHideTimer: number | undefined
+    const markUserScrolling = () => {
+      container.classList.add("gs-term-scrolling")
+      if (scrollbarHideTimer) window.clearTimeout(scrollbarHideTimer)
+      scrollbarHideTimer = window.setTimeout(() => {
+        scrollbarHideTimer = undefined
+        container.classList.remove("gs-term-scrolling")
+      }, 1000)
+    }
+    container.addEventListener("wheel", markUserScrolling, { passive: true })
+
     const scrollSub = term.onScroll(() => {
       const buf = term.buffer.active
       const next = buf.viewportY < buf.baseY
+      // Scroll position moved while in scrollback (wheel, scrollbar drag,
+      // keyboard paging) — keep the scrollbar visible. Auto-follow scrolling
+      // at the bottom during output does NOT show it (viewportY == baseY).
+      if (next) markUserScrolling()
       if (showScrollToBottomRef.current !== next) {
         showScrollToBottomRef.current = next
         setShowScrollToBottom(next)
@@ -1836,6 +1854,8 @@ export function TerminalView({
       container.removeEventListener("focusout", onTerminalFocusOut)
       container.removeEventListener("dragover", onDragOver)
       container.removeEventListener("drop", onDrop)
+      container.removeEventListener("wheel", markUserScrolling)
+      if (scrollbarHideTimer) window.clearTimeout(scrollbarHideTimer)
       if (resizeTimer) window.clearTimeout(resizeTimer)
       if (pendingPtyResizeTimer) window.clearTimeout(pendingPtyResizeTimer)
       if (liveDataRaf !== undefined) cancelAnimationFrame(liveDataRaf)

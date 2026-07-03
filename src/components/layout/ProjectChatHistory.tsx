@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
-import { Trash2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Search, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Tooltip,
@@ -94,6 +95,17 @@ export function ProjectChatHistoryPanel({
 }: Props) {
   const [messages, setMessages] = useState<ChatHistoryMessage[]>([])
   const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState("")
+
+  const filterQuery = filter.trim().toLowerCase()
+  const visibleMessages = useMemo(() => {
+    if (!filterQuery) return messages
+    return messages.filter(
+      (m) =>
+        m.body.toLowerCase().includes(filterQuery) ||
+        (m.agent ?? "user").toLowerCase().includes(filterQuery)
+    )
+  }, [messages, filterQuery])
 
   useEffect(() => {
     if (!projectId) {
@@ -175,7 +187,9 @@ export function ProjectChatHistoryPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         <span>
-          {messages.length} message{messages.length === 1 ? "" : "s"}
+          {filterQuery
+            ? `${visibleMessages.length} of ${messages.length}`
+            : `${messages.length} message${messages.length === 1 ? "" : "s"}`}
         </span>
         <div className="flex items-center gap-0.5">
           {onSummarize && (
@@ -213,6 +227,35 @@ export function ProjectChatHistoryPanel({
           </DropdownMenu>
         </div>
       </div>
+      <div className="shrink-0 border-b border-border/60 px-2 py-1.5">
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault()
+                setFilter("")
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Search messages"
+            aria-label="Search messages"
+            className="h-7 pl-7 text-xs md:text-xs"
+          />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => setFilter("")}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
+      </div>
       <ScrollArea className="min-h-0 flex-1">
         {loading && messages.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -222,9 +265,13 @@ export function ProjectChatHistoryPanel({
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
             No messages yet for this project.
           </div>
+        ) : visibleMessages.length === 0 ? (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+            No messages match "{filter.trim()}".
+          </div>
         ) : (
           <ul className="divide-y divide-border/60">
-            {messages.map((m) => (
+            {visibleMessages.map((m) => (
               <li
                 key={m.id}
                 className={cn(

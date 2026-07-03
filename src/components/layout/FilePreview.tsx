@@ -857,6 +857,12 @@ export function FilePreview({
     jumpTo(-1)
   }, [isPreview, previewMatchCount, jumpTo])
 
+  // Take focus when the markdown preview appears so Cmd+F lands here instead
+  // of whatever previously held focus (e.g. a terminal's search overlay).
+  useEffect(() => {
+    if (isPreview) rootRef.current?.focus({ preventScroll: true })
+  }, [isPreview, path])
+
   // Cmd/Ctrl+F opens search in preview mode (the raw editor binds it via the
   // CodeMirror keymap instead). Respond only when this preview is hovered or
   // focused so split panes don't all react to one keypress.
@@ -1122,7 +1128,17 @@ export function FilePreview({
   return (
     <div
       ref={rootRef}
-      className="relative flex h-full flex-col bg-card"
+      // Focusable so the preview can hold keyboard focus: the rendered
+      // markdown has no focusable elements, so without this Cmd+F keeps going
+      // to whatever held focus before (often a terminal's own search).
+      tabIndex={-1}
+      className="relative flex h-full flex-col bg-card outline-none"
+      onMouseDown={() => {
+        // Clicking rendered markdown would otherwise drop focus on <body>.
+        if (isPreview && !rootRef.current?.contains(document.activeElement)) {
+          rootRef.current?.focus({ preventScroll: true })
+        }
+      }}
       onKeyDown={(e) => {
         if (e.key === "Escape" && searchOpen) {
           e.preventDefault()
@@ -1130,6 +1146,23 @@ export function FilePreview({
         }
       }}
       onContextMenu={(e) => {
+        // Markdown preview: native copy for the highlighted text (the preview
+        // is rendered markdown, not the CodeMirror editor below).
+        if (isPreview) {
+          const selection = window.getSelection()?.toString() ?? ""
+          e.preventDefault()
+          void (async () => {
+            const action = await window.menuApi?.showEditContext({
+              canCut: false,
+              canCopy: selection.length > 0,
+              canPaste: false,
+            })
+            if (action === "copy" && selection) {
+              await navigator.clipboard.writeText(selection)
+            }
+          })()
+          return
+        }
         const view = editorViewRef.current
         if (!view) return
         const target = e.target as HTMLElement | null

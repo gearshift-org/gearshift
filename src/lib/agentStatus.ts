@@ -1,6 +1,6 @@
 import type {
   Project,
-  TerminalAgentName,
+  RuntimeAgentName,
   TerminalAgentStatus,
   TerminalPane,
   WorkspaceTab,
@@ -133,7 +133,7 @@ function normalizeSignalText(value: string): string {
 }
 
 export function detectAgentTitleFallbackSignal(
-  agentName: TerminalAgentName | undefined,
+  agentName: RuntimeAgentName | undefined,
   title: string
 ): AgentFallbackSignal | null {
   const trimmed = title.trim()
@@ -152,7 +152,7 @@ export function detectAgentTitleFallbackSignal(
 }
 
 export function detectAgentOutputFallbackSignal(
-  agentName: TerminalAgentName | undefined,
+  agentName: RuntimeAgentName | undefined,
   chunk: string
 ): AgentFallbackSignal | null {
   const text = normalizeSignalText(chunk.slice(-8000))

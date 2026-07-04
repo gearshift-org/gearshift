@@ -35,10 +35,30 @@ export type TerminalPane = {
 
 export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi"
 
+/** Detected at runtime (e.g. user ran `grok` manually) — icon/status only, not launchable. */
+export type RuntimeAgentName = TerminalAgentName | "grok"
+
+export function isLaunchableAgentName(
+  agent: RuntimeAgentName | undefined
+): agent is TerminalAgentName {
+  return !!agent && agent !== "grok"
+}
+
+/** Grok is detected via the PTY tree; shared Claude hooks may mislabel it as claude. */
+export function mergeRuntimeAgentName(
+  current: RuntimeAgentName | undefined,
+  incoming: RuntimeAgentName | undefined,
+  running: boolean
+): RuntimeAgentName | undefined {
+  if (!running) return incoming
+  if (current === "grok") return "grok"
+  return incoming ?? current
+}
+
 export type TerminalAgentStatus = {
   running: boolean
   working: boolean
-  agentName?: TerminalAgentName
+  agentName?: RuntimeAgentName
   /** Timestamp when the current agent task started working. */
   workStartedAt?: number
   /** Timestamp when the current agent task completed. */

@@ -33,6 +33,38 @@ Display code derives a single semantic state from runtime flags: `blocked`, `wor
 
 The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications, and the count of unviewed completed agents is mirrored as a red badge on the dock icon (cleared as the flagged panes are viewed). For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
 
+### Supported agents
+
+GearShift treats coding-agent CLIs in two tiers:
+
+| Tier | Agents | Tab-bar launcher | Lifecycle hooks | Session title / resume |
+| ---- | ------ | ---------------- | --------------- | -------------------- |
+| **Full** | Claude, Codex, OpenCode, pi | Yes (Settings → Agents launch options) | Yes (`electron/agentHooks.ts`) | Yes (`electron/agentSessionTitle.ts`) |
+| **Runtime-only** | Grok Build CLI (`grok`) | No — start manually in a shell | No | No |
+
+Full-tier agents are listed in `AGENT_TERMINAL_NAMES` (`src/lib/agentTerminalOptions.ts`) and can be spawned from the workspace tab bar. Runtime-only agents are recognized while their process is running in a pane, but are intentionally omitted from that launcher.
+
+### Grok Build CLI (runtime-only)
+
+Grok is Claude Code–compatible and is often started manually (`grok` in an existing terminal). GearShift supports three runtime behaviors without installing Grok-specific hooks:
+
+1. **Chat history** — on Enter, `captureInput` in `electron/main.ts` walks the PTY process tree via `detectPtyAgent` → `supportedAgentName` (`electron/supportedAgentName.ts`). Matching commands include bare `grok`, `~/.grok/bin/grok`, and paths containing `grok-build`. The prompt is stored in `gearshift.db` with `agent = "grok"` and appears in the project History sidebar like other agents.
+2. **Tab / pane icon** — when Grok is detected, `agentStatus.agentName` is set to `"grok"` and the mono Grok glyph from `src/assets/agents/grok.svg` is shown via `AgentIcon` / `hasAgentIcon`.
+3. **No false launch state** — `TerminalPane.agentName` (the persisted “resume this agent” field) only accepts launchable agents (`TerminalAgentName`). Grok is excluded via `isLaunchableAgentName` in `src/components/layout/types.ts`, so a Grok session never writes `agentName: "grok"` into saved project state or auto-runs `grok --resume` on Start/Resume.
+
+Grok does **not** use GearShift lifecycle hooks, session-title lookup, or Settings → Agents launch flags. Working / done / blocked semantics for Grok panes come from the same generic process-detection and terminal title/output fallbacks as other hookless agents.
+
+#### Claude-hook mislabeling
+
+Grok shares hook event shapes with Claude Code. After the first prompt submit, Claude hooks installed in `~/.claude/settings.json` can fire `gearshift-agent-hook.sh claude start` and report `agentName: "claude"` even though the running TUI is Grok. Without a guard, that hook event would replace the Grok icon with Claude’s.
+
+GearShift prevents that in two places:
+
+- **Process tree** — `detectPtyAgent` scans the full PTY subtree and returns `grok` immediately if any descendant matches, even when a child process would otherwise match `claude` first in breadth-first order.
+- **Renderer merge** — `mergeRuntimeAgentName` (`src/components/layout/types.ts`) keeps `agentName === "grok"` sticky for as long as the session is `running`, so hook and poller updates cannot downgrade it to `claude`. When the session stops (`running: false`), the identity clears normally.
+
+Relevant tests: `tests/supportedAgentName.test.ts`, `tests/agentStatus.test.ts` (`runtime agent identity`).
+
 ## Sidebar Toggle Animation
 
 Both sidebar toggles (left project sidebar, right Git sidebar) use a "snap layout, slide compositor" pattern, deliberately chosen after profiling.

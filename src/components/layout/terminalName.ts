@@ -1,5 +1,5 @@
 import type {
-  TerminalAgentName,
+  RuntimeAgentName,
   TerminalPane,
   TerminalTab,
   WorkspaceTab,
@@ -19,7 +19,7 @@ const LEADING_SPARKLE_RE =
 const LEADING_SEPARATOR_RE = /^[·•‧⋅∙・⸱⸳◦●○◇◆▪▫►▶–—−‒|-]\s*/
 const SHELL_TITLE_RE = /^[^@:\s]+@[^:]+:(.+)$/
 
-function agentDisplayName(agentName: TerminalAgentName | undefined): string | undefined {
+function agentDisplayName(agentName: RuntimeAgentName | undefined): string | undefined {
   switch (agentName) {
     case "claude":
       return "Claude"
@@ -29,6 +29,8 @@ function agentDisplayName(agentName: TerminalAgentName | undefined): string | un
       return "OpenCode"
     case "pi":
       return "Pi"
+    case "grok":
+      return "Grok"
     default:
       return undefined
   }

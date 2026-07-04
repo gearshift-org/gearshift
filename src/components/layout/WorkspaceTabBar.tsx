@@ -43,6 +43,7 @@ import {
   AGENT_TERMINAL_NAMES,
 } from "@/lib/agentTerminalOptions"
 import type {
+  RuntimeAgentName,
   TerminalAgentName,
   TerminalPane,
   TerminalTab,
@@ -128,7 +129,7 @@ function TabIcon({
   agentName,
 }: {
   tab: WorkspaceTab
-  agentName?: TerminalAgentName
+  agentName?: RuntimeAgentName
 }) {
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
   if (tab.kind === "commit")

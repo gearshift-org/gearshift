@@ -50,15 +50,16 @@ import {
   swapLeaves,
 } from "./terminalLayout"
 import agentCompleteSoundUrl from "@/assets/sounds/agent-complete.wav?url"
-import type {
-  DropZone,
-  FileReveal,
-  Project,
-  SplitDirection,
-  TerminalAgentName,
-  TerminalAgentStatus,
-  TerminalLayout,
-  WorkspaceTab,
+import {
+  isLaunchableAgentName,
+  type DropZone,
+  type FileReveal,
+  type Project,
+  type SplitDirection,
+  type TerminalAgentName,
+  type TerminalAgentStatus,
+  type TerminalLayout,
+  type WorkspaceTab,
 } from "./types"
 import {
   DEFAULT_SPACE_ID,
@@ -2834,7 +2835,10 @@ export function AppShell() {
             // fall through to create only when user-initiated
           }
         }
-        const agentName = pane.agentName ?? pane.agentStatus?.agentName
+        const runtimeAgent = pane.agentName ?? pane.agentStatus?.agentName
+        const launchAgent = isLaunchableAgentName(runtimeAgent)
+          ? runtimeAgent
+          : undefined
         if (!sessionId) {
           if (!allowCreateFallback) return
           const { id } = await window.term.create({
@@ -2843,10 +2847,10 @@ export function AppShell() {
             projectId: project.id,
           })
           sessionId = id
-          if (agentName) {
+          if (launchAgent) {
             const command = agentTerminalCommand(
-              agentName,
-              getAgentTerminalOptions(agentName),
+              launchAgent,
+              getAgentTerminalOptions(launchAgent),
               pane.agentSessionId
             )
             window.term.write(id, `${command}\r`)
@@ -2871,7 +2875,7 @@ export function AppShell() {
                           sessionId: newId,
                           pendingSessionId: undefined,
                           pendingStart: false,
-                          ...(agentName ? { agentName } : {}),
+                          ...(launchAgent ? { agentName: launchAgent } : {}),
                         }
                       : pp
                   ),
@@ -3070,7 +3074,7 @@ export function AppShell() {
     const needsAttentionAway =
       becameNeedsAttention && !!targetProject && !targetTerminalIsActive
 
-    if (status.agentName && targetProject) {
+    if (isLaunchableAgentName(status.agentName) && targetProject) {
       rememberAgentTerminal(targetProject.id, tabId, paneId)
     }
 
@@ -3089,8 +3093,10 @@ export function AppShell() {
                     agentStatus: status,
                     // Sticky: only overwrite when a hook actually reported an
                     // agent/id/title, so we never clobber a persisted value with
-                    // undefined during status churn.
-                    agentName: status.agentName ?? pp.agentName,
+                    // undefined during status churn. Grok is runtime-only.
+                    agentName: isLaunchableAgentName(status.agentName)
+                      ? status.agentName
+                      : pp.agentName,
                     agentSessionId: status.agentSessionId ?? pp.agentSessionId,
                     agentSessionTitle:
                       status.agentSessionTitle ?? pp.agentSessionTitle,

@@ -28,7 +28,11 @@ import {
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { TerminalAgentName, TerminalAgentStatus } from "./types"
+import {
+  mergeRuntimeAgentName,
+  type RuntimeAgentName,
+  type TerminalAgentStatus,
+} from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -733,7 +737,7 @@ function pasteText(
   term: Terminal,
   sessionId: string,
   text: string,
-  agentName?: TerminalAgentName
+  agentName?: RuntimeAgentName
 ) {
   if (!text) return
 
@@ -754,7 +758,7 @@ function pasteText(
 async function pasteClipboard(
   term: Terminal,
   sessionId: string,
-  agentName?: TerminalAgentName
+  agentName?: RuntimeAgentName
 ) {
   try {
     if (await window.clipboardApi.hasImage()) {
@@ -986,7 +990,7 @@ export function TerminalView({
   const refreshAgentSessionTitle = useCallback(async () => {
     const agent = agentStatusRef.current.agentName
     const agentSessionId = agentSessionIdRef.current
-    if (!agent || !agentSessionId) return
+    if (!agent || agent === "grok" || !agentSessionId) return
     try {
       const title = await window.term.agentSessionTitle({
         agent,
@@ -2126,10 +2130,15 @@ export function TerminalView({
         // must not downgrade running or working, since process detection
         // misses agents launched via node/bun wrappers.
         if (hookAuthoritative) {
+          const running = current.running || detected.running
           emitAgentStatus({
-            running: current.running || detected.running,
+            running,
             working: current.completed ? false : current.working,
-            agentName: current.agentName ?? detected.agentName,
+            agentName: mergeRuntimeAgentName(
+              current.agentName,
+              current.agentName ?? detected.agentName,
+              running
+            ),
             workStartedAt: current.workStartedAt,
             completedAt: current.completedAt,
             completed: current.completed,
@@ -2148,7 +2157,11 @@ export function TerminalView({
               ? false
               : current.working || recentlyActive
             : false,
-          agentName: detected.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            detected.agentName,
+            detected.running
+          ),
           workStartedAt:
             detected.running || current.completed
               ? current.workStartedAt
@@ -2249,7 +2262,11 @@ export function TerminalView({
         emitAgentStatus({
           running: true,
           working: true,
-          agentName: event.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            event.agentName,
+            true
+          ),
           workStartedAt: now,
           completedAt: undefined,
           completed: false,
@@ -2274,7 +2291,11 @@ export function TerminalView({
         emitAgentStatus({
           running: current.running || activeHookWorkRef.current,
           working: false,
-          agentName: event.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            event.agentName,
+            current.running || activeHookWorkRef.current
+          ),
           workStartedAt: current.workStartedAt,
           completedAt: undefined,
           completed: false,
@@ -2308,7 +2329,11 @@ export function TerminalView({
         emitAgentStatus({
           ...current,
           working: false,
-          agentName: event.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            event.agentName,
+            current.running
+          ),
           completedAt: undefined,
           completed: false,
           needsAttention: false,
@@ -2318,7 +2343,11 @@ export function TerminalView({
       emitAgentStatus({
         running: current.running,
         working: false,
-        agentName: event.agentName,
+        agentName: mergeRuntimeAgentName(
+          current.agentName,
+          event.agentName,
+          current.running
+        ),
         workStartedAt: current.workStartedAt,
         completedAt: Date.now(),
         completed: true,

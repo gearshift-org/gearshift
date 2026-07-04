@@ -869,25 +869,24 @@ export function saveOpenFilesInOwnTab(enabled: boolean): void {
   }
 }
 
-export const COMPACT_PROJECT_SIDEBAR_EVENT =
-  "gearshift:compactProjectSidebarChanged"
-const COMPACT_PROJECT_SIDEBAR_KEY = "gearshift.compactProjectSidebar"
+export const PROJECT_SIDEBAR_CHAT_EVENT =
+  "gearshift:projectSidebarChatChanged"
+const PROJECT_SIDEBAR_CHAT_KEY = "gearshift.projectSidebarChat"
 
-export function loadCompactProjectSidebar(): boolean {
+export function loadProjectSidebarChatEnabled(): boolean {
   try {
-    const value = store.get(COMPACT_PROJECT_SIDEBAR_KEY)
-    return value === null ? true : value === "1"
+    return store.get(PROJECT_SIDEBAR_CHAT_KEY) === "1"
   } catch {
-    return true
+    return false
   }
 }
 
-export function saveCompactProjectSidebar(enabled: boolean): void {
+export function saveProjectSidebarChatEnabled(enabled: boolean): void {
   try {
-    store.set(COMPACT_PROJECT_SIDEBAR_KEY, enabled ? "1" : "0")
+    store.set(PROJECT_SIDEBAR_CHAT_KEY, enabled ? "1" : "0")
     if (typeof window !== "undefined") {
       window.dispatchEvent(
-        new CustomEvent<boolean>(COMPACT_PROJECT_SIDEBAR_EVENT, {
+        new CustomEvent<boolean>(PROJECT_SIDEBAR_CHAT_EVENT, {
           detail: enabled,
         })
       )

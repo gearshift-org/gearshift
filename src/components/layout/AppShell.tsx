@@ -72,6 +72,7 @@ import {
   loadFocusedProjectIds,
   loadProjects,
   loadProjectSidebarOpen,
+  loadProjectSidebarChatEnabled,
   loadProjectSidebarWidth,
   loadRecentProjects,
   loadSpaces,
@@ -96,6 +97,7 @@ import {
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
   OPEN_FILES_IN_OWN_TAB_EVENT,
+  PROJECT_SIDEBAR_CHAT_EVENT,
   toStoredAgentStatus,
   type LastAgentTerminal,
   type LastAgentTerminalsByProject,
@@ -663,6 +665,9 @@ export function AppShell() {
   const [openFilesInOwnTab, setOpenFilesInOwnTab] = useState(() =>
     loadOpenFilesInOwnTab()
   )
+  const [projectSidebarChatEnabled, setProjectSidebarChatEnabled] = useState(
+    () => loadProjectSidebarChatEnabled()
+  )
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
@@ -743,6 +748,7 @@ export function AppShell() {
         setSidebarOpen(loadSidebarOpen())
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setOpenFilesInOwnTab(loadOpenFilesInOwnTab())
+        setProjectSidebarChatEnabled(loadProjectSidebarChatEnabled())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         const storedWidth = loadProjectSidebarWidth()
         if (storedWidth)
@@ -769,6 +775,7 @@ export function AppShell() {
           lastLocation?.pathname.match(/^\/spaces\/([^/]+)\/chat$/)?.[1] ?? null
         if (
           lastSpaceChatId &&
+          loadProjectSidebarChatEnabled() &&
           storedSpaces.some((space) => space.id === lastSpaceChatId) &&
           !params.projectId
         ) {
@@ -983,6 +990,21 @@ export function AppShell() {
       window.removeEventListener(
         OPEN_FILES_IN_OWN_TAB_EVENT,
         onOpenFilesInOwnTabChange
+      )
+    }
+  }, [])
+  useEffect(() => {
+    const onProjectSidebarChatChange = (event: Event) => {
+      setProjectSidebarChatEnabled((event as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener(
+      PROJECT_SIDEBAR_CHAT_EVENT,
+      onProjectSidebarChatChange
+    )
+    return () => {
+      window.removeEventListener(
+        PROJECT_SIDEBAR_CHAT_EVENT,
+        onProjectSidebarChatChange
       )
     }
   }, [])
@@ -1625,8 +1647,50 @@ export function AppShell() {
   useEffect(() => {
     if (!routeSpaceChatId) return
     if (spaces.some((space) => space.id === routeSpaceChatId)) return
-    navigateToSpaceChat(activeSpaceId)
-  }, [activeSpaceId, navigateToSpaceChat, routeSpaceChatId, spaces])
+    if (projectSidebarChatEnabled) {
+      navigateToSpaceChat(activeSpaceId)
+      return
+    }
+    const fallback =
+      restoredProjectId &&
+      projects.some(
+        (project) =>
+          project.id === restoredProjectId &&
+          project.spaceId === activeSpaceId
+      )
+        ? restoredProjectId
+        : (projects.find((project) => project.spaceId === activeSpaceId)?.id ??
+          null)
+    navigateToProject(fallback)
+  }, [
+    activeSpaceId,
+    navigateToProject,
+    navigateToSpaceChat,
+    projectSidebarChatEnabled,
+    projects,
+    restoredProjectId,
+    routeSpaceChatId,
+    spaces,
+  ])
+
+  useEffect(() => {
+    if (!stateRestored) return
+    if (projectSidebarChatEnabled) return
+    if (!isSpaceChatRoute) return
+    const fallback =
+      restoredProjectId &&
+      activeSpaceProjects.some((project) => project.id === restoredProjectId)
+        ? restoredProjectId
+        : (activeSpaceProjects[0]?.id ?? null)
+    navigateToProject(fallback)
+  }, [
+    activeSpaceProjects,
+    isSpaceChatRoute,
+    navigateToProject,
+    projectSidebarChatEnabled,
+    restoredProjectId,
+    stateRestored,
+  ])
 
   useEffect(() => {
     let next = recents
@@ -1849,7 +1913,7 @@ export function AppShell() {
     (id: string) => {
       if (!spaces.some((space) => space.id === id)) return
       setActiveSpaceId(id)
-      if (isSpaceChatRoute) {
+      if (isSpaceChatRoute && projectSidebarChatEnabled) {
         navigateToSpaceChat(id)
         return
       }
@@ -1862,6 +1926,7 @@ export function AppShell() {
       isSpaceChatRoute,
       navigateToProject,
       navigateToSpaceChat,
+      projectSidebarChatEnabled,
       projects,
       spaces,
     ]
@@ -3694,7 +3759,11 @@ export function AppShell() {
           )}
           onSelect={selectProject}
           onSelectSpace={selectSpace}
-          onOpenSpaceChat={() => navigateToSpaceChat(visibleSpaceId)}
+          onOpenSpaceChat={
+            projectSidebarChatEnabled
+              ? () => navigateToSpaceChat(visibleSpaceId)
+              : undefined
+          }
           onCreateSpace={createSpace}
           onRenameSpace={renameSpace}
           onDeleteSpace={deleteSpace}
@@ -3870,7 +3939,7 @@ export function AppShell() {
           ) : undefined
           const visibleSpace =
             spaces.find((space) => space.id === visibleSpaceId) ?? spaces[0]
-          if (isSpaceChatRoute && visibleSpace) {
+          if (isSpaceChatRoute && projectSidebarChatEnabled && visibleSpace) {
             return (
               <SpaceChatView
                 key={visibleSpace.id}

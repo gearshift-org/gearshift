@@ -1,17 +1,17 @@
 import * as React from "react"
-import { PanelTop, History, PanelLeft, Files } from "lucide-react"
+import { PanelTop, History, Files, MessageSquare } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   loadAutoHideTitleBar,
   saveAutoHideTitleBar,
-  loadCompactProjectSidebar,
-  saveCompactProjectSidebar,
   loadOpenFilesInOwnTab,
   saveOpenFilesInOwnTab,
   loadHistoryRetentionEnabled,
   saveHistoryRetentionEnabled,
   loadHistoryRetentionDays,
   saveHistoryRetentionDays,
+  loadProjectSidebarChatEnabled,
+  saveProjectSidebarChatEnabled,
   HISTORY_RETENTION_DEFAULT_DAYS,
   HISTORY_RETENTION_MIN_DAYS,
 } from "@/lib/projects"
@@ -73,9 +73,6 @@ export function GeneralPanel() {
   const [autoHideTitleBar, setAutoHideTitleBar] = React.useState(() =>
     loadAutoHideTitleBar()
   )
-  const [compactSidebar, setCompactSidebar] = React.useState(() =>
-    loadCompactProjectSidebar()
-  )
   const [openFilesInOwnTab, setOpenFilesInOwnTab] = React.useState(() =>
     loadOpenFilesInOwnTab()
   )
@@ -85,14 +82,17 @@ export function GeneralPanel() {
   const [retentionDays, setRetentionDays] = React.useState(() =>
     String(loadHistoryRetentionDays())
   )
+  const [projectSidebarChat, setProjectSidebarChat] = React.useState(() =>
+    loadProjectSidebarChatEnabled()
+  )
   React.useEffect(
     () =>
       store.onReady(() => {
         setAutoHideTitleBar(loadAutoHideTitleBar())
-        setCompactSidebar(loadCompactProjectSidebar())
         setOpenFilesInOwnTab(loadOpenFilesInOwnTab())
         setRetentionEnabled(loadHistoryRetentionEnabled())
         setRetentionDays(String(loadHistoryRetentionDays()))
+        setProjectSidebarChat(loadProjectSidebarChatEnabled())
       }),
     []
   )
@@ -100,11 +100,6 @@ export function GeneralPanel() {
   const updateAutoHideTitleBar = (enabled: boolean) => {
     setAutoHideTitleBar(enabled)
     saveAutoHideTitleBar(enabled)
-  }
-
-  const updateCompactSidebar = (enabled: boolean) => {
-    setCompactSidebar(enabled)
-    saveCompactProjectSidebar(enabled)
   }
 
   const updateOpenFilesInOwnTab = (enabled: boolean) => {
@@ -115,6 +110,11 @@ export function GeneralPanel() {
   const updateRetentionEnabled = (enabled: boolean) => {
     setRetentionEnabled(enabled)
     saveHistoryRetentionEnabled(enabled)
+  }
+
+  const updateProjectSidebarChat = (enabled: boolean) => {
+    setProjectSidebarChat(enabled)
+    saveProjectSidebarChatEnabled(enabled)
   }
 
   const commitRetentionDays = (raw: string) => {
@@ -145,11 +145,11 @@ export function GeneralPanel() {
           onChange={updateAutoHideTitleBar}
         />
         <SettingToggle
-          icon={PanelLeft}
-          label="Compact project sidebar"
-          description="Show projects as single-line rows, hiding the branch and change count for a denser list."
-          checked={compactSidebar}
-          onChange={updateCompactSidebar}
+          icon={MessageSquare}
+          label="Show space chat in sidebar"
+          description="Show the Chat entry below the space switcher in the project sidebar."
+          checked={projectSidebarChat}
+          onChange={updateProjectSidebarChat}
         />
         <SettingToggle
           icon={Files}

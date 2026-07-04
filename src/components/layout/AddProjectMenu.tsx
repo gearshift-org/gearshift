@@ -27,7 +27,6 @@ type Props = {
   onRemoveRecent?: (recent: RecentProject) => void
   onOpenDialog: () => void
   variant?: "tab" | "sidebar" | "sidebar-icon"
-  compact?: boolean
 }
 
 export function AddProjectMenu({
@@ -36,7 +35,6 @@ export function AddProjectMenu({
   onRemoveRecent,
   onOpenDialog,
   variant = "tab",
-  compact = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -150,8 +148,7 @@ export function AddProjectMenu({
       <DropdownMenuTrigger
         aria-label="Add project"
         className={cn(
-          "group/add flex w-full items-center gap-2.5 rounded-sm px-2 text-sm leading-tight font-medium text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground",
-          compact ? "py-1.5" : "py-2"
+          "group/add flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm leading-tight font-medium text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent/70 hover:text-foreground"
         )}
       >
         <span className="grid size-4 shrink-0 place-items-center">

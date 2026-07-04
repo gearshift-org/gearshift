@@ -76,8 +76,6 @@ import {
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   clearProjectAvatarImagePath,
-  COMPACT_PROJECT_SIDEBAR_EVENT,
-  loadCompactProjectSidebar,
   loadPinnedProjectPaths,
   loadProjectSidebarGroupOpen,
   loadProjectSidebarSort,
@@ -480,7 +478,6 @@ type RowProps = {
   onRemoveFromFocus?: (id: string) => void
   isPinned: boolean
   onTogglePin: (path: string) => void
-  compact: boolean
   dragDisabled: boolean
   spaces: StoredSpace[]
   onOpenCreateSpace: (projectId?: string) => void
@@ -507,7 +504,6 @@ function ProjectSidebarRow({
   onRemoveFromFocus,
   isPinned,
   onTogglePin,
-  compact,
   dragDisabled,
   spaces,
   onOpenCreateSpace,
@@ -537,7 +533,6 @@ function ProjectSidebarRow({
     queryKey: gitQueryKey(p.path),
     queryFn: () => fetchGitQueryData(p.path),
   })
-  const subtitle = data?.currentBranch ?? null
   const changeCount = data?.files.length ?? 0
 
   const randomizeAvatarColor = () => {
@@ -586,8 +581,7 @@ function ProjectSidebarRow({
         style={style}
         onClick={() => onSelect(p.id)}
         className={cn(
-          "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
-          compact ? "py-1.5 pr-11" : hasStatusDot ? "py-2 pr-7" : "py-2",
+          "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 pr-11 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
           animate &&
             "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
           isActive
@@ -620,31 +614,12 @@ function ProjectSidebarRow({
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span
-              className={cn(
-                "min-w-0 truncate text-sm leading-tight font-medium",
-                compact && "flex-1"
-              )}
-            >
+            <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
               {p.name}
             </span>
           </div>
-          {!compact && (
-            <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-foreground/70">
-              <span className="truncate">{subtitle ?? " "}</span>
-              {changeCount > 0 && !hasWorkingAgent && (
-                <span
-                  title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
-                  className="flex shrink-0 items-center gap-0.5 tabular-nums"
-                >
-                  <GitBranch className="size-3" />
-                  {changeCount}
-                </span>
-              )}
-            </span>
-          )}
         </div>
-        {compact && changeCount > 0 && !hasWorkingAgent && !hasStatusDot && (
+        {changeCount > 0 && !hasWorkingAgent && !hasStatusDot && (
           <span
             title={`${changeCount} uncommitted ${changeCount === 1 ? "change" : "changes"}`}
             className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 text-xs text-foreground/70 tabular-nums transition-opacity group-hover:opacity-0"
@@ -894,7 +869,6 @@ export function ProjectSidebar({
   const [pinnedPaths, setPinnedPaths] = useState<string[]>(() =>
     loadPinnedProjectPaths()
   )
-  const [compact, setCompact] = useState(() => loadCompactProjectSidebar())
   const [sortMode, setSortMode] = useState<ProjectSortMode>(() =>
     loadProjectSidebarSort()
   )
@@ -905,7 +879,6 @@ export function ProjectSidebar({
         setPinnedOpen(groupOpen.pinned)
         setProjectsOpen(groupOpen.projects)
         setPinnedPaths(loadPinnedProjectPaths())
-        setCompact(loadCompactProjectSidebar())
         setSortMode(loadProjectSidebarSort())
       }),
     []
@@ -941,13 +914,6 @@ export function ProjectSidebar({
     return () => offs.forEach((off) => off())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortMode, projectIdsKey, queryClient])
-  useEffect(() => {
-    const onChange = (e: Event) =>
-      setCompact((e as CustomEvent<boolean>).detail)
-    window.addEventListener(COMPACT_PROJECT_SIDEBAR_EVENT, onChange)
-    return () =>
-      window.removeEventListener(COMPACT_PROJECT_SIDEBAR_EVENT, onChange)
-  }, [])
   useEffect(() => {
     saveProjectSidebarGroupOpen({ pinned: pinnedOpen, projects: projectsOpen })
   }, [pinnedOpen, projectsOpen])
@@ -1256,7 +1222,6 @@ export function ProjectSidebar({
                         onRemoveFromFocus={onRemoveFromFocus}
                         isPinned={true}
                         onTogglePin={togglePin}
-                        compact={compact}
                         dragDisabled={dragDisabled}
                         spaces={spaces}
                         onOpenCreateSpace={openCreateSpaceDialog}
@@ -1282,7 +1247,6 @@ export function ProjectSidebar({
                       onOpenDialog={onAdd}
                       onPickRecent={onPickRecent}
                       onRemoveRecent={onRemoveRecent}
-                      compact={compact}
                     />
                   </div>
                 }
@@ -1313,7 +1277,6 @@ export function ProjectSidebar({
                       onRemoveFromFocus={onRemoveFromFocus}
                       isPinned={false}
                       onTogglePin={togglePin}
-                      compact={compact}
                       dragDisabled={dragDisabled}
                       spaces={spaces}
                       onOpenCreateSpace={openCreateSpaceDialog}
@@ -1329,18 +1292,12 @@ export function ProjectSidebar({
               onClick={onExitFocus}
               aria-label="Exit focus mode"
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-sm px-2 text-left text-sm leading-tight font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
-                compact ? "py-1.5" : "py-2",
+                "flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-left text-sm leading-tight font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
                 animateFocus &&
                   "animate-in duration-200 fade-in slide-in-from-left-2"
               )}
             >
-              <span
-                className={cn(
-                  "grid shrink-0 place-items-center rounded-sm bg-sidebar-accent",
-                  compact ? "size-5" : "size-6"
-                )}
-              >
+              <span className="grid size-5 shrink-0 place-items-center rounded-sm bg-sidebar-accent">
                 <Focus className="size-3.5" />
               </span>
               <span className="truncate">Exit Focus Mode</span>

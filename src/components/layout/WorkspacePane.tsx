@@ -54,6 +54,7 @@ import {
 import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { AGENT_TERMINAL_LABELS } from "@/lib/agentTerminalOptions"
+import { terminalPaneAgentState } from "@/lib/agentStatus"
 import { tabDisplayName } from "./terminalName"
 import {
   ensureLayout,
@@ -640,11 +641,10 @@ function TerminalTabContent({
     // Pulse the pane border instead of a header dot when the agent finished or
     // needs attention. Driven by the same status flags as the sidebar indicators,
     // so it clears the same way (viewing the pane with the app focused).
-    const agentWorking = pane.agentStatus?.working
-    const agentNeedsAttention =
-      !agentWorking && pane.agentStatus?.needsAttention
-    const agentDone =
-      !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
+    const agentState = terminalPaneAgentState(pane)
+    const agentWorking = agentState === "working"
+    const agentNeedsAttention = agentState === "blocked"
+    const agentDone = agentState === "done"
     return (
       <div
         onFocus={() => setFocusedPaneId(paneId)}

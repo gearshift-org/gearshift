@@ -20,6 +20,11 @@ import { THEMES, type ThemeId, useTheme } from "@/components/theme-provider"
 import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { useTerminalAppearance } from "@/lib/terminalAppearance"
 import { cn } from "@/lib/utils"
+import {
+  detectAgentOutputFallbackSignal,
+  detectAgentTitleFallbackSignal,
+  type AgentFallbackSignal,
+} from "@/lib/agentStatus"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
@@ -573,17 +578,28 @@ const LIVE_FIT_SUPPRESSING_BODY_CLASSES = ["gs-sidebar-resizing"]
 const TERMINAL_RECAP_BOX_ENABLED = false
 // Floating commit affordance temporarily disabled; keep the code path intact.
 const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
-// Agents with authoritative lifecycle hooks (start/stop via the agent socket).
-// Their busy state is driven entirely by those hook events, so the title- and
-// output-activity heuristics must NOT mark them working — otherwise plain UI
-// interactions that repaint the TUI (opening the model picker, selecting a
-// model) get misread as work and stick a false busy dot on the pane.
+// Agents that can report authoritative lifecycle hooks (start/stop via the
+// agent socket). While a hook is active/recent, fallback detection stays
+// advisory for normal working/done transitions. Strong blocked-prompt cues can
+// still override working because some TUIs ask inline questions without firing
+// a dedicated needs-attention hook.
 const HOOK_BACKED_AGENTS = new Set(["claude", "codex", "opencode", "pi"])
 
 function shouldSuppressLiveFit() {
   return LIVE_FIT_SUPPRESSING_BODY_CLASSES.some((className) =>
     document.body.classList.contains(className)
   )
+}
+
+function terminalRecentBufferText(term: Terminal, maxLines = 80): string {
+  const buffer = term.buffer.active
+  const end = Math.min(buffer.length - 1, buffer.baseY + buffer.cursorY)
+  const start = Math.max(0, end - maxLines + 1)
+  const lines: string[] = []
+  for (let lineIndex = start; lineIndex <= end; lineIndex += 1) {
+    lines.push(buffer.getLine(lineIndex)?.translateToString(true) ?? "")
+  }
+  return lines.join("\n")
 }
 
 // Hookless agents fall back to "terminal produced output while running" as a
@@ -843,11 +859,11 @@ export function TerminalView({
   const lastAgentActivityAtRef = useRef(0)
   const lastUserInputAtRef = useRef(0)
   const lastAgentSubmitAtRef = useRef(0)
-  const lastTitleSignalRef = useRef<string | undefined>(undefined)
   const hasSubmittedToAgentRef = useRef(!!initialAgentStatus?.working)
   const suppressAgentActivityUntilRef = useRef(0)
   const lastHookEventAtRef = useRef(0)
   const activeHookWorkRef = useRef(!!initialAgentStatus?.working)
+  const fallbackActiveTurnRef = useRef(!!initialAgentStatus?.working)
   // Background subagents currently running (subagent id -> start time). While
   // non-empty, a Stop hook is treated as a turn boundary, not a completion.
   const pendingSubagentsRef = useRef<Map<string, number>>(new Map())
@@ -1058,6 +1074,85 @@ export function TerminalView({
     }, COMMIT_STATUS_CHECK_DELAY_MS)
   }, [queryClient])
 
+  const hooksAreAuthoritative = useCallback(
+    () =>
+      activeHookWorkRef.current ||
+      Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS,
+    []
+  )
+
+  const applyFallbackAgentSignal = useCallback(
+    (
+      signal: AgentFallbackSignal | null,
+      source: "title" | "output" | "input"
+    ) => {
+      if (!signal) return
+      const shouldRespectHookAuthority =
+        signal !== "blocked" && source !== "input"
+      if (shouldRespectHookAuthority && hooksAreAuthoritative()) return
+      const current = agentStatusRef.current
+      if (!current.running || !current.agentName) return
+
+      const now = Date.now()
+      if (signal === "blocked") {
+        fallbackActiveTurnRef.current = true
+        emitAgentStatus({
+          ...current,
+          working: false,
+          completedAt: undefined,
+          completed: false,
+          needsAttention: true,
+        })
+        scheduleRecap("needs_attention")
+        return
+      }
+
+      if (signal === "working") {
+        fallbackActiveTurnRef.current = true
+        lastAgentActivityAtRef.current = now
+        emitAgentStatus({
+          ...current,
+          working: true,
+          workStartedAt: current.working ? (current.workStartedAt ?? now) : now,
+          completedAt: undefined,
+          completed: false,
+          needsAttention: false,
+        })
+        return
+      }
+
+      if (source === "output") return
+      const hadFallbackTurn =
+        fallbackActiveTurnRef.current ||
+        current.working ||
+        current.needsAttention
+      fallbackActiveTurnRef.current = false
+      if (hadFallbackTurn) {
+        emitAgentStatus({
+          ...current,
+          working: false,
+          completedAt: now,
+          completed: true,
+          needsAttention: false,
+        })
+        scheduleRecap("completed")
+        maybeShowCommit()
+        return
+      }
+
+      if (current.working || current.needsAttention || current.completed) {
+        emitAgentStatus({
+          ...current,
+          working: false,
+          completedAt: undefined,
+          completed: false,
+          needsAttention: false,
+        })
+      }
+    },
+    [emitAgentStatus, hooksAreAuthoritative, maybeShowCommit, scheduleRecap]
+  )
+
   // Keep the affordance honest while it's open: if the changes disappear (e.g.
   // the agent committed them), close it. Never auto-opens — the affordance is
   // only surfaced by maybeShowCommit() after an agent finishes a turn, so it
@@ -1094,6 +1189,7 @@ export function TerminalView({
       agentWorkingTimerRef.current = undefined
     }
     activeHookWorkRef.current = false
+    fallbackActiveTurnRef.current = false
     lastAgentActivityAtRef.current = 0
     hasSubmittedToAgentRef.current = false
     const current = agentStatusRef.current
@@ -1680,6 +1776,10 @@ export function TerminalView({
       pendingLiveData = ""
       term.write(chunk)
       const current = agentStatusRef.current
+      applyFallbackAgentSignal(
+        detectAgentOutputFallbackSignal(current.agentName, chunk),
+        "output"
+      )
       if (
         current.running &&
         current.agentName &&
@@ -1712,6 +1812,14 @@ export function TerminalView({
       replayingSnapshot = true
       term.write(snap, () => {
         replayingSnapshot = false
+        const current = agentStatusRef.current
+        applyFallbackAgentSignal(
+          detectAgentOutputFallbackSignal(
+            current.agentName,
+            terminalRecentBufferText(term)
+          ),
+          "output"
+        )
         if (colorSchemeSubscribedRef.current) writeColorSchemeReport()
         attachLiveData()
       })
@@ -1752,6 +1860,9 @@ export function TerminalView({
           dismissRecap()
           // A new prompt supersedes the post-task commit affordance.
           setCommitUi((s) => (s === "open" ? "closing" : s))
+          if (current.needsAttention) {
+            applyFallbackAgentSignal("working", "input")
+          }
           // If a coding agent is live here, re-emit so the "last message sent
           // here" split badge moves to this pane right away. Gated on running
           // to avoid churn on ordinary shell commands.
@@ -1778,26 +1889,18 @@ export function TerminalView({
         lastEmittedTitle = displayTitle
         onTitleChangeRef.current?.(displayTitle)
       }
+      const current = agentStatusRef.current
+      applyFallbackAgentSignal(
+        detectAgentTitleFallbackSignal(current.agentName, trimmed),
+        "title"
+      )
+
       const titleSignal = agentActivityTitleSignal(trimmed)
       if (!titleSignal) return
 
-      const current = agentStatusRef.current
-      const previousTitleSignal = lastTitleSignalRef.current
-      lastTitleSignalRef.current = titleSignal
-
-      if (current.agentName === "claude") {
-        if (previousTitleSignal && previousTitleSignal !== titleSignal) {
-          markAgentWorking()
-        }
-        return
-      }
-
-      // Hook-backed agents (OpenCode, Codex, pi) get authoritative start/stop
-      // events from their lifecycle hooks, so busy state is already covered.
-      // Their TUI title carries a static leading glyph that repaints on every
-      // UI interaction (opening the model picker, selecting a model), which
-      // would otherwise be misread as work. Only hookless agents (plain
-      // shells) need the title-presence fallback.
+      // Hook-capable agents are handled by lifecycle hooks or by the strong
+      // fallback title detector above when those hooks are absent/stale. The
+      // generic title-presence fallback is only for hookless agents.
       if (current.agentName && HOOK_BACKED_AGENTS.has(current.agentName)) return
 
       markAgentWorking()
@@ -1944,6 +2047,7 @@ export function TerminalView({
     openDevPreview,
     markAgentWorking,
     clearAgentWorking,
+    applyFallbackAgentSignal,
     emitAgentStatus,
     writeColorSchemeReport,
     writeTerminalReply,
@@ -2112,10 +2216,7 @@ export function TerminalView({
       // hooks). Claude's Stop hook fires when the main agent finishes a turn
       // even while background subagents are still running, so the stop branch
       // below holds the "completed" signal while any of these are pending.
-      if (
-        event.event === "subagent_start" ||
-        event.event === "subagent_stop"
-      ) {
+      if (event.event === "subagent_start" || event.event === "subagent_stop") {
         const pending = pendingSubagentsRef.current
         if (event.event === "subagent_start") {
           const id = event.body || `anon-${++anonSubagentSeqRef.current}`
@@ -2136,6 +2237,7 @@ export function TerminalView({
         // (UserPromptSubmit). Treats agent as running even before the
         // process-name poll catches up.
         activeHookWorkRef.current = true
+        fallbackActiveTurnRef.current = false
         hasSubmittedToAgentRef.current = true
         const now = Date.now()
         lastAgentActivityAtRef.current = now
@@ -2198,6 +2300,7 @@ export function TerminalView({
         if (pending.size > 0) return
       }
       activeHookWorkRef.current = false
+      fallbackActiveTurnRef.current = false
       lastAgentActivityAtRef.current = 0
       hasSubmittedToAgentRef.current = false
       if (!hadActiveTurn || wasWaitingForInput) {

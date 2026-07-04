@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 import { paneDisplayName } from "./terminalName"
+import { terminalAgentIsActive } from "@/lib/agentStatus"
 import { TerminalHistoryButton } from "@/components/terminal/TerminalHistoryPopover"
 import { SummarizeHistoryMenu } from "@/components/terminal/SummarizeHistoryMenu"
 import {
@@ -108,18 +109,10 @@ export function PaneHeader({
     })
   }
 
-  const agentWorking = pane.agentStatus?.working
-  const agentNeedsAttention = pane.agentStatus?.needsAttention
-  const agentDone =
-    !agentWorking && !agentNeedsAttention && !!pane.agentStatus?.completed
   // Show the agent's brand icon while an agent is active in this pane (running,
   // working, waiting on the user, or just completed). AgentIcon renders nothing
   // for any agent without a registered icon.
-  const agentActive =
-    !!pane.agentStatus?.running ||
-    !!agentWorking ||
-    !!agentNeedsAttention ||
-    agentDone
+  const agentActive = terminalAgentIsActive(pane.agentStatus)
 
   return (
     <div

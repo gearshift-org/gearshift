@@ -24,6 +24,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { cn } from "@/lib/utils"
+import { terminalAgentIsActive, terminalTabAgentState } from "@/lib/agentStatus"
 import { AgentSpinner } from "./AgentSpinner"
 import { AgentAttention } from "./AgentAttention"
 import { AgentDone } from "./AgentDone"
@@ -177,27 +178,18 @@ function WorkspaceTabItem({
   const isPreview =
     (t.kind === "diff" || t.kind === "file" || t.kind === "commit") &&
     t.preview === true
-  const hasWorkingAgent =
-    isTerminal && t.panes.some((pane) => pane.agentStatus?.working)
-  const hasAttentionAgent =
-    isTerminal &&
-    !hasWorkingAgent &&
-    t.panes.some((pane) => pane.agentStatus?.needsAttention)
-  const hasDoneAgent =
-    isTerminal &&
-    !hasWorkingAgent &&
-    !hasAttentionAgent &&
-    t.panes.some((pane) => pane.agentStatus?.completed)
+  const agentState = terminalTabAgentState(t)
+  const hasWorkingAgent = isTerminal && agentState === "working"
+  const hasAttentionAgent = isTerminal && agentState === "blocked"
+  const hasDoneAgent = isTerminal && agentState === "done"
   // The brand icon of the agent active in the *focused* pane (running, working,
   // or waiting on the user) — matching how the tab title tracks the active
   // pane. A focused pane with no agent shows the generic terminal icon, even if
   // a sibling split pane is running an agent.
-  const paneAgent = (pane: TerminalPane | undefined) =>
-    pane?.agentStatus?.running ||
-    pane?.agentStatus?.working ||
-    pane?.agentStatus?.needsAttention
-      ? pane.agentStatus?.agentName
-      : undefined
+  const paneAgent = (pane: TerminalPane | undefined) => {
+    if (!pane || !terminalAgentIsActive(pane.agentStatus)) return undefined
+    return pane.agentStatus?.agentName
+  }
   const activeAgentName = isTerminal
     ? paneAgent(
         t.panes.find((pane) => pane.id === t.activePaneId) ?? t.panes[0]

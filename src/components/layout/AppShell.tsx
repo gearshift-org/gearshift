@@ -2248,11 +2248,11 @@ export function AppShell() {
       const project = projectsRef.current.find((p) => p.id === activeProjectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (!project || !tab || tab.kind !== "terminal") return
-      const { id: paneId } = await window.term.create({
-        cwd: project.path,
-        theme: resolvedTheme,
-        projectId: project.id,
-      })
+      // Show the split immediately with a locally generated session id and
+      // spawn the PTY afterwards (same pattern as addTerminal) — awaiting the
+      // daemon round-trip first makes Cmd+D feel laggy, especially while
+      // agents keep the daemon busy.
+      const paneId = makeId()
       setProjects((prev) =>
         prev.map((p) =>
           p.id === project.id
@@ -2277,6 +2277,12 @@ export function AppShell() {
             : p
         )
       )
+      await window.term.create({
+        cwd: project.path,
+        theme: resolvedTheme,
+        projectId: project.id,
+        sessionId: paneId,
+      })
     },
     [activeProjectId, resolvedTheme]
   )
@@ -2292,11 +2298,8 @@ export function AppShell() {
       const project = projectsRef.current.find((p) => p.id === activeProjectId)
       const tab = project?.tabs.find((t) => t.id === tabId)
       if (!project || !tab || tab.kind !== "terminal") return
-      const { id: paneId } = await window.term.create({
-        cwd: project.path,
-        theme: resolvedTheme,
-        projectId: project.id,
-      })
+      // Same as splitTerminalPane: render the pane first, spawn the PTY after.
+      const paneId = makeId()
       setProjects((prev) =>
         prev.map((p) =>
           p.id === project.id
@@ -2327,6 +2330,12 @@ export function AppShell() {
             : p
         )
       )
+      await window.term.create({
+        cwd: project.path,
+        theme: resolvedTheme,
+        projectId: project.id,
+        sessionId: paneId,
+      })
     },
     [activeProjectId, resolvedTheme]
   )

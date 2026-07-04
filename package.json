@@ -67,7 +67,7 @@
     "tiptap-markdown": "^0.9.0"
   },
   "devDependencies": {
-    "@base-ui/react": "^1.5.0",
+    "@base-ui/react": "^1.6.0",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/language": "^6.12.3",
     "@codemirror/language-data": "^6.5.2",
@@ -81,10 +81,10 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@pierre/diffs": "1.2.11",
     "@tailwindcss/vite": "^4.2.1",
-    "@tanstack/query-sync-storage-persister": "^5.100.13",
-    "@tanstack/react-query": "^5.100.13",
-    "@tanstack/react-query-persist-client": "^5.100.13",
-    "@tanstack/react-router": "^1.170.7",
+    "@tanstack/query-sync-storage-persister": "^5.101.2",
+    "@tanstack/react-query": "^5.101.2",
+    "@tanstack/react-query-persist-client": "^5.101.2",
+    "@tanstack/react-router": "^1.170.17",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

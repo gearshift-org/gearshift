@@ -463,6 +463,33 @@ function recoverTerminalRenderer(term: Terminal) {
   refreshTerminalViewport(term)
 }
 
+type WebglAddonWithInternalGl = WebglAddon & {
+  _renderer?: {
+    _gl?: {
+      getExtension(name: "WEBGL_lose_context"): {
+        loseContext(): void
+      } | null
+    }
+  }
+}
+
+// dispose() alone detaches the canvas but leaves the GPU context alive until
+// GC. Chromium caps a page at ~16 live WebGL contexts and evicts the oldest
+// past that, so release the context synchronously to keep the count exact.
+function disposeWebglAddon(webgl: WebglAddon) {
+  const gl = (webgl as WebglAddonWithInternalGl)._renderer?._gl
+  try {
+    webgl.dispose()
+  } catch {
+    // xterm may already be disposing.
+  }
+  try {
+    gl?.getExtension("WEBGL_lose_context")?.loseContext()
+  } catch {
+    // Context already lost.
+  }
+}
+
 function isLocalDevUrl(value: string): boolean {
   try {
     const parsed = new URL(value)
@@ -1895,8 +1922,10 @@ export function TerminalView({
       kittyImageSub.dispose()
       itermImageSub.dispose()
       search.dispose()
-      webglRef.current?.dispose()
-      webglRef.current = null
+      if (webglRef.current) {
+        disposeWebglAddon(webglRef.current)
+        webglRef.current = null
+      }
       term.dispose()
       termRef.current = null
       fitRef.current = null
@@ -2206,22 +2235,33 @@ export function TerminalView({
     maybeShowCommit,
   ])
 
-  // Keep WebGL enabled for crisp terminal rendering. Load it after xterm opens
-  // (deferred to a rAF) so xterm has stable cell metrics and we don't race its
-  // post-open viewport sync. If the GPU context is ever lost, fall back to the
-  // DOM renderer permanently rather than retrying WebGL.
+  // Keep WebGL enabled for crisp terminal rendering, but only while the pane
+  // is on screen. Every WebglAddon owns a GPU context and Chromium caps a page
+  // at ~16 — all projects/tabs stay mounted in hidden layers, so a busy
+  // workspace blows past the cap, the browser evicts the oldest context, and
+  // the loss handler below downgrades every terminal to the slow DOM renderer
+  // for the rest of the session (typing lags while agents stream). Hidden
+  // panes fall back to the DOM renderer (cheap under content-visibility:
+  // hidden) and get a fresh context on reveal. Load after a rAF so xterm has
+  // stable cell metrics and we don't race its post-open viewport sync. If the
+  // GPU context is ever genuinely lost, fall back to the DOM renderer
+  // permanently rather than retrying WebGL.
   useEffect(() => {
     const term = termRef.current
-    if (!term || webglRef.current || suggestedRendererType === "dom") return
+    if (!term || !isVisible || suggestedRendererType === "dom") return
 
     let disposed = false
     const rafId = requestAnimationFrame(() => {
       if (disposed || suggestedRendererType === "dom") return
       const t = termRef.current
-      if (!t) return
+      if (!t || webglRef.current) return
       try {
         const webgl = new WebglAddon()
         webgl.onContextLoss(() => {
+          // Cleanup intentionally releases hidden-pane contexts with
+          // WEBGL_lose_context. That should not poison the whole app into the
+          // slower DOM renderer; only unexpected loss while mounted should.
+          if (disposed) return
           webgl.dispose()
           if (webglRef.current === webgl) webglRef.current = null
           suggestedRendererType = "dom"
@@ -2239,8 +2279,15 @@ export function TerminalView({
     return () => {
       disposed = true
       cancelAnimationFrame(rafId)
+      // Pane hidden (or unmounting): release the GPU context. xterm swaps its
+      // DOM renderer back in via WebglAddon.dispose().
+      const webgl = webglRef.current
+      if (webgl) {
+        webglRef.current = null
+        disposeWebglAddon(webgl)
+      }
     }
-  }, [])
+  }, [isVisible])
 
   useEffect(() => {
     const term = termRef.current

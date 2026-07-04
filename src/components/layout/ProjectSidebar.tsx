@@ -375,6 +375,7 @@ type SidebarGroupHeaderProps = {
   isOpen: boolean
   onToggle: () => void
   action?: React.ReactNode
+  collapsible?: boolean
 }
 
 function SidebarGroupHeader({
@@ -382,29 +383,36 @@ function SidebarGroupHeader({
   isOpen,
   onToggle,
   action,
+  collapsible = true,
 }: SidebarGroupHeaderProps) {
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={isOpen}
-      onClick={onToggle}
+      role={collapsible ? "button" : undefined}
+      tabIndex={collapsible ? 0 : undefined}
+      aria-expanded={collapsible ? isOpen : undefined}
+      onClick={collapsible ? onToggle : undefined}
       onKeyDown={(e) => {
+        if (!collapsible) return
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault()
           onToggle()
         }
       }}
-      className="group/group-header flex h-8 w-full shrink-0 cursor-pointer items-center justify-between gap-1 pr-1 pl-2 outline-none select-none"
+      className={cn(
+        "group/group-header flex h-8 w-full shrink-0 items-center justify-between gap-1 pr-1 pl-2 outline-none select-none",
+        collapsible ? "cursor-pointer" : "cursor-default"
+      )}
     >
       <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted-foreground/80 transition-colors group-hover/group-header:text-foreground">
         <span className="truncate">{label}</span>
-        <ChevronDown
-          className={cn(
-            "size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover/group-header:opacity-100",
-            !isOpen && "-rotate-90"
-          )}
-        />
+        {collapsible && (
+          <ChevronDown
+            className={cn(
+              "size-3.5 shrink-0 opacity-0 transition-[transform,opacity] group-hover/group-header:opacity-100",
+              !isOpen && "-rotate-90"
+            )}
+          />
+        )}
       </span>
       {action && (
         <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -983,11 +991,26 @@ export function ProjectSidebar({
   const unpinnedProjects = sortByMode(
     filteredProjects.filter((p) => !pinnedSet.has(p.path))
   )
+  const hasPinnedProjects = focusVisibleProjects.some((p) =>
+    pinnedSet.has(p.path)
+  )
+  const hasUnpinnedProjects = focusVisibleProjects.some(
+    (p) => !pinnedSet.has(p.path)
+  )
+  const hasAnyPinnedProjects = projects.some((p) => pinnedSet.has(p.path))
+  const hasAnyUnpinnedProjects = projects.some((p) => !pinnedSet.has(p.path))
+  const pinnedGroupOpen = hasPinnedProjects ? pinnedOpen : true
+  const projectsGroupOpen = hasUnpinnedProjects ? projectsOpen : true
   const dragDisabled = sortMode !== "manual"
   const visibleProjects = [
-    ...(pinnedOpen ? pinnedProjects : []),
-    ...(projectsOpen ? unpinnedProjects : []),
+    ...(pinnedGroupOpen ? pinnedProjects : []),
+    ...(projectsGroupOpen ? unpinnedProjects : []),
   ]
+
+  useEffect(() => {
+    if (!hasAnyPinnedProjects && !pinnedOpen) setPinnedOpen(true)
+    if (!hasAnyUnpinnedProjects && !projectsOpen) setProjectsOpen(true)
+  }, [hasAnyPinnedProjects, hasAnyUnpinnedProjects, pinnedOpen, projectsOpen])
 
   // Only animate rows when focus mode is toggled — not on initial page load.
   const prevFocusModeRef = useRef(isFocusMode)
@@ -1206,10 +1229,11 @@ export function ProjectSidebar({
                 <>
                   <SidebarGroupHeader
                     label="Pinned"
-                    isOpen={pinnedOpen}
+                    isOpen={pinnedGroupOpen}
                     onToggle={() => setPinnedOpen((open) => !open)}
+                    collapsible={hasPinnedProjects}
                   />
-                  {pinnedOpen &&
+                  {pinnedGroupOpen &&
                     pinnedProjects.map((p, i) => (
                       <ProjectSidebarRow
                         key={`${p.id}-${isFocusMode}`}
@@ -1243,8 +1267,9 @@ export function ProjectSidebar({
               )}
               <SidebarGroupHeader
                 label="Projects"
-                isOpen={projectsOpen}
+                isOpen={projectsGroupOpen}
                 onToggle={() => setProjectsOpen((open) => !open)}
+                collapsible={hasUnpinnedProjects}
                 action={
                   <div className="flex items-center gap-0.5">
                     <ProjectSortMenu
@@ -1262,10 +1287,10 @@ export function ProjectSidebar({
                   </div>
                 }
               />
-              {projectsOpen &&
+              {projectsGroupOpen &&
                 unpinnedProjects.map((p, i) => {
                   const visibleIndex =
-                    (pinnedOpen ? pinnedProjects.length : 0) + i
+                    (pinnedGroupOpen ? pinnedProjects.length : 0) + i
                   return (
                     <ProjectSidebarRow
                       key={`${p.id}-${isFocusMode}`}

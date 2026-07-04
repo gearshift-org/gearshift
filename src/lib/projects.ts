@@ -6,13 +6,12 @@ import type {
 } from "@/components/layout/types"
 
 // Subset of the (otherwise ephemeral) agent status that's worth persisting so
-// the "last message sent here" indicator and the completed/needs-input markers
-// survive an app restart. Live fields (running/working/agentName) are always
+// the "last message sent here" indicator and completed markers survive an app
+// restart. Live fields (running/working/needsAttention/agentName) are always
 // re-detected from the PTY on launch, so they're intentionally omitted.
 export type StoredAgentStatus = {
   completed?: boolean
   completedAt?: number
-  needsAttention?: boolean
   workStartedAt?: number
   lastSubmitAt?: number
 }
@@ -32,7 +31,7 @@ export type StoredPane = {
   agentSessionId?: string
   /** Human-readable agent session title (AI title or first prompt) shown as the pane title. */
   agentSessionTitle?: string
-  /** Persisted agent-status subset (completed/needs-input/last-submit markers). */
+  /** Persisted agent-status subset (completed/last-submit markers). */
   agentStatus?: StoredAgentStatus
 }
 
@@ -46,7 +45,6 @@ export function toStoredAgentStatus(
   if (status.completed) stored.completed = true
   if (typeof status.completedAt === "number")
     stored.completedAt = status.completedAt
-  if (status.needsAttention) stored.needsAttention = true
   if (typeof status.workStartedAt === "number")
     stored.workStartedAt = status.workStartedAt
   if (typeof status.lastSubmitAt === "number")
@@ -60,7 +58,6 @@ function parseStoredAgentStatus(value: unknown): StoredAgentStatus | undefined {
   const stored: StoredAgentStatus = {}
   if (v.completed === true) stored.completed = true
   if (typeof v.completedAt === "number") stored.completedAt = v.completedAt
-  if (v.needsAttention === true) stored.needsAttention = true
   if (typeof v.workStartedAt === "number")
     stored.workStartedAt = v.workStartedAt
   if (typeof v.lastSubmitAt === "number") stored.lastSubmitAt = v.lastSubmitAt
@@ -128,7 +125,7 @@ export type StoredProject = {
   activeTabId?: string
   /** Sidebar "agent finished" marker — persisted so it survives a restart. */
   agentDone?: boolean
-  /** Sidebar "agent needs input" marker — persisted so it survives a restart. */
+  /** Legacy persisted needs-input marker. Ignored on load; live PTY state owns it. */
   agentNeedsAttention?: boolean
 }
 
@@ -400,6 +397,9 @@ export function loadProjects(): StoredProject[] {
       )
       .map((p) => ({
         ...p,
+        // Legacy snapshots may contain stale needs-input markers. Do not
+        // restore them; an attached terminal must re-detect live blocked state.
+        agentNeedsAttention: undefined,
         spaceId:
           typeof p.spaceId === "string" && p.spaceId
             ? p.spaceId

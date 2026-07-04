@@ -240,9 +240,6 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
         }),
         activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
         ...(p.agentDone === true ? { agentDone: true } : {}),
-        ...(p.agentNeedsAttention === true
-          ? { agentNeedsAttention: true }
-          : {}),
       },
     ]
   })
@@ -468,10 +465,9 @@ function serializeProjects(projects: Project[]): StoredProject[] {
       // returns to it.
       activeTabId: activeTab?.id ?? tabs[0]?.id ?? "",
       tabs,
-      // Sidebar agent markers survive a restart so the completed/needs-input
-      // dots don't vanish on relaunch.
+      // Completed sidebar markers survive a restart. Needs-input is live-only:
+      // it must be re-proven by an attached PTY/hook/snapshot on relaunch.
       ...(p.agentDone ? { agentDone: true } : {}),
-      ...(p.agentNeedsAttention ? { agentNeedsAttention: true } : {}),
     }
   })
 }

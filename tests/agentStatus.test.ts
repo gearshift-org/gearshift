@@ -6,6 +6,7 @@ import {
   terminalAgentState,
   terminalTabAgentState,
 } from "../src/lib/agentStatus"
+import { toStoredAgentStatus } from "../src/lib/projects"
 import type { Project, TerminalTab } from "../src/components/layout/types"
 
 function terminalTab(
@@ -149,5 +150,41 @@ describe("agent fallback signals", () => {
         "Which country would you like to choose?\n1. Japan\n2. Italy\n6. Type your own answer\n↑↓ select  enter submit  esc dismiss"
       )
     ).toBe("blocked")
+  })
+})
+
+describe("agent status persistence", () => {
+  test("does not persist live states across restarts", () => {
+    expect(
+      toStoredAgentStatus({
+        running: true,
+        working: true,
+      })
+    ).toBeUndefined()
+
+    expect(
+      toStoredAgentStatus({
+        running: true,
+        working: false,
+        needsAttention: true,
+      })
+    ).toBeUndefined()
+
+    expect(
+      toStoredAgentStatus({
+        running: true,
+        working: false,
+        completed: true,
+        completedAt: 200,
+        needsAttention: true,
+        workStartedAt: 100,
+        lastSubmitAt: 150,
+      })
+    ).toEqual({
+      completed: true,
+      completedAt: 200,
+      workStartedAt: 100,
+      lastSubmitAt: 150,
+    })
   })
 })

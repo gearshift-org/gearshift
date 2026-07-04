@@ -1084,7 +1084,7 @@ export function TerminalView({
   const applyFallbackAgentSignal = useCallback(
     (
       signal: AgentFallbackSignal | null,
-      source: "title" | "output" | "input"
+      source: "title" | "output" | "snapshot" | "input"
     ) => {
       if (!signal) return
       const shouldRespectHookAuthority =
@@ -1095,6 +1095,7 @@ export function TerminalView({
 
       const now = Date.now()
       if (signal === "blocked") {
+        if (source === "snapshot" && current.completed) return
         fallbackActiveTurnRef.current = true
         emitAgentStatus({
           ...current,
@@ -1818,7 +1819,7 @@ export function TerminalView({
             current.agentName,
             terminalRecentBufferText(term)
           ),
-          "output"
+          "snapshot"
         )
         if (colorSchemeSubscribedRef.current) writeColorSchemeReport()
         attachLiveData()

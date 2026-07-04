@@ -33,6 +33,7 @@ import {
   X,
 } from "lucide-react"
 import { toast } from "sonner"
+import { UpdateButton } from "./UpdateButton"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { Button } from "@/components/ui/button"
 import {
@@ -1304,7 +1305,7 @@ export function ProjectSidebar({
             </button>
           )}
         </div>
-        <div className="shrink-0 px-3 pt-1.5 pb-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-1.5 pb-3">
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1321,6 +1322,7 @@ export function ProjectSidebar({
             />
             <TooltipContent>Settings</TooltipContent>
           </Tooltip>
+          <UpdateButton />
         </div>
       </div>
     </>

@@ -5,9 +5,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 import type { UpdaterState } from "../../../electron/preload"
 
-export function UpdateButton() {
+type Props = {
+  className?: string
+}
+
+export function UpdateButton({ className }: Props) {
   const [state, setState] = useState<UpdaterState>({ status: "idle" })
 
   useEffect(() => {
@@ -27,7 +32,12 @@ export function UpdateButton() {
       state.status === "downloading" ? `Downloading ${percent}%` : "Downloading…"
 
     return (
-      <div className="mx-1.5 flex shrink-0 items-center [-webkit-app-region:no-drag]">
+      <div
+        className={cn(
+          "flex shrink-0 items-center [-webkit-app-region:no-drag]",
+          className
+        )}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -56,7 +66,12 @@ export function UpdateButton() {
   if (state.status !== "ready") return null
 
   return (
-    <div className="mx-1.5 flex shrink-0 items-center [-webkit-app-region:no-drag]">
+    <div
+      className={cn(
+        "flex shrink-0 items-center [-webkit-app-region:no-drag]",
+        className
+      )}
+    >
       <Tooltip>
         <TooltipTrigger
           render={
@@ -64,9 +79,9 @@ export function UpdateButton() {
               type="button"
               onClick={() => window.updaterApi?.quitAndInstall()}
               aria-label={`Restart to update to ${state.version}`}
-              className="inline-flex h-5 items-center gap-1 rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              className="inline-flex h-7 items-center gap-1 rounded-sm bg-primary px-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
-              <ArrowUpCircle className="size-3" />
+              <ArrowUpCircle className="size-3.5" />
               Restart to Update
             </button>
           }

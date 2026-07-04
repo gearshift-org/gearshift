@@ -18,7 +18,7 @@ import { PanelLeft, PanelRight, Search, X } from "lucide-react"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { AutoHideTitleBar } from "./AutoHideTitleBar"
 import { TitleBar } from "./TitleBar"
-import { UpdateButton } from "./UpdateButton"
+
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
 import {
   summarizeHistoryToAgent,
@@ -3919,7 +3919,6 @@ export function AppShell() {
                   {collapsedSearchButton}
                 </>
               )}
-              <UpdateButton />
               {activeProject && projectSidebarCollapsed && (
                 <div className="flex min-w-0 items-center pl-1.5">
                   <ProjectSwitcher
@@ -4048,7 +4047,7 @@ export function AppShell() {
                     void window.shellApi.openInVSCode(activeProject.path)
                   }
                   trailing={topBarTrailing}
-                  leading={topBarLeading ?? <UpdateButton />}
+                  leading={topBarLeading}
                   draggable={true}
                 />
               }

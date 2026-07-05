@@ -1151,6 +1151,20 @@ export function TerminalView({
       }
 
       if (source === "output") return
+      if (source === "snapshot") {
+        // Replayed history can only prove the agent is idle *now*. It must
+        // never mint a fresh completion (the turn may long since have been
+        // seen and dismissed) nor wipe a real unviewed completed marker.
+        fallbackActiveTurnRef.current = false
+        if (current.working || current.needsAttention) {
+          emitAgentStatus({
+            ...current,
+            working: false,
+            needsAttention: false,
+          })
+        }
+        return
+      }
       const hadFallbackTurn =
         fallbackActiveTurnRef.current ||
         current.working ||
@@ -1394,6 +1408,10 @@ export function TerminalView({
     // XTVERSION, OSC color requests, DECRQSS, …) by firing `onData`. Feeding
     // those answers into the current shell makes them appear as prompt text.
     let replayingSnapshot = false
+    // Last window title parsed during snapshot replay; evaluated once after
+    // the replay finishes instead of feeding every historical title into the
+    // agent-status fallback detector.
+    let lastReplayedTitle: string | undefined
 
     // Use the legacy ESC+Enter newline sequence by default because Claude Code,
     // Codex, and OpenCode already understand it. If a TUI probes/enables
@@ -1849,6 +1867,19 @@ export function TerminalView({
           ),
           "snapshot"
         )
+        // Evaluate only the final replayed title, and only as a "snapshot"
+        // signal — it reflects the agent's state as of the replayed history,
+        // so it may mark the pane working/blocked but never freshly completed.
+        if (lastReplayedTitle !== undefined) {
+          applyFallbackAgentSignal(
+            detectAgentTitleFallbackSignal(
+              agentStatusRef.current.agentName,
+              lastReplayedTitle
+            ),
+            "snapshot"
+          )
+          lastReplayedTitle = undefined
+        }
         if (colorSchemeSubscribedRef.current) writeColorSchemeReport()
         attachLiveData()
       })
@@ -1917,6 +1948,16 @@ export function TerminalView({
       if (displayTitle !== lastEmittedTitle) {
         lastEmittedTitle = displayTitle
         onTitleChangeRef.current?.(displayTitle)
+      }
+      // Snapshot replay re-parses historical title sequences (spinner titles
+      // from past turns followed by the final idle title), which would replay
+      // the whole working→idle transition into the fallback detector and mint
+      // a fresh "completed" for a turn the user already saw. Remember only the
+      // last replayed title; it is evaluated once after replay as a weak
+      // "snapshot" signal (see the snapshot() handler below).
+      if (replayingSnapshot) {
+        lastReplayedTitle = trimmed
+        return
       }
       const current = agentStatusRef.current
       applyFallbackAgentSignal(

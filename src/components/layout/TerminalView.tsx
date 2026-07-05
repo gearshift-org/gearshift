@@ -956,6 +956,30 @@ export function TerminalView({
     onOpenDevPreviewRef.current?.(url)
   }, [])
 
+  // AppShell clears a pane's completed / needs-attention markers when the user
+  // views the pane, but that clear only lives in parent state. Fold it back
+  // into the local status ref — otherwise the next emit that spreads the
+  // current status (status poll, session-title refresh, split-induced churn,
+  // Enter re-emit) resurrects the stale completed flag and the completion
+  // indicator/notification fires again for a turn the user already saw.
+  useEffect(() => {
+    if (!initialAgentStatus) return
+    const current = agentStatusRef.current
+    const clearedCompleted =
+      current.completed === true && initialAgentStatus.completed === false
+    const clearedAttention =
+      current.needsAttention === true &&
+      initialAgentStatus.needsAttention === false
+    if (!clearedCompleted && !clearedAttention) return
+    agentStatusRef.current = {
+      ...current,
+      ...(clearedCompleted
+        ? { completed: false, completedAt: undefined }
+        : null),
+      ...(clearedAttention ? { needsAttention: false } : null),
+    }
+  }, [initialAgentStatus])
+
   const emitAgentStatus = useCallback((next: TerminalAgentStatus) => {
     // Carry the last-known agent-native session id onto every status so it
     // survives status resets and reaches AppShell for persistence.

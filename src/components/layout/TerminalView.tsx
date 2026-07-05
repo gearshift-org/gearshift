@@ -587,7 +587,13 @@ const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
 // advisory for normal working/done transitions. Strong blocked-prompt cues can
 // still override working because some TUIs ask inline questions without firing
 // a dedicated needs-attention hook.
-const HOOK_BACKED_AGENTS = new Set(["claude", "codex", "opencode", "pi"])
+const HOOK_BACKED_AGENTS = new Set([
+  "claude",
+  "codex",
+  "opencode",
+  "pi",
+  "grok",
+])
 
 function shouldSuppressLiveFit() {
   return LIVE_FIT_SUPPRESSING_BODY_CLASSES.some((className) =>

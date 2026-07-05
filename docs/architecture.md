@@ -27,7 +27,7 @@ Stage, unstage, and discard actions optimistically patch the visible changes lis
 
 ## CLI Agent Activity
 
-Terminal panes detect supported coding agents by asking the Electron main process to inspect the PTY shell's child process tree. GearShift passes each terminal a `GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET` so supported lifecycle hooks can report status back over a local Unix socket. Agent-specific hooks and plugins are normalized into GearShift lifecycle events: `start`, `stop`, `needs_attention`, and (Claude only) `subagent_start`/`subagent_stop`. Claude's `Stop` hook fires whenever the main agent finishes a turn, even while background subagents are still running, so GearShift tracks subagent lifecycles and holds the "completed" notification until the last pending background subagent has stopped.
+Terminal panes detect supported coding agents by asking the Electron main process to inspect the PTY shell's child process tree. GearShift passes each terminal a `GEARSHIFT_SESSION_ID` and `GEARSHIFT_AGENT_SOCKET` so supported lifecycle hooks can report status back over a local Unix socket. Agent-specific hooks and plugins are normalized into GearShift lifecycle events: `start`, `stop`, `needs_attention`, and (Claude and Grok) `subagent_start`/`subagent_stop`. Claude's `Stop` hook fires whenever the main agent finishes a turn, even while background subagents are still running, so GearShift tracks subagent lifecycles and holds the "completed" notification until the last pending background subagent has stopped; Grok's parallel subagents get the same treatment.
 
 Display code derives a single semantic state from runtime flags: `blocked`, `working`, `done`, `idle`, or `unknown`. The priority is `blocked > working > done > idle > unknown`, so a pane or project that needs input wins over normal progress. Hooks remain authoritative for normal `working`/`done` lifecycle while active or recent, but strong blocked-prompt cues can override a working hook when an agent asks inline questions without firing a dedicated attention hook. If hooks are missing or stale, strong terminal title/output cues provide a fallback for Codex, Claude, and OpenCode: title spinners mean `working`, Codex "Action Required", permission prompts, and OpenCode question menus mean `blocked`, and a return to a known idle title after fallback work marks the turn `done`.
 
@@ -40,26 +40,38 @@ GearShift treats coding-agent CLIs in two tiers:
 | Tier | Agents | Tab-bar launcher | Lifecycle hooks | Session title / resume |
 | ---- | ------ | ---------------- | --------------- | -------------------- |
 | **Full** | Claude, Codex, OpenCode, pi | Yes (Settings → Agents launch options) | Yes (`electron/agentHooks.ts`) | Yes (`electron/agentSessionTitle.ts`) |
-| **Runtime-only** | Grok Build CLI (`grok`) | No — start manually in a shell | No | No |
+| **Runtime-only** | Grok Build CLI (`grok`) | No — start manually in a shell | Yes (`installGrokHooks` in `electron/agentHooks.ts`) | No |
 
 Full-tier agents are listed in `AGENT_TERMINAL_NAMES` (`src/lib/agentTerminalOptions.ts`) and can be spawned from the workspace tab bar. Runtime-only agents are recognized while their process is running in a pane, but are intentionally omitted from that launcher.
 
 ### Grok Build CLI (runtime-only)
 
-Grok is Claude Code–compatible and is often started manually (`grok` in an existing terminal). GearShift supports three runtime behaviors without installing Grok-specific hooks:
+Grok is Claude Code–compatible and is often started manually (`grok` in an existing terminal). GearShift supports three runtime behaviors:
 
 1. **Chat history** — on Enter, `captureInput` in `electron/main.ts` walks the PTY process tree via `detectPtyAgent` → `supportedAgentName` (`electron/supportedAgentName.ts`). Matching commands include bare `grok`, `~/.grok/bin/grok`, and paths containing `grok-build`. The prompt is stored in `gearshift.db` with `agent = "grok"` and appears in the project History sidebar like other agents.
 2. **Tab / pane icon** — when Grok is detected, `agentStatus.agentName` is set to `"grok"` and the mono Grok glyph from `src/assets/agents/grok.svg` is shown via `AgentIcon` / `hasAgentIcon`.
 3. **No false launch state** — `TerminalPane.agentName` (the persisted “resume this agent” field) only accepts launchable agents (`TerminalAgentName`). Grok is excluded via `isLaunchableAgentName` in `src/components/layout/types.ts`, so a Grok session never writes `agentName: "grok"` into saved project state or auto-runs `grok --resume` on Start/Resume.
 
-Grok does **not** use GearShift lifecycle hooks, session-title lookup, or Settings → Agents launch flags. Working / done / blocked semantics for Grok panes come from the same generic process-detection and terminal title/output fallbacks as other hookless agents.
+Grok does **not** use session-title lookup or Settings → Agents launch flags, but it **is** hook-backed for working / done / blocked semantics.
 
-#### Claude-hook mislabeling
+#### Grok lifecycle hooks
 
-Grok shares hook event shapes with Claude Code. After the first prompt submit, Claude hooks installed in `~/.claude/settings.json` can fire `gearshift-agent-hook.sh claude start` and report `agentName: "claude"` even though the running TUI is Grok. Without a guard, that hook event would replace the Grok icon with Claude’s.
+`installGrokHooks` (`electron/agentHooks.ts`) writes a dedicated hook file to `~/.grok/hooks/gearshift.json` (Grok Build discovers every `*.json` in that directory; user-level hooks need no `/hooks-trust`). It maps Grok's Claude-style events onto the shared hook script with agent arg `grok`:
 
-GearShift prevents that in two places:
+- `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure` → `start` (keeps the busy indicator alive across long multi-tool turns)
+- `Stop`, `StopFailure`, `SessionEnd` → `stop`
+- `SubagentStart` / `SubagentStop` → subagent pairing, so the renderer holds the "completed" notification until Grok's **parallel subagents** have all finished instead of notifying on the first mid-turn `Stop`
+- `Notification` → **deliberately unmapped**. Grok fires `Notification` liberally (even at prompt submit, echoing the user's prompt), not just for permission prompts; mapping it to `needs_attention` spams notifications. Blocked prompts are caught by the strong terminal text-detection cues instead, which can override a working hook. The installer also strips any previously installed Notification entry.
 
+Grok's hook payload differs from Claude's: stdin JSON is **camelCase** (`hookEventName`, `sessionId`, `agentId`) instead of snake_case, and the hook process additionally gets `GROK_HOOK_EVENT` / `GROK_SESSION_ID` env vars. The shared bash hook parses both shapes.
+
+#### Claude-hook double-fire and mislabeling
+
+Grok also discovers and runs Claude Code's hooks from `~/.claude/settings.json`. After the first prompt submit, those fire `gearshift-agent-hook.sh claude start` and would report `agentName: "claude"` even though the running TUI is Grok — duplicating every event and replacing the Grok icon with Claude's.
+
+GearShift prevents that in three places:
+
+- **Hook-script dedupe** — a claude-labeled invocation that carries `GROK_HOOK_EVENT`/`GROK_SESSION_ID` env (or a camelCase `"hookEventName"` stdin payload, the fallback in case the env vars ever go away) is really Grok running Claude's hooks; the script exits silently and lets the dedicated grok-labeled hook report instead.
 - **Process tree** — `detectPtyAgent` scans the full PTY subtree and returns `grok` immediately if any descendant matches, even when a child process would otherwise match `claude` first in breadth-first order.
 - **Renderer merge** — `mergeRuntimeAgentName` (`src/components/layout/types.ts`) keeps `agentName === "grok"` sticky for as long as the session is `running`, so hook and poller updates cannot downgrade it to `claude`. When the session stops (`running: false`), the identity clears normally.
 
@@ -123,6 +135,7 @@ Where each agent's id is sourced (all in `electron/agentHooks.ts`):
 | **Codex**    | same bash hook (`"session_id"` grep)                                               | Best-effort — works if Codex's hook JSON uses the same key.                                                                                                                          |
 | **OpenCode** | plugin's `event.properties.sessionID` / `info.id` (the root, non-child session)    | Reliable. Format `ses_…`.                                                                                                                                                            |
 | **pi**       | `ctx.sessionManager.getSessionId()` on the handler context (NOT the event payload) | pi events carry no session id; it lives on the `ExtensionContext`. Confirmed via pi's `dist/core/extensions/types.d.ts` → `ExtensionContext.sessionManager: ReadonlySessionManager`. |
+| **Grok**     | camelCase `"sessionId"` grep on stdin, `GROK_SESSION_ID` env as fallback           | Reliable. Present on every hook event. Stored for status only — Grok is runtime-only, so it never drives Start/Resume.                                                               |
 
 The shared bash hook reads a **bounded** slice of stdin (`head -c 65536`) so capturing the id on every event (including `start`/`UserPromptSubmit`) never blocks on huge `Stop` payloads. The id is only populated once an agent fires its first `start` hook (i.e. on prompt submit) — merely opening the TUI does not set it.
 

@@ -1143,6 +1143,19 @@ export function TerminalView({
       }
 
       if (signal === "working") {
+        // A spinner title before any prompt was submitted is TUI startup
+        // noise, not a turn — Codex animates a braille spinner while MCP
+        // servers handshake right after launch. Trusting it would light the
+        // busy indicator on a freshly opened idle agent, and the follow-up
+        // idle title would then mint a false completion.
+        if (
+          source !== "input" &&
+          !hasSubmittedToAgentRef.current &&
+          !fallbackActiveTurnRef.current &&
+          !current.working
+        ) {
+          return
+        }
         fallbackActiveTurnRef.current = true
         lastAgentActivityAtRef.current = now
         emitAgentStatus({

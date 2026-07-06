@@ -313,6 +313,8 @@ export function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {
   return overrides ? { ...base, ...overrides } : base
 }
 
+const SEARCH_HIGHLIGHT_LIMIT = 1000
+
 const SEARCH_DECORATIONS = {
   matchBackground: "#a8a8a833",
   matchBorder: "#a8a8a866",
@@ -320,6 +322,33 @@ const SEARCH_DECORATIONS = {
   activeMatchBackground: "#facc15aa",
   activeMatchBorder: "#facc15",
   activeMatchColorOverviewRuler: "#facc15",
+}
+
+type SearchAddonInternals = SearchAddon & {
+  _highlightTimeout?: { clear?: () => void }
+  _state?: {
+    reset?: () => void
+    clearCachedTerm?: () => void
+    lastSearchOptions?: unknown
+  }
+}
+
+function resetSearchAddon(search: SearchAddon) {
+  const internals = search as SearchAddonInternals
+
+  // xterm-search keeps a private write/resize debounce that can replay the
+  // previous search after the public clearDecorations() API runs. Codex redraws
+  // often, so cancel that pending work and clear the cached term/options too.
+  internals._highlightTimeout?.clear?.()
+  search.clearDecorations()
+  search.clearActiveDecoration()
+
+  if (internals._state?.reset) {
+    internals._state.reset()
+  } else if (internals._state) {
+    internals._state.clearCachedTerm?.()
+    internals._state.lastSearchOptions = undefined
+  }
 }
 
 // DEC private mode codes for color-scheme update notifications.
@@ -925,6 +954,24 @@ export function TerminalView({
     cwdRef.current = cwd
   }, [cwd])
 
+  const clearSearchDecorations = useCallback(() => {
+    const term = termRef.current
+    const refreshTerm = () => {
+      if (!term || termRef.current !== term || term.rows <= 0) return
+      term.refresh(0, term.rows - 1)
+    }
+    const search = searchRef.current
+    if (search) resetSearchAddon(search)
+    term?.clearSelection()
+    term?.element
+      ?.querySelectorAll(
+        ".xterm-find-result-decoration, .xterm-find-active-result-decoration"
+      )
+      .forEach((element) => element.remove())
+    refreshTerm()
+    requestAnimationFrame(refreshTerm)
+  }, [])
+
   const openSearch = useCallback(() => {
     setSearchOpen(true)
     searchOpenRef.current = true
@@ -937,10 +984,10 @@ export function TerminalView({
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
     searchOpenRef.current = false
-    searchRef.current?.clearDecorations()
+    clearSearchDecorations()
     const term = termRef.current
     if (term) safeTerminalFocus(term)
-  }, [])
+  }, [clearSearchDecorations])
 
   useEffect(() => {
     onTitleChangeRef.current = onTitleChange
@@ -1352,7 +1399,7 @@ export function TerminalView({
       },
     })
     const fit = new FitAddon()
-    const search = new SearchAddon()
+    const search = new SearchAddon({ highlightLimit: SEARCH_HIGHLIGHT_LIMIT })
     const webLinks = new WebLinksAddon((event, uri) => {
       openTerminalUrl(term, event, uri, openDevPreview)
     })
@@ -1409,7 +1456,9 @@ export function TerminalView({
       // the terminal. Every such re-run fires this event, so enforce the
       // invariant here: no decorations while the overlay is closed.
       if (!searchOpenRef.current) {
-        if (e.resultCount > 0) search.clearDecorations()
+        if (e.resultCount > 0) {
+          clearSearchDecorations()
+        }
         return
       }
       setSearchResults((prev) =>
@@ -1420,6 +1469,15 @@ export function TerminalView({
               resultCount: e.resultCount,
             }
       )
+    })
+
+    const afterSearchSub = search.onAfterSearch(() => {
+      // clearDecorations() inside onDidChangeResults runs before xterm-search
+      // writes its cached term back. Clear once more after closed searches so
+      // stale write/resize debounces cannot keep resurrecting highlights.
+      if (!searchOpenRef.current) {
+        clearSearchDecorations()
+      }
     })
 
     // Snapshot replay paints historical PTY output into a fresh xterm instance.
@@ -1591,6 +1649,12 @@ export function TerminalView({
       const alt = e.altKey
       const ctrl = e.ctrlKey
       const shift = e.shiftKey
+
+      if (searchOpenRef.current && key === "escape") {
+        e.preventDefault()
+        closeSearch()
+        return false
+      }
 
       // Cmd+F — open search overlay. Let Ctrl+F pass through to terminal
       // TUIs like OpenCode, where it can be an in-app shortcut.
@@ -2100,6 +2164,7 @@ export function TerminalView({
       inputSub.dispose()
       titleSub.dispose()
       resultsSub.dispose()
+      afterSearchSub.dispose()
       scrollSub.dispose()
       webLinks.dispose()
       kittyKeyboardQuerySub.dispose()
@@ -2133,6 +2198,8 @@ export function TerminalView({
   }, [
     sessionId,
     openSearch,
+    closeSearch,
+    clearSearchDecorations,
     openDevPreview,
     markAgentWorking,
     clearAgentWorking,
@@ -2545,25 +2612,32 @@ export function TerminalView({
   }, [focusRequest, isActive, searchOpen])
 
   const runSearch = useCallback(
-    (q: string, direction: "next" | "prev" = "next") => {
+    (
+      q: string,
+      direction: "next" | "prev" = "next",
+      incremental = false
+    ) => {
       const search = searchRef.current
       if (!search) return
+      if (!searchOpenRef.current) return
       if (!q) {
-        search.clearDecorations()
+        clearSearchDecorations()
         setSearchResults({ resultIndex: -1, resultCount: 0 })
         return
       }
-      const opts = { decorations: SEARCH_DECORATIONS }
+      const opts = { decorations: SEARCH_DECORATIONS, incremental }
       if (direction === "next") search.findNext(q, opts)
       else search.findPrevious(q, opts)
     },
-    []
+    [clearSearchDecorations]
   )
 
   useEffect(() => {
     if (!searchOpen) return
     const id = requestAnimationFrame(() =>
-      runSearch(deferredSearchQuery, "next")
+      // Match VS Code's terminal find widget: typing updates the current result
+      // incrementally without advancing through every match.
+      runSearch(deferredSearchQuery, "prev", true)
     )
     return () => cancelAnimationFrame(id)
   }, [deferredSearchQuery, searchOpen, runSearch])

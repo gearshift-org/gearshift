@@ -910,6 +910,7 @@ function PaneContent({
         cwd={project.path}
         path={tab.path}
         staged={tab.staged}
+        isActive={isActive}
         viewMode={diffViewMode}
         mdMode={mdMode}
         onOpenFile={onOpenFile}

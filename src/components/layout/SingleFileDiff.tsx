@@ -30,6 +30,8 @@ type Props = {
   cwd: string
   path: string
   staged: boolean
+  /** Whether this tab is currently visible. Content refetches on reveal. */
+  isActive?: boolean
   viewMode?: "unified" | "split"
   mdMode?: MdMode
   onOpenFile?: (path: string) => void
@@ -52,6 +54,7 @@ export function SingleFileDiff({
   cwd,
   path,
   staged,
+  isActive = true,
   viewMode = "unified",
   mdMode = "preview",
   onOpenFile,
@@ -67,8 +70,10 @@ export function SingleFileDiff({
   const [mdSource, setMdSource] = useState<string>("")
   const [mdLoading, setMdLoading] = useState(false)
   const [mdError, setMdError] = useState<string | null>(null)
+  // `isActive` dep: re-read on tab reveal so agent edits made while the tab
+  // was hidden show up. The fs watcher below covers changes while visible.
   useEffect(() => {
-    if (!showMarkdownPreview) return
+    if (!showMarkdownPreview || !isActive) return
     let cancelled = false
     setMdLoading(true)
     setMdError(null)
@@ -166,7 +171,11 @@ export function SingleFileDiff({
   // so we capture it on `contextmenu` and use it inside the Copy handler.
   const selectionTextRef = useRef<string>("")
 
+  // Refetch whenever the tab becomes visible again (`isActive` dep), not just
+  // on mount: hidden tabs stay mounted and can miss watcher events while an
+  // agent edits the file, which would otherwise leave a stale diff on reveal.
   useEffect(() => {
+    if (!isActive) return
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -187,7 +196,7 @@ export function SingleFileDiff({
     return () => {
       cancelled = true
     }
-  }, [cwd, path, staged])
+  }, [cwd, path, staged, isActive])
 
   useEffect(() => {
     const off = window.fsApi.onChanged((event) => {
@@ -196,11 +205,18 @@ export function SingleFileDiff({
       window.git.diffFile(cwd, path, staged).then((res) => {
         if (res.ok) setPatch(res.patch || "")
       })
+      if (showMarkdownPreview) {
+        window.fsApi.readFile(absPath).then((res) => {
+          if (res.ok && !res.tooLarge && !res.binary) {
+            setMdSource(res.content ?? "")
+          }
+        })
+      }
     })
     return () => {
       off()
     }
-  }, [cwd, path, staged])
+  }, [cwd, path, staged, showMarkdownPreview, absPath])
 
   // Ensure a top-level <style> for the highlight names exists once.
   useEffect(() => {
@@ -337,7 +353,9 @@ export function SingleFileDiff({
   }
 
   if (showMarkdownPreview) {
-    if (mdLoading) {
+    // Only block on the first load — refetches (tab reveal, fs change) keep
+    // showing the current content instead of flashing a loading state.
+    if (mdLoading && !mdSource) {
       return (
         <div className="grid h-full place-items-center text-xs text-muted-foreground">
           Loading…

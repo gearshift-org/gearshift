@@ -925,6 +925,44 @@ export function FilePreview({
     }
   }, [abs, isAudio, isImage, isPdf])
 
+  // Live values for the disk-reload guard below, so the async callback checks
+  // editor state at apply time rather than at subscribe time.
+  const liveRef = useRef({ dirty, saving, savedContent })
+  liveRef.current = { dirty, saving, savedContent }
+
+  // Re-read the file and swap the new content in — but never clobber unsaved
+  // edits: it only applies while the editor is clean. Covers files an agent or
+  // external tool edited while this tab was hidden (reload on reveal) or
+  // visible (fs watcher below).
+  const reloadFromDisk = useCallback(() => {
+    if (isImage || isAudio || isPdf) return
+    window.fsApi.readFile(abs).then((res) => {
+      if (!res.ok || res.tooLarge || res.binary) return
+      const content = res.content ?? ""
+      const live = liveRef.current
+      if (live.dirty || live.saving || content === live.savedContent) return
+      loadedAbsRef.current = abs
+      setState({ kind: "ready", content })
+      setSavedContent(content)
+      setDraft(content)
+    })
+  }, [abs, isAudio, isImage, isPdf])
+
+  useEffect(() => {
+    if (isActive) reloadFromDisk()
+  }, [isActive, reloadFromDisk])
+
+  useEffect(() => {
+    const off = window.fsApi.onChanged((event) => {
+      if (event.cwd !== cwd) return
+      if (event.paths && !event.paths.some((p) => p.endsWith(path))) return
+      reloadFromDisk()
+    })
+    return () => {
+      off()
+    }
+  }, [cwd, path, reloadFromDisk])
+
   const save = useCallback(async () => {
     if (state.kind !== "ready" || !dirty || saving) return
     setSaving(true)

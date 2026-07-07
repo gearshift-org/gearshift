@@ -2139,6 +2139,12 @@ function parseGitStatus(
   return { staged, unstaged }
 }
 
+// git prints one "* Unmerged path <file>" notice line per conflicted file
+// ahead of the actual patch; the diff parser can't handle them.
+function stripUnmergedNotices(patch: string): string {
+  return patch.replace(/^\* Unmerged path .*(?:\r?\n|$)/gm, "")
+}
+
 function isProbablyBinaryBuffer(buf: Buffer): boolean {
   const head = buf.subarray(0, Math.min(buf.length, 8192))
   for (let i = 0; i < head.length; i++) {
@@ -3847,6 +3853,22 @@ app.whenReady().then(async () => {
         if (staged) args.push("--cached")
         args.push("--", filePath)
         let patch = await runGitAllowExit1(cwd, args)
+        // A conflicted file yields a combined diff (`diff --cc`) — or, with
+        // --cached, only an "* Unmerged path" notice — neither of which the
+        // diff renderer can parse. Diff the working tree against "our" stage
+        // instead so conflict markers render as added lines (like GitHub
+        // Desktop), and strip the notice line git prepends.
+        if (/^(diff --cc|\* Unmerged path)/m.test(patch)) {
+          patch = stripUnmergedNotices(
+            await runGitAllowExit1(cwd, [
+              "diff",
+              "--no-color",
+              "--ours",
+              "--",
+              filePath,
+            ])
+          )
+        }
         // Empty result for an unstaged path may mean an untracked new file —
         // synthesize a diff vs /dev/null the way diffAll does.
         if (!patch.trim() && !staged) {
@@ -3900,8 +3922,12 @@ app.whenReady().then(async () => {
       return { ok: false, error: "no-cwd", unstagedPatch: "", stagedPatch: "" }
     }
     try {
-      const [unstagedRaw, stagedPatch, statusRaw] = await Promise.all([
-        runGit(cwd, ["diff", "--no-color"]),
+      // --ours: for conflicted files, diff the working tree against "our"
+      // stage as a normal unified diff (conflict markers show as added
+      // lines) instead of an unparseable combined diff. Identical to a plain
+      // diff when nothing is unmerged.
+      const [unstagedRaw, stagedRaw, statusRaw] = await Promise.all([
+        runGit(cwd, ["diff", "--no-color", "--ours"]),
         runGit(cwd, ["diff", "--no-color", "--cached"]),
         runGit(cwd, [
           "status",
@@ -3910,11 +3936,12 @@ app.whenReady().then(async () => {
           "--untracked-files=all",
         ]),
       ])
+      const stagedPatch = stripUnmergedNotices(stagedRaw)
       const untracked = parseGitStatus(statusRaw)
         .unstaged.filter((file) => file.status === "A")
         .map((file) => file.path)
       const untrackedPatch = await buildUntrackedPatch(cwd, untracked)
-      const unstagedPatch = [unstagedRaw, untrackedPatch]
+      const unstagedPatch = [stripUnmergedNotices(unstagedRaw), untrackedPatch]
         .filter(Boolean)
         .join("\n")
       return { ok: true, unstagedPatch, stagedPatch }

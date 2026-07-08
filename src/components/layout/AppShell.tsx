@@ -213,6 +213,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               : {}),
             // Restore the persisted status markers. running/working start false
             // and are re-detected from the live PTY once the pane attaches.
+            // loadProjects already strips completion when no sessionId remains.
             ...(sp.agentStatus
               ? {
                   agentStatus: {
@@ -240,6 +241,8 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
           ]
         }),
         activeTabId: p.activeTabId ?? p.tabs?.[0]?.id ?? "",
+        // agentDone only hydrates when a pane still has a session-backed
+        // completed marker (loadProjects enforces that).
         ...(p.agentDone === true ? { agentDone: true } : {}),
       },
     ]
@@ -343,6 +346,41 @@ function agentStatusesEqual(
   )
 }
 
+/** True when any terminal pane's agentStatus matches `pred`. */
+function projectHasPaneAgentStatus(
+  project: Project,
+  pred: (status: TerminalAgentStatus) => boolean
+): boolean {
+  return project.tabs.some(
+    (tab) =>
+      tab.kind === "terminal" &&
+      tab.panes.some(
+        (pane) => pane.agentStatus != null && pred(pane.agentStatus)
+      )
+  )
+}
+
+/**
+ * Drop project-level away markers when no pane still reports that status.
+ * All agent statuses are session-scoped: stopped/removed terminals clear
+ * done and needs-attention project markers together.
+ */
+function withSessionScopedAgentStatus(project: Project): Project {
+  const agentDone =
+    !!project.agentDone &&
+    projectHasPaneAgentStatus(project, (s) => s.completed === true)
+  const agentNeedsAttention =
+    !!project.agentNeedsAttention &&
+    projectHasPaneAgentStatus(project, (s) => s.needsAttention === true)
+  if (
+    agentDone === !!project.agentDone &&
+    agentNeedsAttention === !!project.agentNeedsAttention
+  ) {
+    return project
+  }
+  return { ...project, agentDone, agentNeedsAttention }
+}
+
 function basename(p: string) {
   return p.replace(/\/+$/, "").split("/").pop() || p
 }
@@ -439,7 +477,10 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           // pending one for panes the user hasn't activated yet — that way
           // a relaunch can still try to adopt them.
           const sid = pp.sessionId ?? pp.pendingSessionId
-          const agentStatus = toStoredAgentStatus(pp.agentStatus)
+          // Completion only persists while a terminal session still exists.
+          const agentStatus = toStoredAgentStatus(pp.agentStatus, {
+            sessionActive: !!sid,
+          })
           return {
             id: pp.id,
             ...(sid ? { sessionId: sid } : {}),
@@ -456,6 +497,13 @@ function serializeProjects(projects: Project[]): StoredProject[] {
       }
     })
     const activeTab = p.tabs.find((t) => t.id === p.activeTabId)
+    // Project-level done only survives a restart when some pane still has a
+    // session-backed completed marker. Needs-attention is live-only (never
+    // written); both are cleared at runtime when sessions stop.
+    const hasSessionBackedCompleted = tabs.some((t) => {
+      if (!("panes" in t) || !Array.isArray(t.panes)) return false
+      return t.panes.some((pp) => pp.sessionId && pp.agentStatus?.completed)
+    })
     return {
       id: p.id,
       name: p.name,
@@ -466,9 +514,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
       // returns to it.
       activeTabId: activeTab?.id ?? tabs[0]?.id ?? "",
       tabs,
-      // Completed sidebar markers survive a restart. Needs-input is live-only:
-      // it must be re-proven by an attached PTY/hook/snapshot on relaunch.
-      ...(p.agentDone ? { agentDone: true } : {}),
+      ...(p.agentDone && hasSessionBackedCompleted ? { agentDone: true } : {}),
     }
   })
 }
@@ -2428,7 +2474,7 @@ export function AppShell() {
       setProjects((prev) =>
         prev.map((p) => {
           if (p.id !== activeProjectId) return p
-          return {
+          const next: Project = {
             ...p,
             tabs: p.tabs.map((t) => {
               if (t.id !== tabId || t.kind !== "terminal") return t
@@ -2446,6 +2492,8 @@ export function AppShell() {
               return { ...t, panes, activePaneId: nextActive, layout }
             }),
           }
+          // Closing the last completed pane clears the project done marker.
+          return withSessionScopedAgentStatus(next)
         })
       )
     },
@@ -2839,8 +2887,41 @@ export function AppShell() {
         const launchAgent = isLaunchableAgentName(runtimeAgent)
           ? runtimeAgent
           : undefined
+        // True when we had a stored session to adopt but it is gone — all
+        // session-scoped agent status from that dead session must be dropped.
+        const priorSessionLost = !!pane.pendingSessionId && !sessionId
         if (!sessionId) {
-          if (!allowCreateFallback) return
+          if (!allowCreateFallback) {
+            // Auto-adopt failed: drop all agent status so the project does not
+            // keep blocked/working/done markers for a terminal that is gone.
+            if (priorSessionLost) {
+              setProjects((prev) =>
+                prev.map((p) => {
+                  if (p.id !== projectId) return p
+                  const next: Project = {
+                    ...p,
+                    tabs: p.tabs.map((t) => {
+                      if (t.id !== tabId || t.kind !== "terminal") return t
+                      return {
+                        ...t,
+                        panes: t.panes.map((pp) =>
+                          pp.id === paneId
+                            ? {
+                                ...pp,
+                                pendingSessionId: undefined,
+                                agentStatus: undefined,
+                              }
+                            : pp
+                        ),
+                      }
+                    }),
+                  }
+                  return withSessionScopedAgentStatus(next)
+                })
+              )
+            }
+            return
+          }
           const { id } = await window.term.create({
             cwd: project.path,
             theme: resolvedTheme,
@@ -2857,10 +2938,11 @@ export function AppShell() {
           }
         }
         const newId = sessionId
+        const dropStaleAgentStatus = priorSessionLost
         setProjects((prev) =>
           prev.map((p) => {
             if (p.id !== projectId) return p
-            return {
+            const next: Project = {
               ...p,
               tabs: p.tabs.map((t) => {
                 if (t.id !== tabId || t.kind !== "terminal") return t
@@ -2876,6 +2958,11 @@ export function AppShell() {
                           pendingSessionId: undefined,
                           pendingStart: false,
                           ...(launchAgent ? { agentName: launchAgent } : {}),
+                          // New PTY after a lost session is not the same run —
+                          // clear all agent status that belonged to the dead one.
+                          ...(dropStaleAgentStatus
+                            ? { agentStatus: undefined }
+                            : null),
                         }
                       : pp
                   ),
@@ -2883,6 +2970,9 @@ export function AppShell() {
                 }
               }),
             }
+            return dropStaleAgentStatus
+              ? withSessionScopedAgentStatus(next)
+              : next
           })
         )
       } finally {
@@ -2908,7 +2998,7 @@ export function AppShell() {
             setProjects((prev) =>
               prev.map((p) => {
                 if (p.id !== project.id) return p
-                return {
+                const next: Project = {
                   ...p,
                   tabs: p.tabs.map((t) => {
                     if (t.id !== tab.id || t.kind !== "terminal") return t
@@ -2921,21 +3011,18 @@ export function AppShell() {
                               sessionId: undefined,
                               pendingSessionId: undefined,
                               pendingStart: true,
-                              agentStatus: pp.agentStatus
-                                ? {
-                                    ...pp.agentStatus,
-                                    running: false,
-                                    working: false,
-                                    needsAttention: false,
-                                    completed: false,
-                                  }
-                                : pp.agentStatus,
+                              // Session stopped → drop all agent status so
+                              // blocked/working/done/idle cannot outlive it.
+                              // Resume metadata stays on pane.agentName /
+                              // agentSessionId.
+                              agentStatus: undefined,
                             }
                           : pp
                       ),
                     }
                   }),
                 }
+                return withSessionScopedAgentStatus(next)
               })
             )
           })
@@ -3322,7 +3409,12 @@ export function AppShell() {
           const nextIdx = Math.max(0, closingIdx - 1)
           nextActive = tabs[nextIdx]?.id ?? ""
         }
-        return { ...p, tabs, activeTabId: nextActive }
+        // Closed terminal sessions drop completion; recompute project marker.
+        return withSessionScopedAgentStatus({
+          ...p,
+          tabs,
+          activeTabId: nextActive,
+        })
       })
     )
     if (id === activeTabId) {
@@ -3351,7 +3443,11 @@ export function AppShell() {
         const nextActive = closedIds.has(p.activeTabId)
           ? (tabs[tabs.length - 1]?.id ?? "")
           : p.activeTabId
-        return { ...p, tabs, activeTabId: nextActive }
+        return withSessionScopedAgentStatus({
+          ...p,
+          tabs,
+          activeTabId: nextActive,
+        })
       })
     )
     if (closedIds.has(activeTabId)) navigateToTab(id)

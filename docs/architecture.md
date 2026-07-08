@@ -33,6 +33,19 @@ Display code derives a single semantic state from runtime flags: `blocked`, `wor
 
 The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications, and the count of unviewed completed agents is mirrored as a red badge on the dock icon (cleared as the flagged panes are viewed). For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
 
+### Agent status persistence (session-scoped)
+
+All agent statuses (`blocked`, `working`, `done`, `idle`) are tied to a live terminal PTY session. A small subset is saved in the project snapshot so markers can survive an app quit/refresh **only while that session is still alive** (daemon session id present):
+
+| Field | Persists across restart? | Notes |
+| ----- | ------------------------ | ----- |
+| `completed` / `completedAt` / `lastSubmitAt` / `workStartedAt` | Only with an active terminal session | Entire subset dropped when the session exits, is killed, fails adopt, or the pane/tab is closed |
+| Project `agentDone` | Only when some pane still has session-backed `completed` | Cleared whenever no completed pane remains |
+| Project `agentNeedsAttention` | No (live-only) | Also cleared at runtime when no pane is still blocked |
+| `running` / `working` / `needsAttention` / `agentName` | No | Re-detected from the live PTY / hooks; wiped with the pane when the session stops |
+
+So a refresh with a live daemon session can still show "done" or the last-submit badge, but stopping or removing the terminal clears **every** project/pane agent status marker for that session — not just completion.
+
 ### Supported agents
 
 GearShift treats coding-agent CLIs in two tiers:

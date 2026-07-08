@@ -6,9 +6,11 @@ import type {
 } from "@/components/layout/types"
 
 // Subset of the (otherwise ephemeral) agent status that's worth persisting so
-// the "last message sent here" indicator and completed markers survive an app
-// restart. Live fields (running/working/needsAttention/agentName) are always
-// re-detected from the PTY on launch, so they're intentionally omitted.
+// markers (completed, last-submit badge timestamps) survive an app restart
+// while the terminal session is still alive. Live fields (running/working/
+// needsAttention/agentName) are always re-detected from the PTY on launch.
+// The whole subset is session-scoped: if the terminal session is stopped or
+// removed, nothing from agentStatus is kept.
 export type StoredAgentStatus = {
   completed?: boolean
   completedAt?: number
@@ -37,10 +39,16 @@ export type StoredPane = {
 
 // Build the persistable subset of a runtime agent status (drops live fields and
 // returns undefined when there's nothing worth saving).
+//
+// All agent status is session-scoped: `sessionActive` must be true (a daemon
+// terminal session still exists). Stopped/removed sessions drop the entire
+// subset so blocked/working/done/idle markers and last-submit badges cannot
+// outlive the terminal.
 export function toStoredAgentStatus(
-  status: TerminalAgentStatus | undefined
+  status: TerminalAgentStatus | undefined,
+  options?: { sessionActive?: boolean }
 ): StoredAgentStatus | undefined {
-  if (!status) return undefined
+  if (!status || options?.sessionActive !== true) return undefined
   const stored: StoredAgentStatus = {}
   if (status.completed) stored.completed = true
   if (typeof status.completedAt === "number")
@@ -52,8 +60,14 @@ export function toStoredAgentStatus(
   return Object.keys(stored).length > 0 ? stored : undefined
 }
 
-function parseStoredAgentStatus(value: unknown): StoredAgentStatus | undefined {
+function parseStoredAgentStatus(
+  value: unknown,
+  options?: { sessionActive?: boolean }
+): StoredAgentStatus | undefined {
   if (!value || typeof value !== "object") return undefined
+  // Legacy snapshots may still carry status after a session died — only
+  // hydrate when a daemon session id is still attached.
+  if (options?.sessionActive !== true) return undefined
   const v = value as Record<string, unknown>
   const stored: StoredAgentStatus = {}
   if (v.completed === true) stored.completed = true
@@ -123,9 +137,15 @@ export type StoredProject = {
   updatedAt?: number
   tabs?: StoredTab[]
   activeTabId?: string
-  /** Sidebar "agent finished" marker — persisted so it survives a restart. */
+  /**
+   * Sidebar "agent finished" marker — only persisted while a terminal session
+   * still backs a completed pane. Dropped when sessions stop or are removed.
+   */
   agentDone?: boolean
-  /** Legacy persisted needs-input marker. Ignored on load; live PTY state owns it. */
+  /**
+   * Sidebar "needs input" marker. Not restored from disk (live PTY/hooks own
+   * it); also cleared at runtime when no session-backed pane is blocked.
+   */
   agentNeedsAttention?: boolean
 }
 
@@ -395,17 +415,8 @@ export function loadProjects(): StoredProject[] {
           typeof p?.name === "string" &&
           typeof p?.path === "string"
       )
-      .map((p) => ({
-        ...p,
-        // Legacy snapshots may contain stale needs-input markers. Do not
-        // restore them; an attached terminal must re-detect live blocked state.
-        agentNeedsAttention: undefined,
-        spaceId:
-          typeof p.spaceId === "string" && p.spaceId
-            ? p.spaceId
-            : DEFAULT_SPACE_ID,
-        ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
-        tabs: Array.isArray(p.tabs)
+      .map((p) => {
+        const tabs = Array.isArray(p.tabs)
           ? p.tabs
               .filter(
                 (t: unknown): t is StoredTab =>
@@ -445,12 +456,14 @@ export function loadProjects(): StoredProject[] {
                           !!pp && typeof (pp as StoredPane).id === "string"
                       )
                       .map((pp) => {
+                        const sessionActive = typeof pp.sessionId === "string"
                         const agentStatus = parseStoredAgentStatus(
-                          pp.agentStatus
+                          pp.agentStatus,
+                          { sessionActive }
                         )
                         return {
                           id: pp.id,
-                          ...(typeof pp.sessionId === "string"
+                          ...(sessionActive
                             ? { sessionId: pp.sessionId }
                             : {}),
                           ...(typeof pp.autoTitle === "string"
@@ -490,8 +503,30 @@ export function loadProjects(): StoredProject[] {
                     : {}),
                 }
               })
-          : [],
-      }))
+          : []
+        // Completion markers only stick while a terminal session still exists.
+        // Drop project-level agentDone when no pane has an active-session
+        // completed flag (covers legacy snapshots and stopped sessions).
+        const hasActiveCompleted = tabs.some((t) => {
+          if (!("panes" in t) || !Array.isArray(t.panes)) return false
+          return t.panes.some(
+            (pp) => pp.sessionId && pp.agentStatus?.completed
+          )
+        })
+        return {
+          ...p,
+          // Legacy snapshots may contain stale needs-input markers. Do not
+          // restore them; an attached terminal must re-detect live blocked state.
+          agentNeedsAttention: undefined,
+          agentDone: hasActiveCompleted && p.agentDone === true ? true : undefined,
+          spaceId:
+            typeof p.spaceId === "string" && p.spaceId
+              ? p.spaceId
+              : DEFAULT_SPACE_ID,
+          ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
+          tabs,
+        }
+      })
   } catch {
     return []
   }

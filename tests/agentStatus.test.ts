@@ -172,35 +172,49 @@ describe("runtime agent identity", () => {
 describe("agent status persistence", () => {
   test("does not persist live states across restarts", () => {
     expect(
-      toStoredAgentStatus({
-        running: true,
-        working: true,
-      })
+      toStoredAgentStatus(
+        {
+          running: true,
+          working: true,
+        },
+        { sessionActive: true }
+      )
     ).toBeUndefined()
 
     expect(
-      toStoredAgentStatus({
-        running: true,
-        working: false,
-        needsAttention: true,
-      })
+      toStoredAgentStatus(
+        {
+          running: true,
+          working: false,
+          needsAttention: true,
+        },
+        { sessionActive: true }
+      )
     ).toBeUndefined()
+  })
 
-    expect(
-      toStoredAgentStatus({
-        running: true,
-        working: false,
-        completed: true,
-        completedAt: 200,
-        needsAttention: true,
-        workStartedAt: 100,
-        lastSubmitAt: 150,
-      })
-    ).toEqual({
+  test("persists all agent status markers only while the terminal session is active", () => {
+    const status = {
+      running: true,
+      working: false,
+      completed: true,
+      completedAt: 200,
+      needsAttention: true,
+      workStartedAt: 100,
+      lastSubmitAt: 150,
+    }
+
+    expect(toStoredAgentStatus(status, { sessionActive: true })).toEqual({
       completed: true,
       completedAt: 200,
       workStartedAt: 100,
       lastSubmitAt: 150,
     })
+
+    // Stopped/removed sessions drop the entire status subset (done, timestamps).
+    expect(
+      toStoredAgentStatus(status, { sessionActive: false })
+    ).toBeUndefined()
+    expect(toStoredAgentStatus(status)).toBeUndefined()
   })
 })

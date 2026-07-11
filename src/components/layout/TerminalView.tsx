@@ -72,7 +72,7 @@ type Props = {
 
 const DARK_THEME = {
   background: "#151515",
-  foreground: "#d4d4d4",
+  foreground: "#b2b2b2",
   cursor: "#d4d4d4",
   selectionBackground: "#264f78",
   selectionForeground: "#ffffff",
@@ -84,7 +84,7 @@ const DARK_THEME = {
   blue: "#2472c8",
   magenta: "#bc3fbc",
   cyan: "#11a8cd",
-  white: "#e5e5e5",
+  white: "#c6c6c6",
   // Bright variants — brightBlack drives zsh-autosuggestions "ghost" text.
   brightBlack: "#666666",
   brightRed: "#f14c4c",
@@ -93,7 +93,7 @@ const DARK_THEME = {
   brightBlue: "#3b8eea",
   brightMagenta: "#d670d6",
   brightCyan: "#29b8db",
-  brightWhite: "#fafafa",
+  brightWhite: "#d4d4d4",
 }
 const LIGHT_THEME = {
   background: "#f8f8f8",
@@ -143,14 +143,14 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-cool": {
       background: "#15181d",
-      foreground: "#d3d8e0",
+      foreground: "#b1b6bd",
       cursor: "#d3d8e0",
       selectionBackground: "#2d4a6b",
       selectionInactiveBackground: "#33414f",
     },
     "dark-warm": {
       background: "#1a1815",
-      foreground: "#d9d2c7",
+      foreground: "#b7b1a7",
       cursor: "#d9d2c7",
       selectionBackground: "#5c4a2e",
       selectionInactiveBackground: "#413a30",
@@ -181,21 +181,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-rose": {
       background: "#1d181a",
-      foreground: "#e0d2d6",
+      foreground: "#bdb1b5",
       cursor: "#e0d2d6",
       selectionBackground: "#6b2d42",
       selectionInactiveBackground: "#4a3338",
     },
     "dark-forest": {
       background: "#161916",
-      foreground: "#d2dbd0",
+      foreground: "#b0b8af",
       cursor: "#d2dbd0",
       selectionBackground: "#2d6b3a",
       selectionInactiveBackground: "#334a37",
     },
     "dark-violet": {
       background: "#19161f",
-      foreground: "#d8d2e0",
+      foreground: "#b6b1bd",
       cursor: "#d8d2e0",
       selectionBackground: "#4a2d6b",
       selectionInactiveBackground: "#3a3349",
@@ -226,21 +226,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-atom-one": {
       background: "#282c34",
-      foreground: "#abb2bf",
+      foreground: "#939aa6",
       cursor: "#abb2bf",
       selectionBackground: "#3e4451",
       selectionInactiveBackground: "#353b45",
     },
     "dark-nebula-pandas": {
       background: "#27273a",
-      foreground: "#fcf6ff",
+      foreground: "#d6d1dc",
       cursor: "#97ee91",
       selectionBackground: "#42557b",
       selectionInactiveBackground: "#353551",
     },
     "dark-night-owl": {
       background: "#011627",
-      foreground: "#d6deeb",
+      foreground: "#b0bac8",
       cursor: "#80a4c2",
       selectionBackground: "#1d3b53",
       selectionInactiveBackground: "#0b2942",
@@ -255,7 +255,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-palenight": {
       background: "#292d3e",
-      foreground: "#bfc7d5",
+      foreground: "#a4abba",
       cursor: "#7e57c2",
       selectionBackground: "#444a73",
       selectionInactiveBackground: "#3a3f58",
@@ -270,7 +270,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-material-color": {
       background: "#212121",
-      foreground: "#eeffff",
+      foreground: "#c9d7d7",
       cursor: "#82aaff",
       selectionBackground: "#404040",
       selectionInactiveBackground: "#333333",
@@ -285,7 +285,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-monokai-pro": {
       background: "#2d2a2e",
-      foreground: "#fcfcfa",
+      foreground: "#d7d6d5",
       cursor: "#78dce8",
       selectionBackground: "#5b595c",
       selectionInactiveBackground: "#403e41",
@@ -300,7 +300,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-claude": {
       background: "#262624",
-      foreground: "#c2c0b6",
+      foreground: "#a6a49c",
       cursor: "#d97757",
       selectionBackground: "#5c4030",
       selectionInactiveBackground: "#3f352e",

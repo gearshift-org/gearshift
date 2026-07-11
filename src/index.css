@@ -95,11 +95,11 @@
 
 .dark {
   --background: #191919;
-  --foreground: #d4d4d4;
+  --foreground: #b2b2b2;
   --card: #191919;
-  --card-foreground: #d4d4d4;
+  --card-foreground: #b2b2b2;
   --popover: #202020;
-  --popover-foreground: #d4d4d4;
+  --popover-foreground: #b2b2b2;
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: #2d2d2d;
@@ -517,11 +517,11 @@
 /* Dark · Cool — blue-gray tint */
 [data-theme="dark-cool"] {
   --background: #171a1f;
-  --foreground: #d3d8e0;
+  --foreground: #b1b6bd;
   --card: #171a1f;
-  --card-foreground: #d3d8e0;
+  --card-foreground: #b1b6bd;
   --popover: #1e222a;
-  --popover-foreground: #d3d8e0;
+  --popover-foreground: #b1b6bd;
   --secondary: #2a2f38;
   --secondary-foreground: #cdd3dc;
   --muted: #222730;
@@ -543,11 +543,11 @@
 /* Dark · Warm — sepia tint */
 [data-theme="dark-warm"] {
   --background: #1c1a18;
-  --foreground: #d9d2c7;
+  --foreground: #b7b1a7;
   --card: #1c1a18;
-  --card-foreground: #d9d2c7;
+  --card-foreground: #b7b1a7;
   --popover: #24211d;
-  --popover-foreground: #d9d2c7;
+  --popover-foreground: #b7b1a7;
   --secondary: #322e29;
   --secondary-foreground: #d2cabd;
   --muted: #292621;
@@ -569,11 +569,11 @@
 /* Dark · Rosé — pink tint */
 [data-theme="dark-rose"] {
   --background: #1f1a1c;
-  --foreground: #e0d2d6;
+  --foreground: #bdb1b5;
   --card: #1f1a1c;
-  --card-foreground: #e0d2d6;
+  --card-foreground: #bdb1b5;
   --popover: #271f22;
-  --popover-foreground: #e0d2d6;
+  --popover-foreground: #bdb1b5;
   --secondary: #352b2e;
   --secondary-foreground: #d8cace;
   --muted: #2b2326;
@@ -596,11 +596,11 @@
 /* Dark · Forest — green tint */
 [data-theme="dark-forest"] {
   --background: #171a17;
-  --foreground: #d2dbd0;
+  --foreground: #b0b8af;
   --card: #171a17;
-  --card-foreground: #d2dbd0;
+  --card-foreground: #b0b8af;
   --popover: #1f241e;
-  --popover-foreground: #d2dbd0;
+  --popover-foreground: #b0b8af;
   --secondary: #2a332a;
   --secondary-foreground: #cad3c8;
   --muted: #222922;
@@ -623,11 +623,11 @@
 /* Dark · Violet — purple tint */
 [data-theme="dark-violet"] {
   --background: #1b1820;
-  --foreground: #d8d2e0;
+  --foreground: #b6b1bd;
   --card: #1b1820;
-  --card-foreground: #d8d2e0;
+  --card-foreground: #b6b1bd;
   --popover: #241f2c;
-  --popover-foreground: #d8d2e0;
+  --popover-foreground: #b6b1bd;
   --secondary: #322e3d;
   --secondary-foreground: #d0cadc;
   --muted: #272230;
@@ -650,11 +650,11 @@
 /* Dark · Atom One — Atom's classic One Dark palette */
 [data-theme="dark-atom-one"] {
   --background: #282c34;
-  --foreground: #abb2bf;
+  --foreground: #939aa6;
   --card: #282c34;
-  --card-foreground: #abb2bf;
+  --card-foreground: #939aa6;
   --popover: #2c313a;
-  --popover-foreground: #abb2bf;
+  --popover-foreground: #939aa6;
   --secondary: #353b45;
   --secondary-foreground: #abb2bf;
   --muted: #2f343d;
@@ -677,11 +677,11 @@
 /* Dark · Atom One Dark — akamud.vscode-theme-onedark workbench palette */
 [data-theme="dark-atom-one-dark"] {
   --background: #282c34;
-  --foreground: #abb2bf;
+  --foreground: #939aa6;
   --card: #282c34;
-  --card-foreground: #abb2bf;
+  --card-foreground: #939aa6;
   --popover: #21252b;
-  --popover-foreground: #abb2bf;
+  --popover-foreground: #939aa6;
   --primary: #4d78cc;
   --primary-foreground: #ffffff;
   --secondary: #353b45;
@@ -712,11 +712,11 @@
 /* Dark · Nebula Pandas — ChirtleLovesDolls' purple nebula UI with lime accent */
 [data-theme="dark-nebula-pandas"] {
   --background: #27273a;
-  --foreground: #fcf6ff;
+  --foreground: #d6d1dc;
   --card: #27273a;
-  --card-foreground: #fcf6ff;
+  --card-foreground: #d6d1dc;
   --popover: #1f2330;
-  --popover-foreground: #fcf6ff;
+  --popover-foreground: #d6d1dc;
   --secondary: #1f2330;
   --secondary-foreground: #d7d6df;
   --muted: #2a2a46;
@@ -745,11 +745,11 @@
 /* Dark · Night Owl — Sarah Drasner's deep blue UI with muted blue cursor */
 [data-theme="dark-night-owl"] {
   --background: #011627;
-  --foreground: #d6deeb;
+  --foreground: #b0bac8;
   --card: #011627;
-  --card-foreground: #d6deeb;
+  --card-foreground: #b0bac8;
   --popover: #021c31;
-  --popover-foreground: #d6deeb;
+  --popover-foreground: #b0bac8;
   --secondary: #0b2942;
   --secondary-foreground: #c5d4e6;
   --muted: #08243a;
@@ -778,11 +778,11 @@
 /* Dark · Palenight — Material Palenight's indigo UI with juicy purple accent */
 [data-theme="dark-palenight"] {
   --background: #292d3e;
-  --foreground: #bfc7d5;
+  --foreground: #a4abba;
   --card: #292d3e;
-  --card-foreground: #bfc7d5;
+  --card-foreground: #a4abba;
   --popover: #31364a;
-  --popover-foreground: #bfc7d5;
+  --popover-foreground: #a4abba;
   --secondary: #31364a;
   --secondary-foreground: #bfc7d5;
   --muted: #313850;
@@ -811,11 +811,11 @@
 /* Dark · Material Color — Material palette on neutral grey with green accent */
 [data-theme="dark-material-color"] {
   --background: #212121;
-  --foreground: #eeffff;
+  --foreground: #c9d7d7;
   --card: #212121;
-  --card-foreground: #eeffff;
+  --card-foreground: #c9d7d7;
   --popover: #2a2a2a;
-  --popover-foreground: #eeffff;
+  --popover-foreground: #c9d7d7;
   --secondary: #333333;
   --secondary-foreground: #eeffff;
   --muted: #2c2c2c;
@@ -844,11 +844,11 @@
 /* Dark · Monokai Pro — Monokai Pro's muted plum UI with cyan accent */
 [data-theme="dark-monokai-pro"] {
   --background: #2d2a2e;
-  --foreground: #fcfcfa;
+  --foreground: #d7d6d5;
   --card: #2d2a2e;
-  --card-foreground: #fcfcfa;
+  --card-foreground: #d7d6d5;
   --popover: #403e41;
-  --popover-foreground: #fcfcfa;
+  --popover-foreground: #d7d6d5;
   --secondary: #403e41;
   --secondary-foreground: #fcfcfa;
   --muted: #3a373b;
@@ -877,11 +877,11 @@
 /* Dark · Claude — Claude app's warm near-black UI with coral accent */
 [data-theme="dark-claude"] {
   --background: #262624;
-  --foreground: #c2c0b6;
+  --foreground: #a6a49c;
   --card: #262624;
-  --card-foreground: #c2c0b6;
+  --card-foreground: #a6a49c;
   --popover: #30302e;
-  --popover-foreground: #c2c0b6;
+  --popover-foreground: #a6a49c;
   --secondary: #30302e;
   --secondary-foreground: #c2c0b6;
   --muted: #2b2b29;

@@ -2030,6 +2030,60 @@ function isDefaultBranch(currentBranch: string, defaultBranch: string | null) {
   )
 }
 
+const PULL_REQUEST_LOOKUP_CACHE_MS = 30_000
+type PullRequestLookup = { raw: string; defaultBranch: string | null }
+const pullRequestLookupCache = new Map<
+  string,
+  { expiresAt: number; value: PullRequestLookup }
+>()
+const pullRequestLookupInFlight = new Map<string, Promise<PullRequestLookup>>()
+
+async function getPullRequestLookup(
+  cwd: string,
+  currentBranch: string,
+  gh: string,
+  env: NodeJS.ProcessEnv
+): Promise<PullRequestLookup> {
+  const key = `${cwd}\0${currentBranch}`
+  const cached = pullRequestLookupCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+
+  const existing = pullRequestLookupInFlight.get(key)
+  if (existing) return existing
+
+  const lookup = Promise.all([
+    execFileP(
+      gh,
+      [
+        "pr",
+        "list",
+        "--head",
+        currentBranch,
+        "--state",
+        "open",
+        "--json",
+        "number,id,title,url",
+        "--limit",
+        "1",
+      ],
+      { cwd, env, maxBuffer: 20 * 1024 * 1024 }
+    ).then((res) => res.stdout),
+    getDefaultBranch(cwd),
+  ]).then(([raw, defaultBranch]) => ({ raw, defaultBranch }))
+
+  pullRequestLookupInFlight.set(key, lookup)
+  try {
+    const value = await lookup
+    pullRequestLookupCache.set(key, {
+      expiresAt: Date.now() + PULL_REQUEST_LOOKUP_CACHE_MS,
+      value,
+    })
+    return value
+  } finally {
+    pullRequestLookupInFlight.delete(key)
+  }
+}
+
 function isPathInside(parent: string, child: string): boolean {
   const rel = path.relative(parent, child)
   return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel))
@@ -3452,25 +3506,12 @@ app.whenReady().then(async () => {
       }
 
       try {
-        const [raw, defaultBranch] = await Promise.all([
-          execFileP(
-            gh,
-            [
-              "pr",
-              "list",
-              "--head",
-              currentBranch,
-              "--state",
-              "open",
-              "--json",
-              "number,id,title,url",
-              "--limit",
-              "1",
-            ],
-            { cwd, env, maxBuffer: 20 * 1024 * 1024 }
-          ).then((res) => res.stdout),
-          getDefaultBranch(cwd),
-        ])
+        const { raw, defaultBranch } = await getPullRequestLookup(
+          cwd,
+          currentBranch,
+          gh,
+          env
+        )
         const pullRequest = parsePullRequest(raw)
         return {
           ok: true,

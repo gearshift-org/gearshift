@@ -2261,6 +2261,23 @@ export function TerminalView({
 
     const refreshAgentStatus = async () => {
       try {
+        const statusBeforePoll = agentStatusRef.current
+        const hookIsAuthoritative =
+          activeHookWorkRef.current ||
+          Date.now() - lastHookEventAtRef.current <
+            HOOK_AUTHORITATIVE_WINDOW_MS
+        // Hook-backed agents already push lifecycle changes to the renderer.
+        // Avoid scanning the entire OS process table every two seconds while
+        // that stronger signal is active; the fallback poll resumes after the
+        // authority window in case a stop event was lost.
+        if (
+          hookIsAuthoritative &&
+          statusBeforePoll.running &&
+          statusBeforePoll.agentName &&
+          HOOK_BACKED_AGENTS.has(statusBeforePoll.agentName)
+        ) {
+          return
+        }
         const detected = await window.term.agentStatus(sessionId)
         if (cancelled) return
         const current = agentStatusRef.current

@@ -515,7 +515,14 @@ export const RightSidebar = memo(function RightSidebar({
     }
     inFlightRef.current = true
     try {
-      await queryClient.refetchQueries({ queryKey: currentGitQueryKey })
+      // Only refresh the working-tree summary. Prefix matching also refetched
+      // the nested PR list and commit log queries on every filesystem event,
+      // spawning unnecessary `gh`/`git log` processes while files were being
+      // edited or generated.
+      await queryClient.refetchQueries({
+        queryKey: currentGitQueryKey,
+        exact: true,
+      })
     } finally {
       inFlightRef.current = false
       if (pendingRef.current) {

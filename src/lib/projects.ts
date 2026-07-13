@@ -292,6 +292,11 @@ function pushRecent(
   return [value, ...list.filter((v) => v !== value)].slice(0, max)
 }
 
+export function recencyIndex(recents: string[], value: string): number {
+  const index = recents.indexOf(value)
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
+
 export function loadPaletteRecents(): PaletteRecents {
   try {
     const raw = store.get(PALETTE_RECENTS_KEY)
@@ -463,9 +468,7 @@ export function loadProjects(): StoredProject[] {
                         )
                         return {
                           id: pp.id,
-                          ...(sessionActive
-                            ? { sessionId: pp.sessionId }
-                            : {}),
+                          ...(sessionActive ? { sessionId: pp.sessionId } : {}),
                           ...(typeof pp.autoTitle === "string"
                             ? { autoTitle: pp.autoTitle }
                             : {}),
@@ -509,21 +512,22 @@ export function loadProjects(): StoredProject[] {
         // completed flag (covers legacy snapshots and stopped sessions).
         const hasActiveCompleted = tabs.some((t) => {
           if (!("panes" in t) || !Array.isArray(t.panes)) return false
-          return t.panes.some(
-            (pp) => pp.sessionId && pp.agentStatus?.completed
-          )
+          return t.panes.some((pp) => pp.sessionId && pp.agentStatus?.completed)
         })
         return {
           ...p,
           // Legacy snapshots may contain stale needs-input markers. Do not
           // restore them; an attached terminal must re-detect live blocked state.
           agentNeedsAttention: undefined,
-          agentDone: hasActiveCompleted && p.agentDone === true ? true : undefined,
+          agentDone:
+            hasActiveCompleted && p.agentDone === true ? true : undefined,
           spaceId:
             typeof p.spaceId === "string" && p.spaceId
               ? p.spaceId
               : DEFAULT_SPACE_ID,
-          ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
+          ...(typeof p.updatedAt === "number"
+            ? { updatedAt: p.updatedAt }
+            : {}),
           tabs,
         }
       })
@@ -904,8 +908,7 @@ export function saveOpenFilesInOwnTab(enabled: boolean): void {
   }
 }
 
-export const PROJECT_SIDEBAR_CHAT_EVENT =
-  "gearshift:projectSidebarChatChanged"
+export const PROJECT_SIDEBAR_CHAT_EVENT = "gearshift:projectSidebarChatChanged"
 const PROJECT_SIDEBAR_CHAT_KEY = "gearshift.projectSidebarChat"
 
 export function loadProjectSidebarChatEnabled(): boolean {
@@ -922,6 +925,33 @@ export function saveProjectSidebarChatEnabled(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(PROJECT_SIDEBAR_CHAT_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export const PROJECT_SIDEBAR_TABS_EVENT = "gearshift:projectSidebarTabsChanged"
+const PROJECT_SIDEBAR_TABS_KEY = "gearshift.projectSidebarTabs"
+
+export function loadProjectSidebarTabsEnabled(): boolean {
+  try {
+    // Enabled by default so the folder hierarchy is visible immediately.
+    return store.get(PROJECT_SIDEBAR_TABS_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveProjectSidebarTabsEnabled(enabled: boolean): void {
+  try {
+    store.set(PROJECT_SIDEBAR_TABS_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(PROJECT_SIDEBAR_TABS_EVENT, {
           detail: enabled,
         })
       )

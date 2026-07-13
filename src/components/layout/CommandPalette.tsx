@@ -20,7 +20,7 @@ import {
   useState,
 } from "react"
 import { shortenHomePath } from "@/lib/pathDisplay"
-import type { PaletteRecents } from "@/lib/projects"
+import { recencyIndex, type PaletteRecents } from "@/lib/projects"
 import { tabDisplayName } from "./terminalName"
 import type { Project, WorkspaceTab } from "./types"
 
@@ -90,11 +90,6 @@ function tabCommandKeywords(t: WorkspaceTab): string[] {
   if (t.kind === "diff" || t.kind === "file") return [title, t.path]
   if (t.kind === "devPreview") return [title, t.url]
   return [title, ...terminalSessionIds(t)]
-}
-
-function recencyIndex(recents: string[], value: string): number {
-  const index = recents.indexOf(value)
-  return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }
 
 function searchSegments(value: string): string[] {

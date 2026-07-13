@@ -37,12 +37,12 @@ The renderer combines lifecycle hooks, process detection, terminal title changes
 
 All agent statuses (`blocked`, `working`, `done`, `idle`) are tied to a live terminal PTY session. A small subset is saved in the project snapshot so markers can survive an app quit/refresh **only while that session is still alive** (daemon session id present):
 
-| Field | Persists across restart? | Notes |
-| ----- | ------------------------ | ----- |
-| `completed` / `completedAt` / `lastSubmitAt` / `workStartedAt` | Only with an active terminal session | Entire subset dropped when the session exits, is killed, fails adopt, or the pane/tab is closed |
-| Project `agentDone` | Only when some pane still has session-backed `completed` | Cleared whenever no completed pane remains |
-| Project `agentNeedsAttention` | No (live-only) | Also cleared at runtime when no pane is still blocked |
-| `running` / `working` / `needsAttention` / `agentName` | No | Re-detected from the live PTY / hooks; wiped with the pane when the session stops |
+| Field                                                          | Persists across restart?                                 | Notes                                                                                           |
+| -------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `completed` / `completedAt` / `lastSubmitAt` / `workStartedAt` | Only with an active terminal session                     | Entire subset dropped when the session exits, is killed, fails adopt, or the pane/tab is closed |
+| Project `agentDone`                                            | Only when some pane still has session-backed `completed` | Cleared whenever no completed pane remains                                                      |
+| Project `agentNeedsAttention`                                  | No (live-only)                                           | Also cleared at runtime when no pane is still blocked                                           |
+| `running` / `working` / `needsAttention` / `agentName`         | No                                                       | Re-detected from the live PTY / hooks; wiped with the pane when the session stops               |
 
 So a refresh with a live daemon session can still show "done" or the last-submit badge, but stopping or removing the terminal clears **every** project/pane agent status marker for that session — not just completion.
 
@@ -50,10 +50,10 @@ So a refresh with a live daemon session can still show "done" or the last-submit
 
 GearShift treats coding-agent CLIs in two tiers:
 
-| Tier | Agents | Tab-bar launcher | Lifecycle hooks | Session title / resume |
-| ---- | ------ | ---------------- | --------------- | -------------------- |
-| **Full** | Claude, Codex, OpenCode, pi | Yes (Settings → Agents launch options) | Yes (`electron/agentHooks.ts`) | Yes (`electron/agentSessionTitle.ts`) |
-| **Runtime-only** | Grok Build CLI (`grok`) | No — start manually in a shell | Yes (`installGrokHooks` in `electron/agentHooks.ts`) | No |
+| Tier             | Agents                      | Tab-bar launcher                       | Lifecycle hooks                                      | Session title / resume                |
+| ---------------- | --------------------------- | -------------------------------------- | ---------------------------------------------------- | ------------------------------------- |
+| **Full**         | Claude, Codex, OpenCode, pi | Yes (Settings → Agents launch options) | Yes (`electron/agentHooks.ts`)                       | Yes (`electron/agentSessionTitle.ts`) |
+| **Runtime-only** | Grok Build CLI (`grok`)     | No — start manually in a shell         | Yes (`installGrokHooks` in `electron/agentHooks.ts`) | No                                    |
 
 Full-tier agents are listed in `AGENT_TERMINAL_NAMES` (`src/lib/agentTerminalOptions.ts`) and can be spawned from the workspace tab bar. Runtime-only agents are recognized while their process is running in a pane, but are intentionally omitted from that launcher.
 
@@ -110,7 +110,7 @@ Native window resizes fit live (VS Code-like): the visible terminal tracks the w
 
 Spaces are local project metadata stored with the renderer project snapshot in `gearshift.projects` and `gearshift.spaces`. A fresh install always has the built-in `Personal` space (`space-personal`), and older projects without a `spaceId` hydrate into that space automatically.
 
-The project sidebar filters projects by the active space before applying focus mode, text filtering, pinned grouping, and manual/recent sorting. Project rows are always single-line and compact. Creating a space selects it immediately, even before it has projects. Space settings can rename the active space, with blank and duplicate names rejected. The default space cannot be deleted; deleting another space moves its projects back to the default space before removing it. Moving a project between spaces only changes the project's `spaceId`; terminal panes, tabs, notes, chat history, and project IDs stay unchanged. Workspace panes stay mounted across spaces, and space switches optimistically update the active project while URL navigation catches up. A `Cycle Spaces` keybinding action can switch to the next space in sidebar order, but it is unset by default.
+The project sidebar filters projects by the active space before applying focus mode, text filtering, pinned grouping, and manual/recent sorting. By default, project rows use independent shadcn Collapsible controls with closed/open folder icons and indented workspace-tab navigation. Multiple projects can remain expanded at once, and selecting or collapsing one does not change the expansion state of the others. Nested terminal tabs are sorted by the latest captured chat-history message for their PTY sessions, so submitting an agent prompt updates their order while merely selecting a tab does not; tabs without history retain their underlying stable order. This uses a grouped latest-by-session database query plus live append events rather than loading full transcripts. Each nested tab exposes a right-edge close action on hover. Agent activity indicators appear on the specific nested terminal tab that owns the agent session instead of on the parent project row. In this mode, the workspace's top tab strip is replaced by a compact title bar for the active project while retaining window dragging, pane-drop behavior, and right-side controls. The active folder row also exposes a quick-add terminal action that uses the same terminal creation flow as the workspace tab bar. Settings → General (`Show project tabs in sidebar`) can disable this hierarchy and restore the compact avatar-based project rows and full top tab strip. Creating a space selects it immediately, even before it has projects. Space settings can rename the active space, with blank and duplicate names rejected. The default space cannot be deleted; deleting another space moves its projects back to the default space before removing it. Moving a project between spaces only changes the project's `spaceId`; terminal panes, tabs, notes, chat history, and project IDs stay unchanged. Workspace panes stay mounted across spaces, and space switches optimistically update the active project while URL navigation catches up. A `Cycle Spaces` keybinding action can switch to the next space in sidebar order, but it is unset by default.
 
 ## Space chat
 

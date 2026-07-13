@@ -116,6 +116,24 @@ export async function latestByProject(): Promise<Record<string, number>> {
   return map
 }
 
+// Map of terminal session id → most-recent captured user message timestamp.
+// Used to sort nested project tabs without loading full chat transcripts.
+export async function latestBySession(): Promise<Record<string, number>> {
+  const handle = await ensureDb()
+  const rows = await handle
+    .select({
+      sessionId: chatMessages.sessionId,
+      latest: sql<number>`max(${chatMessages.createdAt})`,
+    })
+    .from(chatMessages)
+    .groupBy(chatMessages.sessionId)
+  const map: Record<string, number> = {}
+  for (const row of rows) {
+    map[row.sessionId] = Number(row.latest) || 0
+  }
+  return map
+}
+
 export async function listForSession(
   sessionId: string
 ): Promise<ChatHistoryMessage[]> {

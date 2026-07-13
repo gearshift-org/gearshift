@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
 import {
   acceleratorLabel,
@@ -28,7 +28,7 @@ import {
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
 import { THEME_FAMILIES, useTheme } from "@/components/theme-provider"
-import { WorkspaceTabBar } from "./WorkspaceTabBar"
+import { WorkspaceTabBar, WorkspaceTitleBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import { SpaceChatView } from "./SpaceChatView"
 import { CommandPalette } from "./CommandPalette"
@@ -74,6 +74,7 @@ import {
   loadProjects,
   loadProjectSidebarOpen,
   loadProjectSidebarChatEnabled,
+  loadProjectSidebarTabsEnabled,
   loadProjectSidebarWidth,
   loadRecentProjects,
   loadSpaces,
@@ -99,6 +100,7 @@ import {
   AUTO_HIDE_TITLE_BAR_EVENT,
   OPEN_FILES_IN_OWN_TAB_EVENT,
   PROJECT_SIDEBAR_CHAT_EVENT,
+  PROJECT_SIDEBAR_TABS_EVENT,
   toStoredAgentStatus,
   type LastAgentTerminal,
   type LastAgentTerminalsByProject,
@@ -110,7 +112,7 @@ import {
   type StoredTab,
 } from "@/lib/projects"
 import { parseSettingsSection } from "@/routes/settings/settingsSections"
-import { gitQueryKey } from "@/lib/gitStatusQuery"
+import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   AGENT_TERMINAL_LABELS,
   getAgentTerminalOptions,
@@ -711,6 +713,9 @@ export function AppShell() {
   const [projectSidebarChatEnabled, setProjectSidebarChatEnabled] = useState(
     () => loadProjectSidebarChatEnabled()
   )
+  const [projectSidebarTabsEnabled, setProjectSidebarTabsEnabled] = useState(
+    () => loadProjectSidebarTabsEnabled()
+  )
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
@@ -792,6 +797,7 @@ export function AppShell() {
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setOpenFilesInOwnTab(loadOpenFilesInOwnTab())
         setProjectSidebarChatEnabled(loadProjectSidebarChatEnabled())
+        setProjectSidebarTabsEnabled(loadProjectSidebarTabsEnabled())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         const storedWidth = loadProjectSidebarWidth()
         if (storedWidth)
@@ -912,6 +918,21 @@ export function AppShell() {
       window.removeEventListener("resize", onResize)
       if (resizeTimer !== null) window.clearTimeout(resizeTimer)
       document.body.classList.remove("gs-window-resizing")
+    }
+  }, [])
+  useEffect(() => {
+    const onProjectSidebarTabsChange = (event: Event) => {
+      setProjectSidebarTabsEnabled((event as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener(
+      PROJECT_SIDEBAR_TABS_EVENT,
+      onProjectSidebarTabsChange
+    )
+    return () => {
+      window.removeEventListener(
+        PROJECT_SIDEBAR_TABS_EVENT,
+        onProjectSidebarTabsChange
+      )
     }
   }, [])
   useEffect(() => {
@@ -1101,6 +1122,11 @@ export function AppShell() {
               : activeSpaceProjects[0]?.id) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
+  const { data: activeProjectGit } = useQuery({
+    queryKey: gitQueryKey(activeProjectPath ?? null),
+    queryFn: () => fetchGitQueryData(activeProjectPath!),
+    enabled: !!activeProjectPath && projectSidebarTabsEnabled,
+  })
 
   const openRightSidebar = useCallback(() => {
     setSidebarOpen(true)
@@ -1644,7 +1670,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return
-    pushRecentPaletteTab(activeProjectPath, activeTabId)
+    setPaletteRecents(pushRecentPaletteTab(activeProjectPath, activeTabId))
   }, [activeProjectId, activeProjectPath, activeTabId])
 
   useEffect(() => {
@@ -1698,8 +1724,7 @@ export function AppShell() {
       restoredProjectId &&
       projects.some(
         (project) =>
-          project.id === restoredProjectId &&
-          project.spaceId === activeSpaceId
+          project.id === restoredProjectId && project.spaceId === activeSpaceId
       )
         ? restoredProjectId
         : (projects.find((project) => project.spaceId === activeSpaceId)?.id ??
@@ -3393,15 +3418,16 @@ export function AppShell() {
     )
   }
 
-  const closeTab = async (id: string) => {
-    const tab = activeProject?.tabs.find((t) => t.id === id)
+  const closeProjectTab = async (projectId: string, id: string) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    const tab = project?.tabs.find((t) => t.id === id)
     if (tab && !(await confirmCloseTabsWithAgents([tab]))) {
       return
     }
     if (tab) killAllPanes(tab)
     setProjects((prev) =>
       prev.map((p) => {
-        if (p.id !== activeProjectId) return p
+        if (p.id !== projectId) return p
         const closingIdx = p.tabs.findIndex((t) => t.id === id)
         const tabs = p.tabs.filter((t) => t.id !== id)
         let nextActive = p.activeTabId
@@ -3417,15 +3443,17 @@ export function AppShell() {
         })
       })
     )
-    if (id === activeTabId) {
-      const closingIdx = activeProject?.tabs.findIndex((t) => t.id === id) ?? -1
-      const remaining = activeProject?.tabs.filter((t) => t.id !== id) ?? []
+    if (projectId === activeProjectId && id === activeTabId) {
+      const closingIdx = project?.tabs.findIndex((t) => t.id === id) ?? -1
+      const remaining = project?.tabs.filter((t) => t.id !== id) ?? []
       const nextIdx = Math.max(0, closingIdx - 1)
       const next = remaining[nextIdx]?.id
       if (next) navigateToTab(next)
-      else if (activeProjectId) navigateToProject(activeProjectId)
+      else navigateToProject(projectId)
     }
   }
+
+  const closeTab = (id: string) => closeProjectTab(activeProjectId, id)
 
   const closeTabsToRight = async (id: string) => {
     if (!activeProject) return
@@ -3856,6 +3884,14 @@ export function AppShell() {
               : !projects.some((p) => p.path === r.path)
           )}
           onSelect={selectProject}
+          onSelectTab={(projectId, tabId) =>
+            navigateToProject(projectId, tabId)
+          }
+          onCloseTab={(projectId, tabId) =>
+            void closeProjectTab(projectId, tabId)
+          }
+          onAddTerminal={() => void addTerminal()}
+          showProjectTabs={projectSidebarTabsEnabled}
           onSelectSpace={selectSpace}
           onOpenSpaceChat={
             projectSidebarChatEnabled
@@ -4116,36 +4152,46 @@ export function AppShell() {
               activeTreeFilePath={activeTreeFilePath}
               fileReveal={fileReveal}
               workspaceTabs={
-                <WorkspaceTabBar
-                  tabs={activeProject.tabs}
-                  activeId={activeTabId}
-                  animationScopeKey={activeProject.id}
-                  openingTabId={openingTerminalTabId}
-                  onSelect={selectTab}
-                  onAdd={addTerminal}
-                  onConfigureAgents={() =>
-                    void navigate({
-                      to: "/settings",
-                      search: { section: "agents" },
-                    })
-                  }
-                  onClose={closeTab}
-                  onCloseAll={closeAllTabs}
-                  onCloseAllTerminals={() =>
-                    void closeAllProjectTerminals(activeProject.id)
-                  }
-                  onCloseOthers={closeOtherTabs}
-                  onCloseToRight={closeTabsToRight}
-                  onRename={renameTab}
-                  onReorder={reorderTabs}
-                  onPin={pinTab}
-                  onOpenInVSCode={() =>
-                    void window.shellApi.openInVSCode(activeProject.path)
-                  }
-                  trailing={topBarTrailing}
-                  leading={topBarLeading}
-                  draggable={true}
-                />
+                projectSidebarTabsEnabled ? (
+                  <WorkspaceTitleBar
+                    title={activeProject.name}
+                    branch={activeProjectGit?.currentBranch}
+                    trailing={topBarTrailing}
+                    leading={topBarLeading}
+                    draggable={true}
+                  />
+                ) : (
+                  <WorkspaceTabBar
+                    tabs={activeProject.tabs}
+                    activeId={activeTabId}
+                    animationScopeKey={activeProject.id}
+                    openingTabId={openingTerminalTabId}
+                    onSelect={selectTab}
+                    onAdd={addTerminal}
+                    onConfigureAgents={() =>
+                      void navigate({
+                        to: "/settings",
+                        search: { section: "agents" },
+                      })
+                    }
+                    onClose={closeTab}
+                    onCloseAll={closeAllTabs}
+                    onCloseAllTerminals={() =>
+                      void closeAllProjectTerminals(activeProject.id)
+                    }
+                    onCloseOthers={closeOtherTabs}
+                    onCloseToRight={closeTabsToRight}
+                    onRename={renameTab}
+                    onReorder={reorderTabs}
+                    onPin={pinTab}
+                    onOpenInVSCode={() =>
+                      void window.shellApi.openInVSCode(activeProject.path)
+                    }
+                    trailing={topBarTrailing}
+                    leading={topBarLeading}
+                    draggable={true}
+                  />
+                )
               }
             />
           )

@@ -41,11 +41,7 @@ export function AddProjectMenu({
   const filteredRecents = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return recents
-    return recents.filter(
-      (recent) =>
-        recent.name.toLowerCase().includes(q) ||
-        recent.path.toLowerCase().includes(q)
-    )
+    return recents.filter((recent) => recent.name.toLowerCase().includes(q))
   }, [query, recents])
   const selectionKey = `${query}\0${filteredRecents.length}`
   const [selection, setSelection] = useState({ key: selectionKey, index: 0 })

@@ -185,159 +185,164 @@ export function ProjectChatHistoryPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-border/60 px-3 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-        <span>
-          {filterQuery
-            ? `${visibleMessages.length} of ${messages.length}`
-            : `${messages.length} message${messages.length === 1 ? "" : "s"}`}
-        </span>
-        <div className="flex items-center gap-0.5">
-          {onSummarize && (
-            <SummarizeHistoryMenu
-              onSelect={onSummarize}
-              disabled={messages.length === 0}
-              className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-            />
-          )}
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <DropdownMenuTrigger
-                    disabled={messages.length === 0}
-                    aria-label="Clear chat history"
-                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-foreground/10 hover:text-foreground disabled:opacity-30"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </DropdownMenuTrigger>
-                }
-              />
-              <TooltipContent>Clear chat history</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="min-w-[160px]">
-              {CLEAR_RANGE_ORDER.map((range) => (
-                <DropdownMenuItem
-                  key={range}
-                  onClick={() => void clearHistory(range)}
-                >
-                  {CLEAR_RANGE_LABELS[range]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-      <div className="shrink-0 border-b border-border/60 px-2 py-1.5">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault()
-                setFilter("")
-                e.currentTarget.blur()
-              }
-            }}
-            placeholder="Search messages"
-            aria-label="Search messages"
-            className="h-7 pl-7 text-xs md:text-xs"
-          />
-          {filter && (
-            <button
-              type="button"
-              onClick={() => setFilter("")}
-              aria-label="Clear search"
-              className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
-            >
-              <X className="size-3" />
-            </button>
-          )}
-        </div>
-      </div>
       <ScrollArea className="min-h-0 flex-1">
-        {loading && messages.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            Loading…
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            No messages yet for this project.
-          </div>
-        ) : visibleMessages.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            No messages match "{filter.trim()}".
-          </div>
-        ) : (
-          <ul className="divide-y divide-border/60">
-            {visibleMessages.map((m) => (
-              <li
-                key={m.id}
-                className={cn(
-                  "group px-3 py-2",
-                  onFocusSession &&
-                    "cursor-pointer transition-colors hover:bg-accent/50"
+        <div className="group/section px-3 pb-2">
+          <div className="sticky top-0 z-10 bg-sidebar pt-2.5 pb-1.5">
+            <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs font-medium">
+              <span>History</span>
+              <span className="text-muted-foreground tabular-nums">
+                {filterQuery
+                  ? `${visibleMessages.length} of ${messages.length}`
+                  : messages.length}
+              </span>
+              <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/section:opacity-100 group-hover/section:opacity-100">
+                {onSummarize && (
+                  <SummarizeHistoryMenu
+                    onSelect={onSummarize}
+                    disabled={messages.length === 0}
+                    className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+                  />
                 )}
-                role={onFocusSession ? "button" : undefined}
-                tabIndex={onFocusSession ? 0 : undefined}
-                title={
-                  onFocusSession
-                    ? "Focus the terminal that ran this"
-                    : undefined
-                }
-                onClick={
-                  onFocusSession
-                    ? () => {
-                        // Don't hijack a text selection (e.g. copying the body).
-                        const sel = window.getSelection()
-                        if (sel && !sel.isCollapsed) return
-                        onFocusSession(m.sessionId)
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <DropdownMenuTrigger
+                          disabled={messages.length === 0}
+                          aria-label="Clear chat history"
+                          className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-foreground/15 hover:text-foreground disabled:opacity-30"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </DropdownMenuTrigger>
                       }
-                    : undefined
-                }
-                onKeyDown={
-                  onFocusSession
-                    ? (e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault()
-                          onFocusSession(m.sessionId)
-                        }
-                      }
-                    : undefined
-                }
-              >
-                <div className="flex items-center justify-between gap-2 text-[10px] tracking-wide text-muted-foreground uppercase">
-                  <span>{m.agent ?? "user"}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span>{formatTime(m.createdAt)}</span>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void deleteMessage(m.id)
-                            }}
-                            aria-label="Delete history item"
-                            className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus:opacity-100"
-                          >
-                            <Trash2 className="size-3" />
-                          </button>
-                        }
-                      />
-                      <TooltipContent>Delete history item</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-                <pre className="mt-1 font-sans text-xs leading-snug break-words whitespace-pre-wrap text-foreground/90">
-                  {m.body}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        )}
+                    />
+                    <TooltipContent>Clear chat history</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end" className="min-w-[160px]">
+                    {CLEAR_RANGE_ORDER.map((range) => (
+                      <DropdownMenuItem
+                        key={range}
+                        onClick={() => void clearHistory(range)}
+                      >
+                        {CLEAR_RANGE_LABELS[range]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            <div className="relative px-1">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault()
+                    setFilter("")
+                    e.currentTarget.blur()
+                  }
+                }}
+                placeholder="Search messages"
+                aria-label="Search messages"
+                className="h-7 pl-7 text-xs md:text-xs"
+              />
+              {filter && (
+                <button
+                  type="button"
+                  onClick={() => setFilter("")}
+                  aria-label="Clear search"
+                  className="absolute top-1/2 right-2.5 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground hover:bg-foreground/15 hover:text-foreground"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+          </div>
+          {loading && messages.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              Loading…
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              No messages yet for this project.
+            </div>
+          ) : visibleMessages.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              No messages match "{filter.trim()}".
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-border/70 bg-card/40">
+              <ul className="divide-y divide-border/60">
+                {visibleMessages.map((m) => (
+                  <li
+                    key={m.id}
+                    className={cn(
+                      "group px-3 py-2",
+                      onFocusSession &&
+                        "cursor-pointer transition-colors hover:bg-accent/50"
+                    )}
+                    role={onFocusSession ? "button" : undefined}
+                    tabIndex={onFocusSession ? 0 : undefined}
+                    title={
+                      onFocusSession
+                        ? "Focus the terminal that ran this"
+                        : undefined
+                    }
+                    onClick={
+                      onFocusSession
+                        ? () => {
+                            // Don't hijack a text selection (e.g. copying the body).
+                            const sel = window.getSelection()
+                            if (sel && !sel.isCollapsed) return
+                            onFocusSession(m.sessionId)
+                          }
+                        : undefined
+                    }
+                    onKeyDown={
+                      onFocusSession
+                        ? (e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              onFocusSession(m.sessionId)
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[10px] tracking-wide text-muted-foreground uppercase">
+                      <span>{m.agent ?? "user"}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span>{formatTime(m.createdAt)}</span>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void deleteMessage(m.id)
+                                }}
+                                aria-label="Delete history item"
+                                className="grid size-5 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus:opacity-100"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            }
+                          />
+                          <TooltipContent>Delete history item</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+                    <pre className="mt-1 font-sans text-xs leading-snug break-words whitespace-pre-wrap text-foreground/90">
+                      {m.body}
+                    </pre>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </ScrollArea>
     </div>
   )

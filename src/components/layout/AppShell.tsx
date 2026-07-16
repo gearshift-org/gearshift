@@ -26,6 +26,7 @@ import {
   type HistoryRange,
 } from "@/lib/historySummary"
 import { ProjectSidebar } from "./ProjectSidebar"
+import { OPEN_SIDEBAR_FILE_EVENT } from "./RightSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
 import { THEME_FAMILIES, useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar, WorkspaceTitleBar } from "./WorkspaceTabBar"
@@ -2682,6 +2683,16 @@ export function AppShell() {
       if (line != null) {
         setFileReveal((prev) => ({ path, line, seq: (prev?.seq ?? 0) + 1 }))
       }
+      if (projectSidebarTabsEnabled) {
+        openRightSidebar()
+        setRightSidebarTab("files")
+        window.dispatchEvent(
+          new CustomEvent(OPEN_SIDEBAR_FILE_EVENT, {
+            detail: { cwd: activeProject.path, path },
+          })
+        )
+        return
+      }
       const exact = activeProject.tabs.find(
         (t) => t.kind === "file" && t.path === path
       )
@@ -2736,7 +2747,7 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab]
+    [activeProject, navigateToTab, openRightSidebar, projectSidebarTabsEnabled]
   )
 
   const openDevPreviewTab = useCallback(
@@ -3455,22 +3466,24 @@ export function AppShell() {
 
   const closeTab = (id: string) => closeProjectTab(activeProjectId, id)
 
-  const closeTabsToRight = async (id: string) => {
-    if (!activeProject) return
-    const idx = activeProject.tabs.findIndex((t) => t.id === id)
-    if (idx < 0) return
-    const toClose = activeProject.tabs.slice(idx + 1)
+  // Closes a specific set of a project's tabs; callers decide the set (to the
+  // right, others, all) so display order can differ from stored order.
+  const closeProjectTabs = async (projectId: string, ids: string[]) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    if (!project) return
+    const closedIds = new Set(ids)
+    const toClose = project.tabs.filter((t) => closedIds.has(t.id))
     if (toClose.length === 0) return
     if (!(await confirmCloseTabsWithAgents(toClose))) return
     for (const t of toClose) killAllPanes(t)
-    const closedIds = new Set(toClose.map((t) => t.id))
+    const remaining = project.tabs.filter((t) => !closedIds.has(t.id))
+    const nextActive = remaining.some((t) => t.id === project.activeTabId)
+      ? project.activeTabId
+      : (remaining[remaining.length - 1]?.id ?? "")
     setProjects((prev) =>
       prev.map((p) => {
-        if (p.id !== activeProjectId) return p
+        if (p.id !== projectId) return p
         const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
-        const nextActive = closedIds.has(p.activeTabId)
-          ? (tabs[tabs.length - 1]?.id ?? "")
-          : p.activeTabId
         return withSessionScopedAgentStatus({
           ...p,
           tabs,
@@ -3478,49 +3491,45 @@ export function AppShell() {
         })
       })
     )
-    if (closedIds.has(activeTabId)) navigateToTab(id)
+    if (projectId === activeProjectId && closedIds.has(activeTabId)) {
+      if (nextActive) navigateToTab(nextActive)
+      else navigateToProject(projectId)
+    }
   }
 
-  const closeOtherTabs = async (keepId: string) => {
-    if (!activeProject) return
-    const toClose = activeProject.tabs.filter((t) => t.id !== keepId)
-    if (toClose.length === 0) return
-    if (!(await confirmCloseTabsWithAgents(toClose))) return
-    const closedIds = new Set(toClose.map((t) => t.id))
-    for (const t of toClose) killAllPanes(t)
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== activeProjectId) return p
-        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
-        return {
-          ...p,
-          tabs,
-          activeTabId: tabs.some((t) => t.id === keepId)
-            ? keepId
-            : (tabs[0]?.id ?? ""),
-        }
-      })
+  const closeTabsToRight = (id: string) => {
+    const project = projectsRef.current.find((p) => p.id === activeProjectId)
+    if (!project) return
+    const idx = project.tabs.findIndex((t) => t.id === id)
+    if (idx < 0) return
+    return closeProjectTabs(
+      activeProjectId,
+      project.tabs.slice(idx + 1).map((t) => t.id)
     )
-    if (activeTabId !== keepId) navigateToTab(keepId)
   }
 
-  const closeAllTabs = async () => {
-    if (!activeProject) return
-    if (!(await confirmCloseTabsWithAgents(activeProject.tabs))) return
-    const closedIds = new Set(activeProject.tabs.map((t) => t.id))
-    for (const t of activeProject.tabs) killAllPanes(t)
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== activeProjectId) return p
-        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
-        const activeTabId = tabs.some((t) => t.id === p.activeTabId)
-          ? p.activeTabId
-          : (tabs[0]?.id ?? "")
-        return { ...p, tabs, activeTabId }
-      })
+  const closeOtherProjectTabs = (projectId: string, keepId: string) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    if (!project) return
+    return closeProjectTabs(
+      projectId,
+      project.tabs.filter((t) => t.id !== keepId).map((t) => t.id)
     )
-    navigateToProject(activeProjectId)
   }
+
+  const closeOtherTabs = (keepId: string) =>
+    closeOtherProjectTabs(activeProjectId, keepId)
+
+  const closeAllProjectTabs = (projectId: string) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    if (!project) return
+    return closeProjectTabs(
+      projectId,
+      project.tabs.map((t) => t.id)
+    )
+  }
+
+  const closeAllTabs = () => closeAllProjectTabs(activeProjectId)
   const addTerminalRef = useRef<
     (agentName?: TerminalAgentName) => Promise<string | null>
   >(async () => null)
@@ -3890,6 +3899,9 @@ export function AppShell() {
           onCloseTab={(projectId, tabId) =>
             void closeProjectTab(projectId, tabId)
           }
+          onCloseTabs={(projectId, tabIds) =>
+            void closeProjectTabs(projectId, tabIds)
+          }
           onAddTerminal={() => void addTerminal()}
           showProjectTabs={projectSidebarTabsEnabled}
           onSelectSpace={selectSpace}
@@ -4117,6 +4129,7 @@ export function AppShell() {
               sidebarOpen={sidebarOpen}
               titleBar={titleBar}
               hideTitleBar={true}
+              inspectFilesInSidebar={projectSidebarTabsEnabled}
               sidebarTopActions={sidebarTopActions}
               onTerminalTitleChange={setTerminalTitle}
               onTerminalAgentStatusChange={setTerminalAgentStatus}

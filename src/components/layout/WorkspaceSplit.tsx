@@ -22,11 +22,12 @@ import type {
 
 const SIDEBAR_DEFAULT_PX = 340
 const SIDEBAR_MIN_PX = 220
-const SIDEBAR_MAX_PX = 800
 const BACKGROUND_GIT_PREFETCH_STALE_MS = 30_000
 
-function clampWidth(n: number): number {
-  return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, n))
+// No fixed max: the sidebar may grow until it reaches the container's left
+// edge (i.e. the project sidebar); callers pass that live bound as `max`.
+function clampWidth(n: number, max = Infinity): number {
+  return Math.min(max, Math.max(SIDEBAR_MIN_PX, n))
 }
 
 type Props = {
@@ -95,6 +96,7 @@ type Props = {
   // In the vertical project layout the separate title bar is dropped and the
   // workspace tab bar doubles as the top bar (always shown, hosts controls).
   hideTitleBar?: boolean
+  inspectFilesInSidebar?: boolean
 }
 
 export function WorkspaceSplit({
@@ -133,6 +135,7 @@ export function WorkspaceSplit({
   activeTreeFilePath,
   fileReveal,
   hideTitleBar = false,
+  inspectFilesInSidebar = false,
 }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const queryClient = useQueryClient()
@@ -148,6 +151,7 @@ export function WorkspaceSplit({
       }),
     []
   )
+  const rootRef = useRef<HTMLDivElement>(null)
   const workspacePanelRef = useRef<HTMLDivElement>(null)
   const sidebarPanelRef = useRef<HTMLDivElement>(null)
   const sidebarContentRef = useRef<HTMLDivElement>(null)
@@ -197,7 +201,10 @@ export function WorkspaceSplit({
       if (!d) return
       e.preventDefault()
       const dx = d.startX - e.clientX
-      dragWidthRef.current = clampWidth(d.startWidth + dx)
+      dragWidthRef.current = clampWidth(
+        d.startWidth + dx,
+        rootRef.current?.clientWidth ?? Infinity
+      )
       if (dragFrameRef.current === null) {
         dragFrameRef.current = window.requestAnimationFrame(applyDragWidth)
       }
@@ -305,7 +312,7 @@ export function WorkspaceSplit({
   // Keep the tree structurally stable regardless of `sidebarOpen`; the right
   // sidebar stays pinned to the app edge while the workspace reserves its space.
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden">
+    <div ref={rootRef} className="relative min-h-0 flex-1 overflow-hidden">
       {/* The workspace padding SNAPS (no transition): animating it relayouts
           the workspace every frame at half the refresh rate, and the terminal
           reflow lands as a hitch. Only the sidebar panel's compositor-driven
@@ -370,6 +377,7 @@ export function WorkspaceSplit({
             onSummarizeChat={onSummarizeChat}
             onFocusSession={onFocusSession}
             topRightActions={sidebarTopActions}
+            inspectionEnabled={inspectFilesInSidebar}
           />
         </div>
       </div>

@@ -12,6 +12,7 @@ import { FileIcon } from "@/components/icons/FileIcon"
 import { setPathDragData } from "@/lib/pathDrag"
 import {
   CodeView,
+  PatchDiff,
   type CodeViewHandle,
   type CodeViewItem,
 } from "@pierre/diffs/react"
@@ -27,6 +28,10 @@ type Props = {
     collapsed: number
     total: number
   }) => void
+  hideFileHeaders?: boolean
+  /** Render at natural content height (no internal scrolling) so an outer
+   * scroll container owns scrolling. Skips the virtualized CodeView. */
+  fitContent?: boolean
 }
 
 export type DiffViewerHandle = {
@@ -91,7 +96,15 @@ const DIFFS_UNSAFE_CSS = `
 
 const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
   function DiffViewerComponent(
-    { cwd, patch, themeType, viewMode, onCollapsedStateChange },
+    {
+      cwd,
+      patch,
+      themeType,
+      viewMode,
+      onCollapsedStateChange,
+      hideFileHeaders = false,
+      fitContent = false,
+    },
     ref,
   ) {
     const files = useMemo(() => {
@@ -192,9 +205,9 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
         tokenizeMaxLineLength: 1000,
         unsafeCSS: DIFFS_UNSAFE_CSS,
         layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
-        itemMetrics: { diffHeaderHeight: 32, spacing: 0 },
+        itemMetrics: { diffHeaderHeight: hideFileHeaders ? 0 : 32, spacing: 0 },
       }),
-      [themeType, viewMode],
+      [hideFileHeaders, themeType, viewMode],
     )
 
     if (!patch.trim()) {
@@ -221,6 +234,27 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
       }
     }
 
+    if (fitContent) {
+      return (
+        <div onCopy={handleCopy}>
+          <PatchDiff
+            patch={patch}
+            options={{
+              diffStyle: viewMode,
+              overflow: "scroll",
+              theme: { dark: "one-dark-pro", light: "one-light" },
+              themeType,
+              hunkSeparators: "line-info",
+              lineDiffType: "word-alt",
+              tokenizeMaxLineLength: 1000,
+              unsafeCSS: DIFFS_UNSAFE_CSS,
+              disableFileHeader: hideFileHeaders,
+            }}
+          />
+        </div>
+      )
+    }
+
     return (
       <div
         onCopy={handleCopy}
@@ -233,6 +267,7 @@ const DiffViewerComponent = forwardRef<DiffViewerHandle, Props>(
         options={options}
         renderCustomHeader={(item) => {
           if (item.type !== "diff") return null
+          if (hideFileHeaders) return null
           const { additions, deletions } = countHunkChanges(item.fileDiff)
           const isCollapsed = !!item.collapsed
           return (

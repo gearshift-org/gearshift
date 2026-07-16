@@ -1038,9 +1038,11 @@ export function WorkspacePane({
   }, [activeTab, isMediaDiffActive])
   // Only the diff tab benefits from a raw/preview switch on media — the
   // file tab always renders the media preview. So the toggle is shown when:
-  //   - active tab is a markdown file/diff (preview vs source), or
+  //   - active tab is a markdown file (preview vs source; markdown diffs
+  //     always show the raw diff), or
   //   - active tab is a media diff (preview media/PDF vs the textual diff)
-  const showMdToggle = isMarkdownActive || isMediaDiffActive
+  const showMdToggle =
+    (isMarkdownActive && activeTab?.kind === "file") || isMediaDiffActive
   const activeFileDirtyStatus = activeTab
     ? fileDirtyStatuses[activeTab.id]
     : undefined

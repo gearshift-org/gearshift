@@ -122,6 +122,7 @@ type Props = {
   onSelect: (id: string) => void
   onSelectTab: (projectId: string, tabId: string) => void
   onCloseTab: (projectId: string, tabId: string) => void
+  onCloseTabs: (projectId: string, tabIds: string[]) => void
   onAddTerminal: () => void
   showProjectTabs: boolean
   onSelectSpace: (id: string) => void
@@ -508,6 +509,7 @@ type RowProps = {
   onSelect: (id: string) => void
   onSelectTab: (projectId: string, tabId: string) => void
   onCloseTab: (projectId: string, tabId: string) => void
+  onCloseTabs: (projectId: string, tabIds: string[]) => void
   latestChatAtBySession: Record<string, number>
   onAddTerminal: () => void
   showProjectTabs: boolean
@@ -536,56 +538,81 @@ function ProjectSidebarTab({
   isActive,
   onSelect,
   onClose,
+  onCloseOthers,
+  onCloseBelow,
+  onCloseAll,
 }: {
   projectId: string
   tab: WorkspaceTab
   isActive: boolean
   onSelect: (projectId: string, tabId: string) => void
   onClose: (projectId: string, tabId: string) => void
+  onCloseOthers?: () => void
+  onCloseBelow?: () => void
+  onCloseAll: () => void
 }) {
   const label = tabDisplayName(tab)
   const agentState = terminalTabAgentState(tab)
   return (
-    <div
-      className={cn(
-        "group/tab relative h-7 w-full rounded-sm transition-colors",
-        isActive
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
-      )}
-    >
-      <button
-        type="button"
-        title={label}
-        aria-current={isActive ? "page" : undefined}
-        onClick={() => onSelect(projectId, tab.id)}
-        className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-      >
-        <WorkspaceTabIcon tab={tab} />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-      </button>
-      <span className="pointer-events-none absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center transition-opacity group-hover/tab:opacity-0">
-        {agentState === "working" ? (
-          <AgentSpinner />
-        ) : agentState === "blocked" ? (
-          <AgentAttention />
-        ) : agentState === "done" ? (
-          <AgentDone />
-        ) : null}
-      </span>
-      <button
-        type="button"
-        aria-label={`Close ${label}`}
-        title={`Close ${label}`}
-        onClick={(event) => {
-          event.stopPropagation()
-          onClose(projectId, tab.id)
-        }}
-        className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-[color,background-color,opacity] group-hover/tab:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-      >
-        <X className="size-3.5" />
-      </button>
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <div
+            className={cn(
+              "group/tab relative h-7 w-full rounded-sm transition-colors",
+              isActive
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <button
+              type="button"
+              title={label}
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => onSelect(projectId, tab.id)}
+              className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            >
+              <WorkspaceTabIcon tab={tab} />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+            </button>
+            <span className="pointer-events-none absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center transition-opacity group-hover/tab:opacity-0">
+              {agentState === "working" ? (
+                <AgentSpinner />
+              ) : agentState === "blocked" ? (
+                <AgentAttention />
+              ) : agentState === "done" ? (
+                <AgentDone />
+              ) : null}
+            </span>
+            <button
+              type="button"
+              aria-label={`Close ${label}`}
+              title={`Close ${label}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onClose(projectId, tab.id)
+              }}
+              className="absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground opacity-0 transition-[color,background-color,opacity] group-hover/tab:opacity-100 hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        }
+      />
+      <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+        <ContextMenuItem onClick={() => onClose(projectId, tab.id)}>
+          Close
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!onCloseOthers} onClick={onCloseOthers}>
+          Close Others
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!onCloseBelow} onClick={onCloseBelow}>
+          Close Below
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onCloseAll}>Close All</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -600,6 +627,7 @@ function ProjectSidebarRow({
   onSelect,
   onSelectTab,
   onCloseTab,
+  onCloseTabs,
   latestChatAtBySession,
   onAddTerminal,
   showProjectTabs,
@@ -994,9 +1022,11 @@ function ProjectSidebarRow({
             aria-label={`${p.name} tabs`}
             className="flex flex-col gap-0.5 pb-1"
           >
-            {[...p.tabs]
-              .sort((a, b) => latestTabChatAt(b) - latestTabChatAt(a))
-              .map((tab) => (
+            {(() => {
+              const sorted = [...p.tabs].sort(
+                (a, b) => latestTabChatAt(b) - latestTabChatAt(a)
+              )
+              return sorted.map((tab, i) => (
                 <ProjectSidebarTab
                   key={tab.id}
                   projectId={p.id}
@@ -1004,8 +1034,35 @@ function ProjectSidebarRow({
                   isActive={isActive && tab.id === p.activeTabId}
                   onSelect={onSelectTab}
                   onClose={onCloseTab}
+                  onCloseOthers={
+                    sorted.length > 1
+                      ? () =>
+                          onCloseTabs(
+                            p.id,
+                            sorted
+                              .filter((t) => t.id !== tab.id)
+                              .map((t) => t.id)
+                          )
+                      : undefined
+                  }
+                  onCloseBelow={
+                    i < sorted.length - 1
+                      ? () =>
+                          onCloseTabs(
+                            p.id,
+                            sorted.slice(i + 1).map((t) => t.id)
+                          )
+                      : undefined
+                  }
+                  onCloseAll={() =>
+                    onCloseTabs(
+                      p.id,
+                      sorted.map((t) => t.id)
+                    )
+                  }
                 />
-              ))}
+              ))
+            })()}
           </div>
         )}
       </CollapsibleContent>
@@ -1023,6 +1080,7 @@ export function ProjectSidebar({
   onSelect,
   onSelectTab,
   onCloseTab,
+  onCloseTabs,
   onAddTerminal,
   showProjectTabs,
   onSelectSpace,
@@ -1498,6 +1556,7 @@ export function ProjectSidebar({
                         onSelect={onSelect}
                         onSelectTab={onSelectTab}
                         onCloseTab={onCloseTab}
+                        onCloseTabs={onCloseTabs}
                         latestChatAtBySession={latestChatAtBySession}
                         onAddTerminal={onAddTerminal}
                         showProjectTabs={showProjectTabs}
@@ -1571,6 +1630,7 @@ export function ProjectSidebar({
                       onSelect={onSelect}
                       onSelectTab={onSelectTab}
                       onCloseTab={onCloseTab}
+                      onCloseTabs={onCloseTabs}
                       latestChatAtBySession={latestChatAtBySession}
                       onAddTerminal={onAddTerminal}
                       showProjectTabs={showProjectTabs}

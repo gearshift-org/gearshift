@@ -984,6 +984,14 @@
   display: none;
 }
 
+.sidebar-file-tabs-scroll {
+  scrollbar-width: none;
+}
+
+.sidebar-file-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .terminal-fit-host {
   width: 100%;
   height: 100%;
@@ -1072,7 +1080,10 @@
 /* xterm's own overlay scrollbar: hidden unless the user is actually
    scrolling (same .gs-term-scrolling gate as the native viewport thumb),
    overriding xterm's built-in hover reveal. */
-.terminal-fit-host .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
+.terminal-fit-host
+  .xterm-scrollable-element
+  > .xterm-scrollbar
+  > .xterm-slider {
   background-color: transparent !important;
   border-radius: 999px;
 }
@@ -1255,7 +1266,11 @@
   /* Almost the foreground color: near-white on dark themes, near-black on
      light ones (foreground flips per theme). Backed off slightly toward the
      background so it's not a harsh pure white/black. */
-  --agent-spinner: color-mix(in oklab, var(--foreground) 85%, var(--background));
+  --agent-spinner: color-mix(
+    in oklab,
+    var(--foreground) 85%,
+    var(--background)
+  );
   color: var(--agent-spinner);
 }
 
@@ -1363,8 +1378,7 @@
   100% {
     box-shadow:
       inset 0 0 0 2px var(--gs-pulse-color),
-      inset 0 0 12px
-        color-mix(in srgb, var(--gs-pulse-color) 25%, transparent);
+      inset 0 0 12px color-mix(in srgb, var(--gs-pulse-color) 25%, transparent);
   }
 
   50% {
@@ -1381,7 +1395,9 @@
 }
 
 .gs-agent-pulse-done {
-  --gs-pulse-color: oklch(69.6% 0.17 162.48); /* emerald-500, matches AgentDone */
+  --gs-pulse-color: oklch(
+    69.6% 0.17 162.48
+  ); /* emerald-500, matches AgentDone */
 }
 
 /* Notification-style dot shown on the project row's right edge.
@@ -1431,7 +1447,9 @@
 }
 
 .gs-agent-pulse-attention {
-  --gs-pulse-color: oklch(76.9% 0.188 70.08); /* amber-500, matches AgentAttention */
+  --gs-pulse-color: oklch(
+    76.9% 0.188 70.08
+  ); /* amber-500, matches AgentAttention */
 }
 
 @media (prefers-reduced-motion: reduce) {

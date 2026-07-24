@@ -831,6 +831,7 @@ export function savePinnedProjectPaths(paths: string[]): void {
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 const OPEN_FILES_IN_OWN_TAB_KEY = "gearshift.openFilesInOwnTab"
+const IN_APP_AGENT_NOTIFICATIONS_KEY = "gearshift.inAppAgentNotifications"
 const HISTORY_RETENTION_ENABLED_KEY = "gearshift.historyRetentionEnabled"
 const HISTORY_RETENTION_DAYS_KEY = "gearshift.historyRetentionDays"
 
@@ -839,6 +840,8 @@ export const HISTORY_RETENTION_MIN_DAYS = 1
 
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
 export const OPEN_FILES_IN_OWN_TAB_EVENT = "gearshift:openFilesInOwnTabChanged"
+export const IN_APP_AGENT_NOTIFICATIONS_EVENT =
+  "gearshift:inAppAgentNotificationsChanged"
 export type RightSidebarTab = "git" | "files" | "history"
 
 export function loadRightSidebarTab(): RightSidebarTab {
@@ -899,6 +902,29 @@ export function saveOpenFilesInOwnTab(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(OPEN_FILES_IN_OWN_TAB_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function loadInAppAgentNotificationsEnabled(): boolean {
+  try {
+    return store.get(IN_APP_AGENT_NOTIFICATIONS_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveInAppAgentNotificationsEnabled(enabled: boolean): void {
+  try {
+    store.set(IN_APP_AGENT_NOTIFICATIONS_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(IN_APP_AGENT_NOTIFICATIONS_EVENT, {
           detail: enabled,
         })
       )

@@ -17,7 +17,7 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 - Grok Build CLI support when started manually: chat-history capture and tab/pane icon (not a tab-bar launch target).
 - Configurable default launch options for supported coding-agent terminals.
 - Space-scoped chat powered by Codex that can answer questions from captured project history.
-- Desktop and in-app notifications when background agent work finishes.
+- Desktop notifications and optional in-app notification cards when background agent work finishes or needs input.
 - Theme settings with system/light/dark modes, selectable color themes, appearance controls, and searchable keybinding settings.
 
 ## Tech Stack

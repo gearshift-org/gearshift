@@ -5,6 +5,7 @@ import {
   Files,
   FolderTree,
   MessageSquare,
+  Bell,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
@@ -20,6 +21,8 @@ import {
   saveProjectSidebarChatEnabled,
   loadProjectSidebarTabsEnabled,
   saveProjectSidebarTabsEnabled,
+  loadInAppAgentNotificationsEnabled,
+  saveInAppAgentNotificationsEnabled,
   HISTORY_RETENTION_DEFAULT_DAYS,
   HISTORY_RETENTION_MIN_DAYS,
 } from "@/lib/projects"
@@ -77,6 +80,9 @@ export function GeneralPanel() {
   const [projectSidebarTabs, setProjectSidebarTabs] = React.useState(() =>
     loadProjectSidebarTabsEnabled()
   )
+  const [inAppAgentNotifications, setInAppAgentNotifications] = React.useState(
+    () => loadInAppAgentNotificationsEnabled()
+  )
   React.useEffect(
     () =>
       store.onReady(() => {
@@ -86,6 +92,7 @@ export function GeneralPanel() {
         setRetentionDays(String(loadHistoryRetentionDays()))
         setProjectSidebarChat(loadProjectSidebarChatEnabled())
         setProjectSidebarTabs(loadProjectSidebarTabsEnabled())
+        setInAppAgentNotifications(loadInAppAgentNotificationsEnabled())
       }),
     []
   )
@@ -115,6 +122,11 @@ export function GeneralPanel() {
     saveProjectSidebarTabsEnabled(enabled)
   }
 
+  const updateInAppAgentNotifications = (enabled: boolean) => {
+    setInAppAgentNotifications(enabled)
+    saveInAppAgentNotificationsEnabled(enabled)
+  }
+
   const commitRetentionDays = (raw: string) => {
     const parsed = Math.floor(Number(raw))
     const next =
@@ -135,6 +147,13 @@ export function GeneralPanel() {
       </div>
 
       <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-background">
+        <SettingToggle
+          icon={Bell}
+          label="In-app agent notifications"
+          description="Show a notification card when a background agent finishes or needs input. Desktop notifications remain enabled."
+          checked={inAppAgentNotifications}
+          onChange={updateInAppAgentNotifications}
+        />
         <SettingToggle
           icon={PanelTop}
           label="Auto-hide title bar"

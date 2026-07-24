@@ -76,6 +76,7 @@ import {
   loadProjectSidebarOpen,
   loadProjectSidebarChatEnabled,
   loadProjectSidebarTabsEnabled,
+  loadInAppAgentNotificationsEnabled,
   loadProjectSidebarWidth,
   loadRecentProjects,
   loadSpaces,
@@ -100,6 +101,7 @@ import {
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
   OPEN_FILES_IN_OWN_TAB_EVENT,
+  IN_APP_AGENT_NOTIFICATIONS_EVENT,
   PROJECT_SIDEBAR_CHAT_EVENT,
   PROJECT_SIDEBAR_TABS_EVENT,
   toStoredAgentStatus,
@@ -1055,6 +1057,25 @@ export function AppShell() {
       window.removeEventListener(
         OPEN_FILES_IN_OWN_TAB_EVENT,
         onOpenFilesInOwnTabChange
+      )
+    }
+  }, [])
+  useEffect(() => {
+    const onInAppAgentNotificationsChange = (event: Event) => {
+      if ((event as CustomEvent<boolean>).detail) return
+      for (const toastIds of agentDoneToastsByProjectRef.current.values()) {
+        for (const toastId of toastIds) toast.dismiss(toastId)
+      }
+      agentDoneToastsByProjectRef.current.clear()
+    }
+    window.addEventListener(
+      IN_APP_AGENT_NOTIFICATIONS_EVENT,
+      onInAppAgentNotificationsChange
+    )
+    return () => {
+      window.removeEventListener(
+        IN_APP_AGENT_NOTIFICATIONS_EVENT,
+        onInAppAgentNotificationsChange
       )
     }
   }, [])
@@ -3263,50 +3284,53 @@ export function AppShell() {
           ? formatDuration(status.completedAt - status.workStartedAt)
           : null
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
-      const toastsForProject =
-        agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
-      toastsForProject.add(toastId)
-      agentDoneToastsByProjectRef.current.set(
-        targetProject.id,
-        toastsForProject
-      )
       const showCompletionNotification = (latestPrompt: string | null) => {
-        console.info("Agent complete: showing in-app toast")
-        toast.custom(
-          (id) =>
-            agentToastCard({
-              id,
-              projectName: targetProject.name,
-              projectPath: targetProject.path,
-              statusLabel: "Agent finished",
-              statusMeta: elapsedTime ? `Completed in ${elapsedTime}` : null,
-              bodyPreview: latestPrompt,
-              onOpen: () =>
-                openAgentDoneTarget(targetProject.id, tabId, paneId, id),
-            }),
-          {
-            id: toastId,
-            duration: Infinity,
-            onDismiss: () => {
-              const set = agentDoneToastsByProjectRef.current.get(
-                targetProject.id
-              )
-              set?.delete(toastId)
-              if (set && set.size === 0) {
-                agentDoneToastsByProjectRef.current.delete(targetProject.id)
-              }
-            },
-            onAutoClose: () => {
-              const set = agentDoneToastsByProjectRef.current.get(
-                targetProject.id
-              )
-              set?.delete(toastId)
-              if (set && set.size === 0) {
-                agentDoneToastsByProjectRef.current.delete(targetProject.id)
-              }
-            },
-          }
-        )
+        if (loadInAppAgentNotificationsEnabled()) {
+          const toastsForProject =
+            agentDoneToastsByProjectRef.current.get(targetProject.id) ??
+            new Set()
+          toastsForProject.add(toastId)
+          agentDoneToastsByProjectRef.current.set(
+            targetProject.id,
+            toastsForProject
+          )
+          console.info("Agent complete: showing in-app toast")
+          toast.custom(
+            (id) =>
+              agentToastCard({
+                id,
+                projectName: targetProject.name,
+                projectPath: targetProject.path,
+                statusLabel: "Agent finished",
+                statusMeta: elapsedTime ? `Completed in ${elapsedTime}` : null,
+                bodyPreview: latestPrompt,
+                onOpen: () =>
+                  openAgentDoneTarget(targetProject.id, tabId, paneId, id),
+              }),
+            {
+              id: toastId,
+              duration: Infinity,
+              onDismiss: () => {
+                const set = agentDoneToastsByProjectRef.current.get(
+                  targetProject.id
+                )
+                set?.delete(toastId)
+                if (set && set.size === 0) {
+                  agentDoneToastsByProjectRef.current.delete(targetProject.id)
+                }
+              },
+              onAutoClose: () => {
+                const set = agentDoneToastsByProjectRef.current.get(
+                  targetProject.id
+                )
+                set?.delete(toastId)
+                if (set && set.size === 0) {
+                  agentDoneToastsByProjectRef.current.delete(targetProject.id)
+                }
+              },
+            }
+          )
+        }
 
         if (!appVisibleAndFocused) {
           console.info("Agent complete: also showing desktop notification")
@@ -3345,14 +3369,6 @@ export function AppShell() {
 
       const terminalName = tabDisplayName(targetTab)
       const toastId = agentAttentionToastId(targetProject.id, tabId, paneId)
-      const toastsForProject =
-        agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
-      toastsForProject.add(toastId)
-      agentDoneToastsByProjectRef.current.set(
-        targetProject.id,
-        toastsForProject
-      )
-      console.info("Agent needs attention: showing in-app toast")
       const cleanupToast = () => {
         const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
         set?.delete(toastId)
@@ -3361,6 +3377,15 @@ export function AppShell() {
         }
       }
       const showNeedsInputNotification = (latestPrompt: string | null) => {
+        if (!loadInAppAgentNotificationsEnabled()) return
+        const toastsForProject =
+          agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
+        toastsForProject.add(toastId)
+        agentDoneToastsByProjectRef.current.set(
+          targetProject.id,
+          toastsForProject
+        )
+        console.info("Agent needs attention: showing in-app toast")
         toast.custom(
           (id) =>
             agentToastCard({

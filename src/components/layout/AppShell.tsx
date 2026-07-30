@@ -26,7 +26,6 @@ import {
   type HistoryRange,
 } from "@/lib/historySummary"
 import { ProjectSidebar } from "./ProjectSidebar"
-import { OPEN_SIDEBAR_FILE_EVENT } from "./RightSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
 import { THEME_FAMILIES, useTheme } from "@/components/theme-provider"
 import { WorkspaceTabBar, WorkspaceTitleBar } from "./WorkspaceTabBar"
@@ -2704,16 +2703,6 @@ export function AppShell() {
       if (line != null) {
         setFileReveal((prev) => ({ path, line, seq: (prev?.seq ?? 0) + 1 }))
       }
-      if (projectSidebarTabsEnabled) {
-        openRightSidebar()
-        setRightSidebarTab("files")
-        window.dispatchEvent(
-          new CustomEvent(OPEN_SIDEBAR_FILE_EVENT, {
-            detail: { cwd: activeProject.path, path },
-          })
-        )
-        return
-      }
       const exact = activeProject.tabs.find(
         (t) => t.kind === "file" && t.path === path
       )
@@ -2721,8 +2710,6 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // File opens always reuse one shared preview tab so switching through the
-      // file tree does not keep adding tabs.
       const preview = activeProject.tabs.find(
         (t) => t.kind === "file" && t.preview
       )
@@ -2768,7 +2755,7 @@ export function AppShell() {
       )
       navigateToTab(id)
     },
-    [activeProject, navigateToTab, openRightSidebar, projectSidebarTabsEnabled]
+    [activeProject, navigateToTab]
   )
 
   const openDevPreviewTab = useCallback(
@@ -3438,9 +3425,13 @@ export function AppShell() {
   }
 
   const renameTab = (tabId: string, name: string) => {
+    renameProjectTab(activeProjectId, tabId, name)
+  }
+
+  const renameProjectTab = (projectId: string, tabId: string, name: string) => {
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId
+        p.id === projectId
           ? {
               ...p,
               tabs: p.tabs.map((t) =>
@@ -3921,6 +3912,7 @@ export function AppShell() {
           onSelectTab={(projectId, tabId) =>
             navigateToProject(projectId, tabId)
           }
+          onRenameTab={renameProjectTab}
           onCloseTab={(projectId, tabId) =>
             void closeProjectTab(projectId, tabId)
           }
@@ -4154,7 +4146,6 @@ export function AppShell() {
               sidebarOpen={sidebarOpen}
               titleBar={titleBar}
               hideTitleBar={true}
-              inspectFilesInSidebar={projectSidebarTabsEnabled}
               sidebarTopActions={sidebarTopActions}
               onTerminalTitleChange={setTerminalTitle}
               onTerminalAgentStatusChange={setTerminalAgentStatus}

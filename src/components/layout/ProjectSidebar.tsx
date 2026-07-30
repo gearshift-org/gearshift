@@ -121,6 +121,7 @@ type Props = {
   recents: RecentProject[]
   onSelect: (id: string) => void
   onSelectTab: (projectId: string, tabId: string) => void
+  onRenameTab: (projectId: string, tabId: string, name: string) => void
   onCloseTab: (projectId: string, tabId: string) => void
   onCloseTabs: (projectId: string, tabIds: string[]) => void
   onAddTerminal: () => void
@@ -508,6 +509,7 @@ type RowProps = {
   hasItemsBelow: boolean
   onSelect: (id: string) => void
   onSelectTab: (projectId: string, tabId: string) => void
+  onRenameTab: (projectId: string, tabId: string, name: string) => void
   onCloseTab: (projectId: string, tabId: string) => void
   onCloseTabs: (projectId: string, tabIds: string[]) => void
   latestChatAtBySession: Record<string, number>
@@ -537,6 +539,7 @@ function ProjectSidebarTab({
   tab,
   isActive,
   onSelect,
+  onRename,
   onClose,
   onCloseOthers,
   onCloseBelow,
@@ -546,6 +549,7 @@ function ProjectSidebarTab({
   tab: WorkspaceTab
   isActive: boolean
   onSelect: (projectId: string, tabId: string) => void
+  onRename: (projectId: string, tabId: string, name: string) => void
   onClose: (projectId: string, tabId: string) => void
   onCloseOthers?: () => void
   onCloseBelow?: () => void
@@ -553,6 +557,25 @@ function ProjectSidebarTab({
 }) {
   const label = tabDisplayName(tab)
   const agentState = terminalTabAgentState(tab)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const startRename = () => {
+    if (tab.kind !== "terminal") return
+    setDraft(tab.customName ?? label)
+    setEditing(true)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+  }
+
+  const commitRename = () => {
+    onRename(projectId, tab.id, draft.trim())
+    setEditing(false)
+  }
+
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -565,16 +588,44 @@ function ProjectSidebarTab({
                 : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
             )}
           >
-            <button
-              type="button"
-              title={label}
-              aria-current={isActive ? "page" : undefined}
-              onClick={() => onSelect(projectId, tab.id)}
-              className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-            >
-              <WorkspaceTabIcon tab={tab} />
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-            </button>
+            {editing ? (
+              <div className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-xs">
+                <WorkspaceTabIcon tab={tab} />
+                <input
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    event.stopPropagation()
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      commitRename()
+                    } else if (event.key === "Escape") {
+                      event.preventDefault()
+                      setEditing(false)
+                    }
+                  }}
+                  onBlur={commitRename}
+                  aria-label={`Rename ${label}`}
+                  className="min-w-0 flex-1 rounded-sm border border-ring/50 bg-background px-1 py-0 outline-none"
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                title={label}
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => onSelect(projectId, tab.id)}
+                onDoubleClick={(event) => {
+                  event.preventDefault()
+                  startRename()
+                }}
+                className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              >
+                <WorkspaceTabIcon tab={tab} />
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+              </button>
+            )}
             <span className="pointer-events-none absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center transition-opacity group-hover/tab:opacity-0">
               {agentState === "working" ? (
                 <AgentSpinner />
@@ -626,6 +677,7 @@ function ProjectSidebarRow({
   hasItemsBelow,
   onSelect,
   onSelectTab,
+  onRenameTab,
   onCloseTab,
   onCloseTabs,
   latestChatAtBySession,
@@ -1033,6 +1085,7 @@ function ProjectSidebarRow({
                   tab={tab}
                   isActive={isActive && tab.id === p.activeTabId}
                   onSelect={onSelectTab}
+                  onRename={onRenameTab}
                   onClose={onCloseTab}
                   onCloseOthers={
                     sorted.length > 1
@@ -1079,6 +1132,7 @@ export function ProjectSidebar({
   recents,
   onSelect,
   onSelectTab,
+  onRenameTab,
   onCloseTab,
   onCloseTabs,
   onAddTerminal,
@@ -1555,6 +1609,7 @@ export function ProjectSidebar({
                         hasItemsBelow={i < visibleProjects.length - 1}
                         onSelect={onSelect}
                         onSelectTab={onSelectTab}
+                        onRenameTab={onRenameTab}
                         onCloseTab={onCloseTab}
                         onCloseTabs={onCloseTabs}
                         latestChatAtBySession={latestChatAtBySession}
@@ -1629,6 +1684,7 @@ export function ProjectSidebar({
                       hasItemsBelow={visibleIndex < visibleProjects.length - 1}
                       onSelect={onSelect}
                       onSelectTab={onSelectTab}
+                      onRenameTab={onRenameTab}
                       onCloseTab={onCloseTab}
                       onCloseTabs={onCloseTabs}
                       latestChatAtBySession={latestChatAtBySession}

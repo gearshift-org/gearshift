@@ -886,8 +886,7 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
 }
 
 // When enabled, commit clicks open their own tab instead of reusing a shared
-// preview tab. File, diff, and dev-preview opens always use singleton preview
-// tabs so browsing does not flood the tab bar.
+// preview tab. File, diff, and dev-preview opens use singleton preview tabs.
 export function loadOpenFilesInOwnTab(): boolean {
   try {
     return store.get(OPEN_FILES_IN_OWN_TAB_KEY) !== "0"

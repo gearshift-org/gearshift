@@ -163,7 +163,7 @@ The stored `agentSessionId` is used to resolve a human-readable **session title*
 | **Codex**    | first real user message in `~/.codex/sessions/**/rollout-…-<id>.jsonl` (skips the injected `AGENTS.md`/instructions envelope) |
 | **pi**       | first user message in `~/.pi/agent/sessions/<cwd>/<ts>_<id>.jsonl`                                                            |
 
-Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The title precedence in `terminalName.ts` is: **`customName` (explicit user name) → `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. So a user-set name always wins; otherwise the agent's own title replaces the generic TUI title (e.g. "✳ Claude Code").
+Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The terminal-tab title precedence in `terminalName.ts` is: **tab `customName` → active-pane `customName` → active-pane `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. This keeps the top tab bar and project sidebar in sync when a pane is renamed, while an explicit tab-level name still wins. Terminal tabs can be renamed by double-clicking them in either the top tab bar or the project sidebar.
 
 ## GitHub Pull Requests
 
@@ -173,7 +173,7 @@ The Changes subtab also shows pull request status beside the branch picker for t
 
 ## Workspace previews
 
-File opens from the tree, command palette, or diff context menu reuse one shared file preview tab. Diff opens from the Git changes list reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
+File opens from the tree, command palette, or diff context menu reuse one shared workspace preview tab. In the project-sidebar layout, that file preview tab appears below the project alongside terminal tabs instead of opening an embedded viewer in the right sidebar. Pinning a file preview preserves it so the next file opens in a new shared preview tab. Diff opens from the Git changes list similarly reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
 
 ## Commit history
 

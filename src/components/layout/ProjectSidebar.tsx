@@ -122,6 +122,7 @@ type Props = {
   onSelect: (id: string) => void
   onSelectTab: (projectId: string, tabId: string) => void
   onRenameTab: (projectId: string, tabId: string, name: string) => void
+  onPinTab: (projectId: string, tabId: string) => void
   onCloseTab: (projectId: string, tabId: string) => void
   onCloseTabs: (projectId: string, tabIds: string[]) => void
   onAddTerminal: () => void
@@ -510,6 +511,7 @@ type RowProps = {
   onSelect: (id: string) => void
   onSelectTab: (projectId: string, tabId: string) => void
   onRenameTab: (projectId: string, tabId: string, name: string) => void
+  onPinTab: (projectId: string, tabId: string) => void
   onCloseTab: (projectId: string, tabId: string) => void
   onCloseTabs: (projectId: string, tabIds: string[]) => void
   latestChatAtBySession: Record<string, number>
@@ -540,6 +542,7 @@ function ProjectSidebarTab({
   isActive,
   onSelect,
   onRename,
+  onPin,
   onClose,
   onCloseOthers,
   onCloseBelow,
@@ -550,6 +553,7 @@ function ProjectSidebarTab({
   isActive: boolean
   onSelect: (projectId: string, tabId: string) => void
   onRename: (projectId: string, tabId: string, name: string) => void
+  onPin: (projectId: string, tabId: string) => void
   onClose: (projectId: string, tabId: string) => void
   onCloseOthers?: () => void
   onCloseBelow?: () => void
@@ -623,6 +627,9 @@ function ProjectSidebarTab({
                 className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               >
                 <WorkspaceTabIcon tab={tab} />
+                {tab.pinned ? (
+                  <Pin className="size-3 shrink-0" aria-label="Pinned" />
+                ) : null}
                 <span className="min-w-0 flex-1 truncate">{label}</span>
               </button>
             )}
@@ -651,6 +658,10 @@ function ProjectSidebarTab({
         }
       />
       <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+        <ContextMenuItem onClick={() => onPin(projectId, tab.id)}>
+          {tab.pinned ? "Unpin Tab" : "Pin Tab"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onClose(projectId, tab.id)}>
           Close
         </ContextMenuItem>
@@ -678,6 +689,7 @@ function ProjectSidebarRow({
   onSelect,
   onSelectTab,
   onRenameTab,
+  onPinTab,
   onCloseTab,
   onCloseTabs,
   latestChatAtBySession,
@@ -1075,9 +1087,10 @@ function ProjectSidebarRow({
             className="flex flex-col gap-0.5 pb-1"
           >
             {(() => {
-              const sorted = [...p.tabs].sort(
-                (a, b) => latestTabChatAt(b) - latestTabChatAt(a)
-              )
+              const sorted = [...p.tabs].sort((a, b) => {
+                if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+                return latestTabChatAt(b) - latestTabChatAt(a)
+              })
               return sorted.map((tab, i) => (
                 <ProjectSidebarTab
                   key={tab.id}
@@ -1086,6 +1099,7 @@ function ProjectSidebarRow({
                   isActive={isActive && tab.id === p.activeTabId}
                   onSelect={onSelectTab}
                   onRename={onRenameTab}
+                  onPin={onPinTab}
                   onClose={onCloseTab}
                   onCloseOthers={
                     sorted.length > 1
@@ -1133,6 +1147,7 @@ export function ProjectSidebar({
   onSelect,
   onSelectTab,
   onRenameTab,
+  onPinTab,
   onCloseTab,
   onCloseTabs,
   onAddTerminal,
@@ -1610,6 +1625,7 @@ export function ProjectSidebar({
                         onSelect={onSelect}
                         onSelectTab={onSelectTab}
                         onRenameTab={onRenameTab}
+                        onPinTab={onPinTab}
                         onCloseTab={onCloseTab}
                         onCloseTabs={onCloseTabs}
                         latestChatAtBySession={latestChatAtBySession}
@@ -1685,6 +1701,7 @@ export function ProjectSidebar({
                       onSelect={onSelect}
                       onSelectTab={onSelectTab}
                       onRenameTab={onRenameTab}
+                      onPinTab={onPinTab}
                       onCloseTab={onCloseTab}
                       onCloseTabs={onCloseTabs}
                       latestChatAtBySession={latestChatAtBySession}

@@ -125,6 +125,8 @@ export type StoredTab = {
   shortHash?: string
   /** True for ephemeral "preview" tabs (replaced by the next preview open). */
   preview?: boolean
+  /** Keeps this tab above unpinned tabs in project tab lists. */
+  pinned?: boolean
   /** Local dev-server URL, for dev preview tabs. */
   url?: string
 }

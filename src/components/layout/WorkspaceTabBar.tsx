@@ -171,7 +171,9 @@ export function WorkspaceTitleBar({
         title={branch ? `${title} · ${branch}` : title}
         className="pointer-events-none flex min-w-0 flex-1 items-center justify-start gap-2 px-3 text-xs font-medium"
       >
-        <span className="truncate text-foreground dark:text-white/85">{title}</span>
+        <span className="truncate text-foreground dark:text-white/85">
+          {title}
+        </span>
         {branch ? (
           <span className="flex min-w-0 items-center gap-1 text-foreground/75 dark:text-white/65">
             <span aria-hidden="true">·</span>
@@ -324,14 +326,10 @@ function WorkspaceTabItem({
             <ContextMenuSeparator />
           </>
         )}
-        {isPreview && (
-          <>
-            <ContextMenuItem onClick={() => onPin?.(t.id)}>
-              Keep Open
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )}
+        <ContextMenuItem onClick={() => onPin?.(t.id)}>
+          {t.pinned ? "Unpin Tab" : "Pin Tab"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onClose?.(t.id)}>Close</ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseToRight?.(t.id)}

@@ -162,6 +162,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 name: t.name,
                 path: t.path,
                 ...(t.preview ? { preview: true } : {}),
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -175,6 +176,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 path: t.path,
                 staged: !!t.staged,
                 ...(t.preview ? { preview: true } : {}),
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -188,6 +190,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 hash: t.hash,
                 shortHash: t.shortHash ?? t.hash.slice(0, 7),
                 ...(t.preview ? { preview: true } : {}),
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -199,6 +202,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 id: t.id,
                 name: t.name,
                 url: t.url,
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -238,6 +242,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               id: t.id,
               name: t.name,
               customName: t.customName,
+              ...(t.pinned ? { pinned: true } : {}),
               panes,
               activePaneId,
               ...(t.layout ? { layout: t.layout } : {}),
@@ -439,6 +444,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           name: t.name,
           path: t.path,
           ...(t.preview ? { preview: true } : {}),
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       if (t.kind === "diff") {
@@ -449,6 +455,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           path: t.path,
           staged: t.staged,
           ...(t.preview ? { preview: true } : {}),
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       if (t.kind === "commit") {
@@ -459,6 +466,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           hash: t.hash,
           shortHash: t.shortHash,
           ...(t.preview ? { preview: true } : {}),
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       if (t.kind === "devPreview") {
@@ -467,6 +475,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           id: t.id,
           name: t.name,
           url: t.url,
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       return {
@@ -474,6 +483,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
         id: t.id,
         name: t.name,
         ...(t.customName ? { customName: t.customName } : {}),
+        ...(t.pinned ? { pinned: true } : {}),
         ...(t.layout ? { layout: t.layout } : {}),
         activePaneId: t.activePaneId,
         panes: t.panes.map((pp) => {
@@ -2873,19 +2883,30 @@ export function AppShell() {
     [activeProject, navigateToTab, openFilesInOwnTab]
   )
 
-  /** Pin a preview tab so subsequent file clicks don't replace it. */
+  /** Toggle tab-list pinning; pinning a preview also keeps it open. */
   const pinTab = (id: string) => {
+    pinProjectTab(activeProjectId, id)
+  }
+
+  const pinProjectTab = (projectId: string, id: string) => {
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId
+        p.id === projectId
           ? {
               ...p,
-              tabs: p.tabs.map((t) =>
-                t.id === id &&
-                (t.kind === "diff" || t.kind === "file" || t.kind === "commit")
-                  ? { ...t, preview: false }
-                  : t
-              ),
+              tabs: p.tabs.map((t) => {
+                if (t.id !== id) return t
+                const pinned = !t.pinned
+                if (
+                  pinned &&
+                  (t.kind === "diff" ||
+                    t.kind === "file" ||
+                    t.kind === "commit")
+                ) {
+                  return { ...t, pinned, preview: false }
+                }
+                return { ...t, pinned }
+              }),
             }
           : p
       )
@@ -3913,6 +3934,7 @@ export function AppShell() {
             navigateToProject(projectId, tabId)
           }
           onRenameTab={renameProjectTab}
+          onPinTab={pinProjectTab}
           onCloseTab={(projectId, tabId) =>
             void closeProjectTab(projectId, tabId)
           }

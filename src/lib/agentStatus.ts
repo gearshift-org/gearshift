@@ -61,6 +61,24 @@ export function terminalTabAgentState(tab: WorkspaceTab): TerminalAgentState {
   )
 }
 
+export function lastSubmittedTerminalTabId(
+  tabs: WorkspaceTab[]
+): string | null {
+  let latestTabId: string | null = null
+  let latestSubmitAt = 0
+  for (const tab of tabs) {
+    if (tab.kind !== "terminal") continue
+    for (const pane of tab.panes) {
+      const submittedAt = pane.agentStatus?.lastSubmitAt ?? 0
+      if (submittedAt > latestSubmitAt) {
+        latestSubmitAt = submittedAt
+        latestTabId = tab.id
+      }
+    }
+  }
+  return latestTabId
+}
+
 function projectHasTerminalPane(project: Project): boolean {
   return project.tabs.some(
     (tab) => tab.kind === "terminal" && tab.panes.length > 0

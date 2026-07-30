@@ -16,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities"
 import {
   ArrowDownUp,
   ChevronDown,
+  CornerDownLeft,
   ChevronsDownUp,
   ChevronsUpDown,
   EllipsisVertical,
@@ -109,7 +110,10 @@ import { AgentDone } from "./AgentDone"
 import { ProjectAvatar } from "./ProjectAvatar"
 import { WorkspaceTabIcon } from "./WorkspaceTabBar"
 import { tabDisplayName } from "./terminalName"
-import { terminalTabAgentState } from "@/lib/agentStatus"
+import {
+  lastSubmittedTerminalTabId,
+  terminalTabAgentState,
+} from "@/lib/agentStatus"
 import type { Project, WorkspaceTab } from "./types"
 
 type Props = {
@@ -540,6 +544,7 @@ function ProjectSidebarTab({
   projectId,
   tab,
   isActive,
+  isLastSubmitted,
   onSelect,
   onRename,
   onPin,
@@ -551,6 +556,7 @@ function ProjectSidebarTab({
   projectId: string
   tab: WorkspaceTab
   isActive: boolean
+  isLastSubmitted: boolean
   onSelect: (projectId: string, tabId: string) => void
   onRename: (projectId: string, tabId: string, name: string) => void
   onPin: (projectId: string, tabId: string) => void
@@ -631,6 +637,21 @@ function ProjectSidebarTab({
                   <Pin className="size-3 shrink-0" aria-label="Pinned" />
                 ) : null}
                 <span className="min-w-0 flex-1 truncate">{label}</span>
+                {isLastSubmitted ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span
+                          aria-label="Last message sent here"
+                          className="grid shrink-0 place-items-center text-ring"
+                        >
+                          <CornerDownLeft className="size-3.5" />
+                        </span>
+                      }
+                    />
+                    <TooltipContent>Last message sent here</TooltipContent>
+                  </Tooltip>
+                ) : null}
               </button>
             )}
             <span className="pointer-events-none absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center transition-opacity group-hover/tab:opacity-0">
@@ -775,6 +796,7 @@ function ProjectSidebarRow({
   }
 
   const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
+  const lastSubmittedTabId = lastSubmittedTerminalTabId(p.tabs)
   const latestTabChatAt = (tab: WorkspaceTab) =>
     tab.kind === "terminal"
       ? tab.panes.reduce(
@@ -1097,6 +1119,7 @@ function ProjectSidebarRow({
                   projectId={p.id}
                   tab={tab}
                   isActive={isActive && tab.id === p.activeTabId}
+                  isLastSubmitted={tab.id === lastSubmittedTabId}
                   onSelect={onSelectTab}
                   onRename={onRenameTab}
                   onPin={onPinTab}

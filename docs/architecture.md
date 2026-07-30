@@ -173,7 +173,9 @@ The Changes subtab also shows pull request status beside the branch picker for t
 
 ## Workspace previews
 
-File opens from the tree, command palette, or diff context menu reuse one shared workspace preview tab. In the project-sidebar layout, that file preview tab appears below the project alongside terminal tabs instead of opening an embedded viewer in the right sidebar. Pinning a file preview preserves it so the next file opens in a new shared preview tab. Diff opens from the Git changes list similarly reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
+File opens from the tree, command palette, or diff context menu reuse one shared workspace preview tab. In the project-sidebar layout, that file preview tab appears below the project alongside terminal tabs instead of opening an embedded viewer in the right sidebar. File and diff preview headers include a close button so the active preview can be dismissed without using a tab list. Pinning a file preview preserves it so the next file opens in a new shared preview tab. Diff opens from the Git changes list similarly reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
+
+Agent-terminal text paste never emits a bare return: trailing clipboard line breaks are removed, and internal line breaks use the same non-submitting sequence as Shift+Enter. This prevents pasted text from submitting an existing composer draft; plain shell terminals retain native paste behavior.
 
 ## Commit history
 

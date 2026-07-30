@@ -4180,6 +4180,7 @@ export function AppShell() {
                 void splitTerminalPane(tabId, direction)
               }
               onClosePane={closePane}
+              onCloseTab={closeTab}
               onFocusPane={setActivePane}
               onTerminalFocusChange={handleTerminalFocusChange}
               onRenamePane={renamePane}

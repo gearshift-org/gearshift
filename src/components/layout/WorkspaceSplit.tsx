@@ -56,6 +56,7 @@ type Props = {
     direction: "horizontal" | "vertical"
   ) => void
   onClosePane?: (tabId: string, paneId: string) => void
+  onCloseTab?: (tabId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onTerminalFocusChange?: (
     tabId: string,
@@ -114,6 +115,7 @@ export function WorkspaceSplit({
   onAddTerminal,
   onSplitTerminal,
   onClosePane,
+  onCloseTab,
   onFocusPane,
   onTerminalFocusChange,
   onRenamePane,
@@ -285,6 +287,7 @@ export function WorkspaceSplit({
               onAddTerminal={onAddTerminal}
               onSplitTerminal={onSplitTerminal}
               onClosePane={onClosePane}
+              onCloseTab={onCloseTab}
               onFocusPane={onFocusPane}
               onTerminalFocusChange={onTerminalFocusChange}
               onRenamePane={onRenamePane}

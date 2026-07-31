@@ -125,6 +125,8 @@ export type StoredTab = {
   shortHash?: string
   /** True for ephemeral "preview" tabs (replaced by the next preview open). */
   preview?: boolean
+  /** Keeps this tab above unpinned tabs in project tab lists. */
+  pinned?: boolean
   /** Local dev-server URL, for dev preview tabs. */
   url?: string
 }
@@ -290,6 +292,11 @@ function pushRecent(
 ): string[] {
   if (!value) return list
   return [value, ...list.filter((v) => v !== value)].slice(0, max)
+}
+
+export function recencyIndex(recents: string[], value: string): number {
+  const index = recents.indexOf(value)
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }
 
 export function loadPaletteRecents(): PaletteRecents {
@@ -463,9 +470,7 @@ export function loadProjects(): StoredProject[] {
                         )
                         return {
                           id: pp.id,
-                          ...(sessionActive
-                            ? { sessionId: pp.sessionId }
-                            : {}),
+                          ...(sessionActive ? { sessionId: pp.sessionId } : {}),
                           ...(typeof pp.autoTitle === "string"
                             ? { autoTitle: pp.autoTitle }
                             : {}),
@@ -509,21 +514,22 @@ export function loadProjects(): StoredProject[] {
         // completed flag (covers legacy snapshots and stopped sessions).
         const hasActiveCompleted = tabs.some((t) => {
           if (!("panes" in t) || !Array.isArray(t.panes)) return false
-          return t.panes.some(
-            (pp) => pp.sessionId && pp.agentStatus?.completed
-          )
+          return t.panes.some((pp) => pp.sessionId && pp.agentStatus?.completed)
         })
         return {
           ...p,
           // Legacy snapshots may contain stale needs-input markers. Do not
           // restore them; an attached terminal must re-detect live blocked state.
           agentNeedsAttention: undefined,
-          agentDone: hasActiveCompleted && p.agentDone === true ? true : undefined,
+          agentDone:
+            hasActiveCompleted && p.agentDone === true ? true : undefined,
           spaceId:
             typeof p.spaceId === "string" && p.spaceId
               ? p.spaceId
               : DEFAULT_SPACE_ID,
-          ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
+          ...(typeof p.updatedAt === "number"
+            ? { updatedAt: p.updatedAt }
+            : {}),
           tabs,
         }
       })
@@ -827,6 +833,7 @@ export function savePinnedProjectPaths(paths: string[]): void {
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 const OPEN_FILES_IN_OWN_TAB_KEY = "gearshift.openFilesInOwnTab"
+const IN_APP_AGENT_NOTIFICATIONS_KEY = "gearshift.inAppAgentNotifications"
 const HISTORY_RETENTION_ENABLED_KEY = "gearshift.historyRetentionEnabled"
 const HISTORY_RETENTION_DAYS_KEY = "gearshift.historyRetentionDays"
 
@@ -835,6 +842,8 @@ export const HISTORY_RETENTION_MIN_DAYS = 1
 
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
 export const OPEN_FILES_IN_OWN_TAB_EVENT = "gearshift:openFilesInOwnTabChanged"
+export const IN_APP_AGENT_NOTIFICATIONS_EVENT =
+  "gearshift:inAppAgentNotificationsChanged"
 export type RightSidebarTab = "git" | "files" | "history"
 
 export function loadRightSidebarTab(): RightSidebarTab {
@@ -879,8 +888,7 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
 }
 
 // When enabled, commit clicks open their own tab instead of reusing a shared
-// preview tab. File, diff, and dev-preview opens always use singleton preview
-// tabs so browsing does not flood the tab bar.
+// preview tab. File, diff, and dev-preview opens use singleton preview tabs.
 export function loadOpenFilesInOwnTab(): boolean {
   try {
     return store.get(OPEN_FILES_IN_OWN_TAB_KEY) !== "0"
@@ -904,8 +912,30 @@ export function saveOpenFilesInOwnTab(enabled: boolean): void {
   }
 }
 
-export const PROJECT_SIDEBAR_CHAT_EVENT =
-  "gearshift:projectSidebarChatChanged"
+export function loadInAppAgentNotificationsEnabled(): boolean {
+  try {
+    return store.get(IN_APP_AGENT_NOTIFICATIONS_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveInAppAgentNotificationsEnabled(enabled: boolean): void {
+  try {
+    store.set(IN_APP_AGENT_NOTIFICATIONS_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(IN_APP_AGENT_NOTIFICATIONS_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export const PROJECT_SIDEBAR_CHAT_EVENT = "gearshift:projectSidebarChatChanged"
 const PROJECT_SIDEBAR_CHAT_KEY = "gearshift.projectSidebarChat"
 
 export function loadProjectSidebarChatEnabled(): boolean {
@@ -922,6 +952,33 @@ export function saveProjectSidebarChatEnabled(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(PROJECT_SIDEBAR_CHAT_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export const PROJECT_SIDEBAR_TABS_EVENT = "gearshift:projectSidebarTabsChanged"
+const PROJECT_SIDEBAR_TABS_KEY = "gearshift.projectSidebarTabs"
+
+export function loadProjectSidebarTabsEnabled(): boolean {
+  try {
+    // Enabled by default so the folder hierarchy is visible immediately.
+    return store.get(PROJECT_SIDEBAR_TABS_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveProjectSidebarTabsEnabled(enabled: boolean): void {
+  try {
+    store.set(PROJECT_SIDEBAR_TABS_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(PROJECT_SIDEBAR_TABS_EVENT, {
           detail: enabled,
         })
       )

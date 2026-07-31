@@ -31,18 +31,18 @@ Terminal panes detect supported coding agents by asking the Electron main proces
 
 Display code derives a single semantic state from runtime flags: `blocked`, `working`, `done`, `idle`, or `unknown`. The priority is `blocked > working > done > idle > unknown`, so a pane or project that needs input wins over normal progress. Hooks remain authoritative for normal `working`/`done` lifecycle while active or recent, but strong blocked-prompt cues can override a working hook when an agent asks inline questions without firing a dedicated attention hook. If hooks are missing or stale, strong terminal title/output cues provide a fallback for Codex, Claude, and OpenCode: title spinners mean `working`, Codex "Action Required", permission prompts, and OpenCode question menus mean `blocked`, and a return to a known idle title after fallback work marks the turn `done`.
 
-The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as in-app or desktop notifications, and the count of unviewed completed agents is mirrored as a red badge on the dock icon (cleared as the flagged panes are viewed). For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
+The renderer combines lifecycle hooks, process detection, terminal title changes, and terminal output cues to show project-level activity. Background completions can surface as desktop notifications or as in-app notification cards, which can be disabled in Settings → General without affecting desktop notifications. The count of unviewed completed agents is mirrored as a red badge on the dock icon (cleared as the flagged panes are viewed). For pi, GearShift also wraps interactive `ctx.ui` prompts so post-turn menus like plan approval report `needs_attention` instead of a completed state.
 
 ### Agent status persistence (session-scoped)
 
 All agent statuses (`blocked`, `working`, `done`, `idle`) are tied to a live terminal PTY session. A small subset is saved in the project snapshot so markers can survive an app quit/refresh **only while that session is still alive** (daemon session id present):
 
-| Field | Persists across restart? | Notes |
-| ----- | ------------------------ | ----- |
-| `completed` / `completedAt` / `lastSubmitAt` / `workStartedAt` | Only with an active terminal session | Entire subset dropped when the session exits, is killed, fails adopt, or the pane/tab is closed |
-| Project `agentDone` | Only when some pane still has session-backed `completed` | Cleared whenever no completed pane remains |
-| Project `agentNeedsAttention` | No (live-only) | Also cleared at runtime when no pane is still blocked |
-| `running` / `working` / `needsAttention` / `agentName` | No | Re-detected from the live PTY / hooks; wiped with the pane when the session stops |
+| Field                                                          | Persists across restart?                                 | Notes                                                                                           |
+| -------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `completed` / `completedAt` / `lastSubmitAt` / `workStartedAt` | Only with an active terminal session                     | Entire subset dropped when the session exits, is killed, fails adopt, or the pane/tab is closed |
+| Project `agentDone`                                            | Only when some pane still has session-backed `completed` | Cleared whenever no completed pane remains                                                      |
+| Project `agentNeedsAttention`                                  | No (live-only)                                           | Also cleared at runtime when no pane is still blocked                                           |
+| `running` / `working` / `needsAttention` / `agentName`         | No                                                       | Re-detected from the live PTY / hooks; wiped with the pane when the session stops               |
 
 So a refresh with a live daemon session can still show "done" or the last-submit badge, but stopping or removing the terminal clears **every** project/pane agent status marker for that session — not just completion.
 
@@ -50,10 +50,10 @@ So a refresh with a live daemon session can still show "done" or the last-submit
 
 GearShift treats coding-agent CLIs in two tiers:
 
-| Tier | Agents | Tab-bar launcher | Lifecycle hooks | Session title / resume |
-| ---- | ------ | ---------------- | --------------- | -------------------- |
-| **Full** | Claude, Codex, OpenCode, pi | Yes (Settings → Agents launch options) | Yes (`electron/agentHooks.ts`) | Yes (`electron/agentSessionTitle.ts`) |
-| **Runtime-only** | Grok Build CLI (`grok`) | No — start manually in a shell | Yes (`installGrokHooks` in `electron/agentHooks.ts`) | No |
+| Tier             | Agents                      | Tab-bar launcher                       | Lifecycle hooks                                      | Session title / resume                |
+| ---------------- | --------------------------- | -------------------------------------- | ---------------------------------------------------- | ------------------------------------- |
+| **Full**         | Claude, Codex, OpenCode, pi | Yes (Settings → Agents launch options) | Yes (`electron/agentHooks.ts`)                       | Yes (`electron/agentSessionTitle.ts`) |
+| **Runtime-only** | Grok Build CLI (`grok`)     | No — start manually in a shell         | Yes (`installGrokHooks` in `electron/agentHooks.ts`) | No                                    |
 
 Full-tier agents are listed in `AGENT_TERMINAL_NAMES` (`src/lib/agentTerminalOptions.ts`) and can be spawned from the workspace tab bar. Runtime-only agents are recognized while their process is running in a pane, but are intentionally omitted from that launcher.
 
@@ -110,7 +110,7 @@ Native window resizes fit live (VS Code-like): the visible terminal tracks the w
 
 Spaces are local project metadata stored with the renderer project snapshot in `gearshift.projects` and `gearshift.spaces`. A fresh install always has the built-in `Personal` space (`space-personal`), and older projects without a `spaceId` hydrate into that space automatically.
 
-The project sidebar filters projects by the active space before applying focus mode, text filtering, pinned grouping, and manual/recent sorting. Project rows are always single-line and compact. Creating a space selects it immediately, even before it has projects. Space settings can rename the active space, with blank and duplicate names rejected. The default space cannot be deleted; deleting another space moves its projects back to the default space before removing it. Moving a project between spaces only changes the project's `spaceId`; terminal panes, tabs, notes, chat history, and project IDs stay unchanged. Workspace panes stay mounted across spaces, and space switches optimistically update the active project while URL navigation catches up. A `Cycle Spaces` keybinding action can switch to the next space in sidebar order, but it is unset by default.
+The project sidebar filters projects by the active space before applying focus mode, text filtering, pinned grouping, and manual/recent sorting. By default, project rows use independent shadcn Collapsible controls with closed/open folder icons and indented workspace-tab navigation. Multiple projects can remain expanded at once, and selecting or collapsing one does not change the expansion state of the others. Pinned workspace tabs stay above unpinned tabs within their project and persist across reloads. Within each pin group, nested terminal tabs are sorted by the latest captured chat-history message for their PTY sessions, so submitting an agent prompt updates their order while merely selecting a tab does not; tabs without history retain their underlying stable order. This uses a grouped latest-by-session database query plus live append events rather than loading full transcripts. The terminal tab containing the project's most recently submitted agent message shows the same return-arrow marker used for the latest split pane, based on the persisted `lastSubmitAt` timestamp. Each nested tab exposes a right-edge close action on hover. Agent activity indicators appear on the specific nested terminal tab that owns the agent session instead of on the parent project row. In this mode, the workspace's top tab strip is replaced by a compact title bar for the active project while retaining window dragging, pane-drop behavior, and right-side controls. Git changes remain in the Changes list and expand their diffs inline, while file-tree selections create a shared preview tab in the workspace and project sidebar. Leaving the mode disabled preserves the top-strip preview-tab behavior. The active folder row also exposes a quick-add terminal action that uses the same terminal creation flow as the workspace tab bar. Settings → General (`Show project tabs in sidebar`) can disable this hierarchy and restore the compact avatar-based project rows and full top tab strip. Creating a space selects it immediately, even before it has projects. Space settings can rename the active space, with blank and duplicate names rejected. The default space cannot be deleted; deleting another space moves its projects back to the default space before removing it. Moving a project between spaces only changes the project's `spaceId`; terminal panes, tabs, notes, chat history, and project IDs stay unchanged. Workspace panes stay mounted across spaces, and space switches optimistically update the active project while URL navigation catches up. A `Cycle Spaces` keybinding action can switch to the next space in sidebar order, but it is unset by default.
 
 ## Space chat
 
@@ -163,7 +163,7 @@ The stored `agentSessionId` is used to resolve a human-readable **session title*
 | **Codex**    | first real user message in `~/.codex/sessions/**/rollout-…-<id>.jsonl` (skips the injected `AGENTS.md`/instructions envelope) |
 | **pi**       | first user message in `~/.pi/agent/sessions/<cwd>/<ts>_<id>.jsonl`                                                            |
 
-Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The title precedence in `terminalName.ts` is: **`customName` (explicit user name) → `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. So a user-set name always wins; otherwise the agent's own title replaces the generic TUI title (e.g. "✳ Claude Code").
+Lookups find the file by id suffix (`findFileById` matches `<id><ext>`, covering exact names plus codex's `-<id>` and pi's `_<id>` separators), read a bounded slice, and return `null` on any failure. `TerminalView` fetches the title on `start`/`stop` hook events, folds it into the agent status (sticky ref), and it persists per pane as `agentSessionTitle`. The terminal-tab title precedence in `terminalName.ts` is: **tab `customName` → active-pane `customName` → active-pane `agentSessionTitle` → formatted TUI window title (`autoTitle`) → agent display name → fallback**. This keeps the top tab bar and project sidebar in sync when a pane is renamed, while an explicit tab-level name still wins. Terminal tabs can be renamed by double-clicking them in either the top tab bar or the project sidebar.
 
 ## GitHub Pull Requests
 
@@ -173,7 +173,9 @@ The Changes subtab also shows pull request status beside the branch picker for t
 
 ## Workspace previews
 
-File opens from the tree, command palette, or diff context menu reuse one shared file preview tab. Diff opens from the Git changes list reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
+File opens from the tree, command palette, or diff context menu reuse one shared workspace preview tab. In the project-sidebar layout, that file preview tab appears below the project alongside terminal tabs instead of opening an embedded viewer in the right sidebar. File and diff preview headers include a close button so the active preview can be dismissed without using a tab list. Pinning a file preview preserves it so the next file opens in a new shared preview tab. Diff opens from the Git changes list similarly reuse one shared diff preview tab. Local dev-server links clicked in terminals (`localhost`, `127.0.0.1`, `0.0.0.0`, or `[::1]`) open in one shared in-app dev preview tab, updating that tab when a different local URL is selected.
+
+Agent-terminal text paste never emits a bare return: trailing clipboard line breaks are removed, and internal line breaks use the same non-submitting sequence as Shift+Enter. This prevents pasted text from submitting an existing composer draft; plain shell terminals retain native paste behavior.
 
 ## Commit history
 

@@ -9,11 +9,9 @@ import {
 } from "./diffWorkerConfig"
 import {
   AudioPreview,
-  MarkdownView,
   PdfPreview,
   isAudioPath,
   isImagePath,
-  isMarkdownPath,
   isPdfPath,
   type MdMode,
 } from "./FilePreview"
@@ -25,6 +23,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { buildMatchRanges } from "@/lib/dom-search"
+import { cn } from "@/lib/utils"
 
 type Props = {
   cwd: string
@@ -35,6 +34,11 @@ type Props = {
   viewMode?: "unified" | "split"
   mdMode?: MdMode
   onOpenFile?: (path: string) => void
+  sharedWorkerPool?: boolean
+  hideFileHeader?: boolean
+  /** Size to content instead of filling the parent; scrolling is owned by an
+   * outer container (used by the sidebar's inline diffs). */
+  fitContent?: boolean
 }
 
 const HIGHLIGHT_NAME = "gearshift-diff-search"
@@ -58,42 +62,15 @@ export function SingleFileDiff({
   viewMode = "unified",
   mdMode = "preview",
   onOpenFile,
+  sharedWorkerPool = false,
+  hideFileHeader = false,
+  fitContent = false,
 }: Props) {
-  const showMarkdownPreview = isMarkdownPath(path) && mdMode === "preview"
+  // Markdown diffs always show the raw text diff — a rendered preview would
+  // hide what changed. Only binary media gets a preview here.
   const showImagePreview = isImagePath(path) && mdMode === "preview"
   const showAudioPreview = isAudioPath(path) && mdMode === "preview"
   const showPdfPreview = isPdfPath(path) && mdMode === "preview"
-  const absPath = path.startsWith("/")
-    ? path
-    : `${cwd.replace(/\/+$/, "")}/${path}`
-
-  const [mdSource, setMdSource] = useState<string>("")
-  const [mdLoading, setMdLoading] = useState(false)
-  const [mdError, setMdError] = useState<string | null>(null)
-  // `isActive` dep: re-read on tab reveal so agent edits made while the tab
-  // was hidden show up. The fs watcher below covers changes while visible.
-  useEffect(() => {
-    if (!showMarkdownPreview || !isActive) return
-    let cancelled = false
-    setMdLoading(true)
-    setMdError(null)
-    window.fsApi.readFile(absPath).then((res) => {
-      if (cancelled) return
-      if (!res.ok) {
-        setMdError(res.error ?? "Failed to read file")
-      } else if (res.tooLarge) {
-        setMdError("File too large to preview")
-      } else if (res.binary) {
-        setMdError("Unsupported file preview")
-      } else {
-        setMdSource(res.content ?? "")
-      }
-      setMdLoading(false)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [absPath, showMarkdownPreview])
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgError, setImgError] = useState<string | null>(null)
@@ -205,18 +182,11 @@ export function SingleFileDiff({
       window.git.diffFile(cwd, path, staged).then((res) => {
         if (res.ok) setPatch(res.patch || "")
       })
-      if (showMarkdownPreview) {
-        window.fsApi.readFile(absPath).then((res) => {
-          if (res.ok && !res.tooLarge && !res.binary) {
-            setMdSource(res.content ?? "")
-          }
-        })
-      }
     })
     return () => {
       off()
     }
-  }, [cwd, path, staged, showMarkdownPreview, absPath])
+  }, [cwd, path, staged])
 
   // Ensure a top-level <style> for the highlight names exists once.
   useEffect(() => {
@@ -330,46 +300,42 @@ export function SingleFileDiff({
         </div>
       )
     }
+    const viewer = (
+      <DiffViewer
+        cwd={cwd}
+        patch={patch}
+        themeType={resolvedTheme}
+        viewMode={viewMode}
+        hideFileHeaders={hideFileHeader}
+        fitContent={fitContent}
+      />
+    )
+    if (sharedWorkerPool) return viewer
     return (
       <WorkerPoolContextProvider
         poolOptions={diffsWorkerPoolOptions}
         highlighterOptions={diffsHighlighterOptions}
       >
-        <DiffViewer
-          cwd={cwd}
-          patch={patch}
-          themeType={resolvedTheme}
-          viewMode={viewMode}
-        />
+        {viewer}
       </WorkerPoolContextProvider>
     )
-  }, [cwd, loading, patch, error, resolvedTheme, viewMode])
+  }, [
+    cwd,
+    fitContent,
+    hideFileHeader,
+    loading,
+    patch,
+    error,
+    resolvedTheme,
+    sharedWorkerPool,
+    viewMode,
+  ])
 
   const copySelectionOrAll = () => {
     const sel = selectionTextRef.current
     const text = sel || patch
     if (!text) return
     void navigator.clipboard.writeText(text)
-  }
-
-  if (showMarkdownPreview) {
-    // Only block on the first load — refetches (tab reveal, fs change) keep
-    // showing the current content instead of flashing a loading state.
-    if (mdLoading && !mdSource) {
-      return (
-        <div className="grid h-full place-items-center text-xs text-muted-foreground">
-          Loading…
-        </div>
-      )
-    }
-    if (mdError) {
-      return (
-        <div className="grid h-full place-items-center text-xs text-red-500">
-          {mdError}
-        </div>
-      )
-    }
-    return <MarkdownView source={mdSource} />
   }
 
   if (showImagePreview) {
@@ -456,7 +422,10 @@ export function SingleFileDiff({
           selectionTextRef.current = ""
         }
       }}
-      className="relative h-full outline-none"
+      className={cn(
+        "relative outline-none",
+        fitContent ? "min-h-16" : "h-full"
+      )}
     >
       {searchOpen && (
         <div className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-popover px-1 py-1 text-xs shadow-md">

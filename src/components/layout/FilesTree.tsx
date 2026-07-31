@@ -960,7 +960,10 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
           </div>
         )}
         {filtering ? (
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea
+            className="min-h-0 flex-1"
+            scrollbarClassName="opacity-0 transition-opacity data-scrolling:opacity-100"
+          >
             <div className="min-h-full py-1">
               {allFilesQuery.isLoading && (
                 <div className="px-3 py-1 text-xs text-muted-foreground">
@@ -986,7 +989,10 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
           </ScrollArea>
         ) : (
           <CollapseSignalContext.Provider value={collapseSignal}>
-            <ScrollArea className="min-h-0 flex-1">
+            <ScrollArea
+              className="min-h-0 flex-1"
+              scrollbarClassName="opacity-0 transition-opacity data-scrolling:opacity-100"
+            >
               <FileTreeContextMenu absPath={cwd} isDir canRenameCopy={false}>
                 <div
                   className={cn(

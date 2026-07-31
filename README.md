@@ -10,14 +10,14 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 
 ## Features
 
-- Multi-project workspace with project tabs, split panes, and custom project avatars.
+- Multi-project workspace with project tabs, optional nested sidebar tabs and sidebar file/change previews, split panes, and custom project avatars.
 - File tree with drag-and-drop moves, singleton file/diff/dev preview tabs, Markdown/PDF/media rendering, and syntax-highlighted diffs.
 - Git status, file changes, branch actions, open pull request lists, and pull request shortcuts.
 - Agent activity detection for supported CLI coding agents (Claude, Codex, OpenCode, pi).
 - Grok Build CLI support when started manually: chat-history capture and tab/pane icon (not a tab-bar launch target).
 - Configurable default launch options for supported coding-agent terminals.
 - Space-scoped chat powered by Codex that can answer questions from captured project history.
-- Desktop and in-app notifications when background agent work finishes.
+- Desktop notifications and optional in-app notification cards when background agent work finishes or needs input.
 - Theme settings with system/light/dark modes, selectable color themes, appearance controls, and searchable keybinding settings.
 
 ## Tech Stack

@@ -28,6 +28,7 @@ import {
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
+import { prepareAgentPaste } from "@/lib/terminalPaste"
 import {
   mergeRuntimeAgentName,
   type RuntimeAgentName,
@@ -772,18 +773,17 @@ function pasteText(
   term: Terminal,
   sessionId: string,
   text: string,
-  agentName?: RuntimeAgentName
+  agentName?: RuntimeAgentName,
+  multilineEnterSequence = "\x1b\r"
 ) {
   if (!text) return
 
-  if (agentName === "pi") {
-    // Pi treats pasted returns like submit. Convert pasted line breaks to the
-    // same modified Enter sequence used by Shift+Enter so multiline prompts
-    // stay in the composer instead of submitting each line.
-    const normalized = text.replace(/\r\n?/g, "\n").replace(/\n+$/g, "")
-    if (normalized) {
-      window.term.write(sessionId, normalized.split("\n").join("\x1b[13;2u"))
-    }
+  if (agentName) {
+    const prepared = prepareAgentPaste(
+      text,
+      agentName === "pi" ? "\x1b[13;2u" : multilineEnterSequence
+    )
+    if (prepared) window.term.write(sessionId, prepared)
     return
   }
 
@@ -793,7 +793,8 @@ function pasteText(
 async function pasteClipboard(
   term: Terminal,
   sessionId: string,
-  agentName?: RuntimeAgentName
+  agentName?: RuntimeAgentName,
+  multilineEnterSequence = "\x1b\r"
 ) {
   try {
     if (await window.clipboardApi.hasImage()) {
@@ -812,7 +813,13 @@ async function pasteClipboard(
   } catch {
     // fall through to text paste
   }
-  pasteText(term, sessionId, await navigator.clipboard.readText(), agentName)
+  pasteText(
+    term,
+    sessionId,
+    await navigator.clipboard.readText(),
+    agentName,
+    multilineEnterSequence
+  )
   safeTerminalFocus(term)
 }
 
@@ -911,6 +918,7 @@ export function TerminalView({
   const commitCheckTimerRef = useRef<number | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
+  const modifiedEnterSequenceRef = useRef("\x1b\r")
 
   const [searchOpen, setSearchOpen] = useState(false)
   // Mirror of searchOpen for handlers created once at terminal init.
@@ -1494,25 +1502,24 @@ export function TerminalView({
     // Codex, and OpenCode already understand it. If a TUI probes/enables
     // modified keyboard modes (like pi), switch Enter to an explicit modified
     // Enter sequence instead.
-    let modifiedEnterSequence = "\x1b\r"
     const kittyKeyboardQuerySub = term.parser.registerCsiHandler(
       { prefix: "?", final: "u" },
       () => {
-        if (!replayingSnapshot) modifiedEnterSequence = "\x1b[13;2u"
+        if (!replayingSnapshot) modifiedEnterSequenceRef.current = "\x1b[13;2u"
         return true
       }
     )
     const kittyKeyboardPushSub = term.parser.registerCsiHandler(
       { prefix: ">", final: "u" },
       () => {
-        if (!replayingSnapshot) modifiedEnterSequence = "\x1b[13;2u"
+        if (!replayingSnapshot) modifiedEnterSequenceRef.current = "\x1b[13;2u"
         return true
       }
     )
     const kittyKeyboardPopSub = term.parser.registerCsiHandler(
       { prefix: "<", final: "u" },
       () => {
-        if (!replayingSnapshot) modifiedEnterSequence = "\x1b\r"
+        if (!replayingSnapshot) modifiedEnterSequenceRef.current = "\x1b\r"
         return true
       }
     )
@@ -1523,7 +1530,8 @@ export function TerminalView({
         const second = Array.isArray(params[1]) ? params[1][0] : params[1]
         if (first !== 4) return false
         if (!replayingSnapshot) {
-          modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
+          modifiedEnterSequenceRef.current =
+            second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
         }
         return true
       }
@@ -1676,7 +1684,12 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+          void pasteClipboard(
+            term,
+            sessionId,
+            agentStatusRef.current.agentName,
+            modifiedEnterSequenceRef.current
+          )
           return false
         }
         if (key === "a") {
@@ -1703,7 +1716,12 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+          void pasteClipboard(
+            term,
+            sessionId,
+            agentStatusRef.current.agentName,
+            modifiedEnterSequenceRef.current
+          )
           return false
         }
       }
@@ -1776,7 +1794,7 @@ export function TerminalView({
         const enterSequence =
           agentStatusRef.current.agentName === "pi"
             ? "\x1b[13;2u"
-            : modifiedEnterSequence
+            : modifiedEnterSequenceRef.current
         window.term.write(sessionId, enterSequence)
         return false
       }
@@ -2215,11 +2233,22 @@ export function TerminalView({
         const term = termRef.current
         if (!term) return
         if (text) {
-          pasteText(term, sessionId, text, agentStatusRef.current.agentName)
+          pasteText(
+            term,
+            sessionId,
+            text,
+            agentStatusRef.current.agentName,
+            modifiedEnterSequenceRef.current
+          )
           safeTerminalFocus(term)
           return
         }
-        void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+        void pasteClipboard(
+          term,
+          sessionId,
+          agentStatusRef.current.agentName,
+          modifiedEnterSequenceRef.current
+        )
       }),
     [sessionId]
   )
@@ -2264,8 +2293,7 @@ export function TerminalView({
         const statusBeforePoll = agentStatusRef.current
         const hookIsAuthoritative =
           activeHookWorkRef.current ||
-          Date.now() - lastHookEventAtRef.current <
-            HOOK_AUTHORITATIVE_WINDOW_MS
+          Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
         // Hook-backed agents already push lifecycle changes to the renderer.
         // Avoid scanning the entire OS process table every two seconds while
         // that stronger signal is active; the fallback poll resumes after the
@@ -2629,11 +2657,7 @@ export function TerminalView({
   }, [focusRequest, isActive, searchOpen])
 
   const runSearch = useCallback(
-    (
-      q: string,
-      direction: "next" | "prev" = "next",
-      incremental = false
-    ) => {
+    (q: string, direction: "next" | "prev" = "next", incremental = false) => {
       const search = searchRef.current
       if (!search) return
       if (!searchOpenRef.current) return
@@ -2673,7 +2697,12 @@ export function TerminalView({
   const pasteFromClipboard = async () => {
     const term = termRef.current
     if (!term) return
-    await pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+    await pasteClipboard(
+      term,
+      sessionId,
+      agentStatusRef.current.agentName,
+      modifiedEnterSequenceRef.current
+    )
   }
 
   const selectAll = () => {

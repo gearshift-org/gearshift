@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router"
 import {
   acceleratorLabel,
@@ -28,7 +28,7 @@ import {
 import { ProjectSidebar } from "./ProjectSidebar"
 import { ProjectSwitcher } from "./ProjectSwitcher"
 import { THEME_FAMILIES, useTheme } from "@/components/theme-provider"
-import { WorkspaceTabBar } from "./WorkspaceTabBar"
+import { WorkspaceTabBar, WorkspaceTitleBar } from "./WorkspaceTabBar"
 import { WorkspaceSplit } from "./WorkspaceSplit"
 import { SpaceChatView } from "./SpaceChatView"
 import { CommandPalette } from "./CommandPalette"
@@ -74,6 +74,8 @@ import {
   loadProjects,
   loadProjectSidebarOpen,
   loadProjectSidebarChatEnabled,
+  loadProjectSidebarTabsEnabled,
+  loadInAppAgentNotificationsEnabled,
   loadProjectSidebarWidth,
   loadRecentProjects,
   loadSpaces,
@@ -98,7 +100,9 @@ import {
   stableProjectId,
   AUTO_HIDE_TITLE_BAR_EVENT,
   OPEN_FILES_IN_OWN_TAB_EVENT,
+  IN_APP_AGENT_NOTIFICATIONS_EVENT,
   PROJECT_SIDEBAR_CHAT_EVENT,
+  PROJECT_SIDEBAR_TABS_EVENT,
   toStoredAgentStatus,
   type LastAgentTerminal,
   type LastAgentTerminalsByProject,
@@ -110,7 +114,7 @@ import {
   type StoredTab,
 } from "@/lib/projects"
 import { parseSettingsSection } from "@/routes/settings/settingsSections"
-import { gitQueryKey } from "@/lib/gitStatusQuery"
+import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import {
   AGENT_TERMINAL_LABELS,
   getAgentTerminalOptions,
@@ -158,6 +162,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 name: t.name,
                 path: t.path,
                 ...(t.preview ? { preview: true } : {}),
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -171,6 +176,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 path: t.path,
                 staged: !!t.staged,
                 ...(t.preview ? { preview: true } : {}),
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -184,6 +190,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 hash: t.hash,
                 shortHash: t.shortHash ?? t.hash.slice(0, 7),
                 ...(t.preview ? { preview: true } : {}),
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -195,6 +202,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 id: t.id,
                 name: t.name,
                 url: t.url,
+                ...(t.pinned ? { pinned: true } : {}),
               },
             ]
           }
@@ -234,6 +242,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               id: t.id,
               name: t.name,
               customName: t.customName,
+              ...(t.pinned ? { pinned: true } : {}),
               panes,
               activePaneId,
               ...(t.layout ? { layout: t.layout } : {}),
@@ -435,6 +444,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           name: t.name,
           path: t.path,
           ...(t.preview ? { preview: true } : {}),
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       if (t.kind === "diff") {
@@ -445,6 +455,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           path: t.path,
           staged: t.staged,
           ...(t.preview ? { preview: true } : {}),
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       if (t.kind === "commit") {
@@ -455,6 +466,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           hash: t.hash,
           shortHash: t.shortHash,
           ...(t.preview ? { preview: true } : {}),
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       if (t.kind === "devPreview") {
@@ -463,6 +475,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           id: t.id,
           name: t.name,
           url: t.url,
+          ...(t.pinned ? { pinned: true } : {}),
         }
       }
       return {
@@ -470,6 +483,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
         id: t.id,
         name: t.name,
         ...(t.customName ? { customName: t.customName } : {}),
+        ...(t.pinned ? { pinned: true } : {}),
         ...(t.layout ? { layout: t.layout } : {}),
         activePaneId: t.activePaneId,
         panes: t.panes.map((pp) => {
@@ -711,6 +725,9 @@ export function AppShell() {
   const [projectSidebarChatEnabled, setProjectSidebarChatEnabled] = useState(
     () => loadProjectSidebarChatEnabled()
   )
+  const [projectSidebarTabsEnabled, setProjectSidebarTabsEnabled] = useState(
+    () => loadProjectSidebarTabsEnabled()
+  )
   const [projectSidebarOpen, setProjectSidebarOpen] = useState(() =>
     loadProjectSidebarOpen()
   )
@@ -792,6 +809,7 @@ export function AppShell() {
         setAutoHideTitleBar(loadAutoHideTitleBar())
         setOpenFilesInOwnTab(loadOpenFilesInOwnTab())
         setProjectSidebarChatEnabled(loadProjectSidebarChatEnabled())
+        setProjectSidebarTabsEnabled(loadProjectSidebarTabsEnabled())
         setProjectSidebarOpen(loadProjectSidebarOpen())
         const storedWidth = loadProjectSidebarWidth()
         if (storedWidth)
@@ -912,6 +930,21 @@ export function AppShell() {
       window.removeEventListener("resize", onResize)
       if (resizeTimer !== null) window.clearTimeout(resizeTimer)
       document.body.classList.remove("gs-window-resizing")
+    }
+  }, [])
+  useEffect(() => {
+    const onProjectSidebarTabsChange = (event: Event) => {
+      setProjectSidebarTabsEnabled((event as CustomEvent<boolean>).detail)
+    }
+    window.addEventListener(
+      PROJECT_SIDEBAR_TABS_EVENT,
+      onProjectSidebarTabsChange
+    )
+    return () => {
+      window.removeEventListener(
+        PROJECT_SIDEBAR_TABS_EVENT,
+        onProjectSidebarTabsChange
+      )
     }
   }, [])
   useEffect(() => {
@@ -1037,6 +1070,25 @@ export function AppShell() {
     }
   }, [])
   useEffect(() => {
+    const onInAppAgentNotificationsChange = (event: Event) => {
+      if ((event as CustomEvent<boolean>).detail) return
+      for (const toastIds of agentDoneToastsByProjectRef.current.values()) {
+        for (const toastId of toastIds) toast.dismiss(toastId)
+      }
+      agentDoneToastsByProjectRef.current.clear()
+    }
+    window.addEventListener(
+      IN_APP_AGENT_NOTIFICATIONS_EVENT,
+      onInAppAgentNotificationsChange
+    )
+    return () => {
+      window.removeEventListener(
+        IN_APP_AGENT_NOTIFICATIONS_EVENT,
+        onInAppAgentNotificationsChange
+      )
+    }
+  }, [])
+  useEffect(() => {
     const onProjectSidebarChatChange = (event: Event) => {
       setProjectSidebarChatEnabled((event as CustomEvent<boolean>).detail)
     }
@@ -1101,6 +1153,11 @@ export function AppShell() {
               : activeSpaceProjects[0]?.id) ?? ""
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeProjectPath = activeProject?.path
+  const { data: activeProjectGit } = useQuery({
+    queryKey: gitQueryKey(activeProjectPath ?? null),
+    queryFn: () => fetchGitQueryData(activeProjectPath!),
+    enabled: !!activeProjectPath && projectSidebarTabsEnabled,
+  })
 
   const openRightSidebar = useCallback(() => {
     setSidebarOpen(true)
@@ -1644,7 +1701,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (!activeProjectId || !activeProjectPath || !activeTabId) return
-    pushRecentPaletteTab(activeProjectPath, activeTabId)
+    setPaletteRecents(pushRecentPaletteTab(activeProjectPath, activeTabId))
   }, [activeProjectId, activeProjectPath, activeTabId])
 
   useEffect(() => {
@@ -1698,8 +1755,7 @@ export function AppShell() {
       restoredProjectId &&
       projects.some(
         (project) =>
-          project.id === restoredProjectId &&
-          project.spaceId === activeSpaceId
+          project.id === restoredProjectId && project.spaceId === activeSpaceId
       )
         ? restoredProjectId
         : (projects.find((project) => project.spaceId === activeSpaceId)?.id ??
@@ -2664,8 +2720,6 @@ export function AppShell() {
         navigateToTab(exact.id)
         return
       }
-      // File opens always reuse one shared preview tab so switching through the
-      // file tree does not keep adding tabs.
       const preview = activeProject.tabs.find(
         (t) => t.kind === "file" && t.preview
       )
@@ -2829,19 +2883,30 @@ export function AppShell() {
     [activeProject, navigateToTab, openFilesInOwnTab]
   )
 
-  /** Pin a preview tab so subsequent file clicks don't replace it. */
+  /** Toggle tab-list pinning; pinning a preview also keeps it open. */
   const pinTab = (id: string) => {
+    pinProjectTab(activeProjectId, id)
+  }
+
+  const pinProjectTab = (projectId: string, id: string) => {
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId
+        p.id === projectId
           ? {
               ...p,
-              tabs: p.tabs.map((t) =>
-                t.id === id &&
-                (t.kind === "diff" || t.kind === "file" || t.kind === "commit")
-                  ? { ...t, preview: false }
-                  : t
-              ),
+              tabs: p.tabs.map((t) => {
+                if (t.id !== id) return t
+                const pinned = !t.pinned
+                if (
+                  pinned &&
+                  (t.kind === "diff" ||
+                    t.kind === "file" ||
+                    t.kind === "commit")
+                ) {
+                  return { ...t, pinned, preview: false }
+                }
+                return { ...t, pinned }
+              }),
             }
           : p
       )
@@ -3227,50 +3292,53 @@ export function AppShell() {
           ? formatDuration(status.completedAt - status.workStartedAt)
           : null
       const toastId = agentDoneToastId(targetProject.id, tabId, paneId)
-      const toastsForProject =
-        agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
-      toastsForProject.add(toastId)
-      agentDoneToastsByProjectRef.current.set(
-        targetProject.id,
-        toastsForProject
-      )
       const showCompletionNotification = (latestPrompt: string | null) => {
-        console.info("Agent complete: showing in-app toast")
-        toast.custom(
-          (id) =>
-            agentToastCard({
-              id,
-              projectName: targetProject.name,
-              projectPath: targetProject.path,
-              statusLabel: "Agent finished",
-              statusMeta: elapsedTime ? `Completed in ${elapsedTime}` : null,
-              bodyPreview: latestPrompt,
-              onOpen: () =>
-                openAgentDoneTarget(targetProject.id, tabId, paneId, id),
-            }),
-          {
-            id: toastId,
-            duration: Infinity,
-            onDismiss: () => {
-              const set = agentDoneToastsByProjectRef.current.get(
-                targetProject.id
-              )
-              set?.delete(toastId)
-              if (set && set.size === 0) {
-                agentDoneToastsByProjectRef.current.delete(targetProject.id)
-              }
-            },
-            onAutoClose: () => {
-              const set = agentDoneToastsByProjectRef.current.get(
-                targetProject.id
-              )
-              set?.delete(toastId)
-              if (set && set.size === 0) {
-                agentDoneToastsByProjectRef.current.delete(targetProject.id)
-              }
-            },
-          }
-        )
+        if (loadInAppAgentNotificationsEnabled()) {
+          const toastsForProject =
+            agentDoneToastsByProjectRef.current.get(targetProject.id) ??
+            new Set()
+          toastsForProject.add(toastId)
+          agentDoneToastsByProjectRef.current.set(
+            targetProject.id,
+            toastsForProject
+          )
+          console.info("Agent complete: showing in-app toast")
+          toast.custom(
+            (id) =>
+              agentToastCard({
+                id,
+                projectName: targetProject.name,
+                projectPath: targetProject.path,
+                statusLabel: "Agent finished",
+                statusMeta: elapsedTime ? `Completed in ${elapsedTime}` : null,
+                bodyPreview: latestPrompt,
+                onOpen: () =>
+                  openAgentDoneTarget(targetProject.id, tabId, paneId, id),
+              }),
+            {
+              id: toastId,
+              duration: Infinity,
+              onDismiss: () => {
+                const set = agentDoneToastsByProjectRef.current.get(
+                  targetProject.id
+                )
+                set?.delete(toastId)
+                if (set && set.size === 0) {
+                  agentDoneToastsByProjectRef.current.delete(targetProject.id)
+                }
+              },
+              onAutoClose: () => {
+                const set = agentDoneToastsByProjectRef.current.get(
+                  targetProject.id
+                )
+                set?.delete(toastId)
+                if (set && set.size === 0) {
+                  agentDoneToastsByProjectRef.current.delete(targetProject.id)
+                }
+              },
+            }
+          )
+        }
 
         if (!appVisibleAndFocused) {
           console.info("Agent complete: also showing desktop notification")
@@ -3309,14 +3377,6 @@ export function AppShell() {
 
       const terminalName = tabDisplayName(targetTab)
       const toastId = agentAttentionToastId(targetProject.id, tabId, paneId)
-      const toastsForProject =
-        agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
-      toastsForProject.add(toastId)
-      agentDoneToastsByProjectRef.current.set(
-        targetProject.id,
-        toastsForProject
-      )
-      console.info("Agent needs attention: showing in-app toast")
       const cleanupToast = () => {
         const set = agentDoneToastsByProjectRef.current.get(targetProject.id)
         set?.delete(toastId)
@@ -3325,6 +3385,15 @@ export function AppShell() {
         }
       }
       const showNeedsInputNotification = (latestPrompt: string | null) => {
+        if (!loadInAppAgentNotificationsEnabled()) return
+        const toastsForProject =
+          agentDoneToastsByProjectRef.current.get(targetProject.id) ?? new Set()
+        toastsForProject.add(toastId)
+        agentDoneToastsByProjectRef.current.set(
+          targetProject.id,
+          toastsForProject
+        )
+        console.info("Agent needs attention: showing in-app toast")
         toast.custom(
           (id) =>
             agentToastCard({
@@ -3377,9 +3446,13 @@ export function AppShell() {
   }
 
   const renameTab = (tabId: string, name: string) => {
+    renameProjectTab(activeProjectId, tabId, name)
+  }
+
+  const renameProjectTab = (projectId: string, tabId: string, name: string) => {
     setProjects((prev) =>
       prev.map((p) =>
-        p.id === activeProjectId
+        p.id === projectId
           ? {
               ...p,
               tabs: p.tabs.map((t) =>
@@ -3393,15 +3466,16 @@ export function AppShell() {
     )
   }
 
-  const closeTab = async (id: string) => {
-    const tab = activeProject?.tabs.find((t) => t.id === id)
+  const closeProjectTab = async (projectId: string, id: string) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    const tab = project?.tabs.find((t) => t.id === id)
     if (tab && !(await confirmCloseTabsWithAgents([tab]))) {
       return
     }
     if (tab) killAllPanes(tab)
     setProjects((prev) =>
       prev.map((p) => {
-        if (p.id !== activeProjectId) return p
+        if (p.id !== projectId) return p
         const closingIdx = p.tabs.findIndex((t) => t.id === id)
         const tabs = p.tabs.filter((t) => t.id !== id)
         let nextActive = p.activeTabId
@@ -3417,32 +3491,36 @@ export function AppShell() {
         })
       })
     )
-    if (id === activeTabId) {
-      const closingIdx = activeProject?.tabs.findIndex((t) => t.id === id) ?? -1
-      const remaining = activeProject?.tabs.filter((t) => t.id !== id) ?? []
+    if (projectId === activeProjectId && id === activeTabId) {
+      const closingIdx = project?.tabs.findIndex((t) => t.id === id) ?? -1
+      const remaining = project?.tabs.filter((t) => t.id !== id) ?? []
       const nextIdx = Math.max(0, closingIdx - 1)
       const next = remaining[nextIdx]?.id
       if (next) navigateToTab(next)
-      else if (activeProjectId) navigateToProject(activeProjectId)
+      else navigateToProject(projectId)
     }
   }
 
-  const closeTabsToRight = async (id: string) => {
-    if (!activeProject) return
-    const idx = activeProject.tabs.findIndex((t) => t.id === id)
-    if (idx < 0) return
-    const toClose = activeProject.tabs.slice(idx + 1)
+  const closeTab = (id: string) => closeProjectTab(activeProjectId, id)
+
+  // Closes a specific set of a project's tabs; callers decide the set (to the
+  // right, others, all) so display order can differ from stored order.
+  const closeProjectTabs = async (projectId: string, ids: string[]) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    if (!project) return
+    const closedIds = new Set(ids)
+    const toClose = project.tabs.filter((t) => closedIds.has(t.id))
     if (toClose.length === 0) return
     if (!(await confirmCloseTabsWithAgents(toClose))) return
     for (const t of toClose) killAllPanes(t)
-    const closedIds = new Set(toClose.map((t) => t.id))
+    const remaining = project.tabs.filter((t) => !closedIds.has(t.id))
+    const nextActive = remaining.some((t) => t.id === project.activeTabId)
+      ? project.activeTabId
+      : (remaining[remaining.length - 1]?.id ?? "")
     setProjects((prev) =>
       prev.map((p) => {
-        if (p.id !== activeProjectId) return p
+        if (p.id !== projectId) return p
         const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
-        const nextActive = closedIds.has(p.activeTabId)
-          ? (tabs[tabs.length - 1]?.id ?? "")
-          : p.activeTabId
         return withSessionScopedAgentStatus({
           ...p,
           tabs,
@@ -3450,49 +3528,45 @@ export function AppShell() {
         })
       })
     )
-    if (closedIds.has(activeTabId)) navigateToTab(id)
+    if (projectId === activeProjectId && closedIds.has(activeTabId)) {
+      if (nextActive) navigateToTab(nextActive)
+      else navigateToProject(projectId)
+    }
   }
 
-  const closeOtherTabs = async (keepId: string) => {
-    if (!activeProject) return
-    const toClose = activeProject.tabs.filter((t) => t.id !== keepId)
-    if (toClose.length === 0) return
-    if (!(await confirmCloseTabsWithAgents(toClose))) return
-    const closedIds = new Set(toClose.map((t) => t.id))
-    for (const t of toClose) killAllPanes(t)
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== activeProjectId) return p
-        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
-        return {
-          ...p,
-          tabs,
-          activeTabId: tabs.some((t) => t.id === keepId)
-            ? keepId
-            : (tabs[0]?.id ?? ""),
-        }
-      })
+  const closeTabsToRight = (id: string) => {
+    const project = projectsRef.current.find((p) => p.id === activeProjectId)
+    if (!project) return
+    const idx = project.tabs.findIndex((t) => t.id === id)
+    if (idx < 0) return
+    return closeProjectTabs(
+      activeProjectId,
+      project.tabs.slice(idx + 1).map((t) => t.id)
     )
-    if (activeTabId !== keepId) navigateToTab(keepId)
   }
 
-  const closeAllTabs = async () => {
-    if (!activeProject) return
-    if (!(await confirmCloseTabsWithAgents(activeProject.tabs))) return
-    const closedIds = new Set(activeProject.tabs.map((t) => t.id))
-    for (const t of activeProject.tabs) killAllPanes(t)
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== activeProjectId) return p
-        const tabs = p.tabs.filter((t) => !closedIds.has(t.id))
-        const activeTabId = tabs.some((t) => t.id === p.activeTabId)
-          ? p.activeTabId
-          : (tabs[0]?.id ?? "")
-        return { ...p, tabs, activeTabId }
-      })
+  const closeOtherProjectTabs = (projectId: string, keepId: string) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    if (!project) return
+    return closeProjectTabs(
+      projectId,
+      project.tabs.filter((t) => t.id !== keepId).map((t) => t.id)
     )
-    navigateToProject(activeProjectId)
   }
+
+  const closeOtherTabs = (keepId: string) =>
+    closeOtherProjectTabs(activeProjectId, keepId)
+
+  const closeAllProjectTabs = (projectId: string) => {
+    const project = projectsRef.current.find((p) => p.id === projectId)
+    if (!project) return
+    return closeProjectTabs(
+      projectId,
+      project.tabs.map((t) => t.id)
+    )
+  }
+
+  const closeAllTabs = () => closeAllProjectTabs(activeProjectId)
   const addTerminalRef = useRef<
     (agentName?: TerminalAgentName) => Promise<string | null>
   >(async () => null)
@@ -3856,6 +3930,19 @@ export function AppShell() {
               : !projects.some((p) => p.path === r.path)
           )}
           onSelect={selectProject}
+          onSelectTab={(projectId, tabId) =>
+            navigateToProject(projectId, tabId)
+          }
+          onRenameTab={renameProjectTab}
+          onPinTab={pinProjectTab}
+          onCloseTab={(projectId, tabId) =>
+            void closeProjectTab(projectId, tabId)
+          }
+          onCloseTabs={(projectId, tabIds) =>
+            void closeProjectTabs(projectId, tabIds)
+          }
+          onAddTerminal={() => void addTerminal()}
+          showProjectTabs={projectSidebarTabsEnabled}
           onSelectSpace={selectSpace}
           onOpenSpaceChat={
             projectSidebarChatEnabled
@@ -4093,6 +4180,7 @@ export function AppShell() {
                 void splitTerminalPane(tabId, direction)
               }
               onClosePane={closePane}
+              onCloseTab={closeTab}
               onFocusPane={setActivePane}
               onTerminalFocusChange={handleTerminalFocusChange}
               onRenamePane={renamePane}
@@ -4116,36 +4204,46 @@ export function AppShell() {
               activeTreeFilePath={activeTreeFilePath}
               fileReveal={fileReveal}
               workspaceTabs={
-                <WorkspaceTabBar
-                  tabs={activeProject.tabs}
-                  activeId={activeTabId}
-                  animationScopeKey={activeProject.id}
-                  openingTabId={openingTerminalTabId}
-                  onSelect={selectTab}
-                  onAdd={addTerminal}
-                  onConfigureAgents={() =>
-                    void navigate({
-                      to: "/settings",
-                      search: { section: "agents" },
-                    })
-                  }
-                  onClose={closeTab}
-                  onCloseAll={closeAllTabs}
-                  onCloseAllTerminals={() =>
-                    void closeAllProjectTerminals(activeProject.id)
-                  }
-                  onCloseOthers={closeOtherTabs}
-                  onCloseToRight={closeTabsToRight}
-                  onRename={renameTab}
-                  onReorder={reorderTabs}
-                  onPin={pinTab}
-                  onOpenInVSCode={() =>
-                    void window.shellApi.openInVSCode(activeProject.path)
-                  }
-                  trailing={topBarTrailing}
-                  leading={topBarLeading}
-                  draggable={true}
-                />
+                projectSidebarTabsEnabled ? (
+                  <WorkspaceTitleBar
+                    title={activeProject.name}
+                    branch={activeProjectGit?.currentBranch}
+                    trailing={topBarTrailing}
+                    leading={topBarLeading}
+                    draggable={true}
+                  />
+                ) : (
+                  <WorkspaceTabBar
+                    tabs={activeProject.tabs}
+                    activeId={activeTabId}
+                    animationScopeKey={activeProject.id}
+                    openingTabId={openingTerminalTabId}
+                    onSelect={selectTab}
+                    onAdd={addTerminal}
+                    onConfigureAgents={() =>
+                      void navigate({
+                        to: "/settings",
+                        search: { section: "agents" },
+                      })
+                    }
+                    onClose={closeTab}
+                    onCloseAll={closeAllTabs}
+                    onCloseAllTerminals={() =>
+                      void closeAllProjectTerminals(activeProject.id)
+                    }
+                    onCloseOthers={closeOtherTabs}
+                    onCloseToRight={closeTabsToRight}
+                    onRename={renameTab}
+                    onReorder={reorderTabs}
+                    onPin={pinTab}
+                    onOpenInVSCode={() =>
+                      void window.shellApi.openInVSCode(activeProject.path)
+                    }
+                    trailing={topBarTrailing}
+                    leading={topBarLeading}
+                    draggable={true}
+                  />
+                )
               }
             />
           )

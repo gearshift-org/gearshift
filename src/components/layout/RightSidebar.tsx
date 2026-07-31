@@ -5,14 +5,19 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { WorkerPoolContextProvider } from "@pierre/diffs/react"
 import {
   ArrowDown,
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronsDownUp,
   CloudUpload,
+  Columns2,
   Copy,
+  Eye,
   ExternalLink,
+  FileCode,
   GitBranch,
   GitCommitVertical,
   GitPullRequest,
@@ -21,11 +26,12 @@ import {
   Plus,
   PlusCircle,
   RefreshCw,
+  Rows2,
   Undo2,
+  X,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -68,10 +74,26 @@ import { FileIcon } from "@/components/icons/FileIcon"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
 import { ChangeCountBadge } from "./ChangeCountBadge"
 import { FilesTree } from "./FilesTree"
+import {
+  FilePreview,
+  isMarkdownPath,
+  readMdMode,
+  writeMdMode,
+  type MdMode,
+} from "./FilePreview"
+import { SingleFileDiff } from "./SingleFileDiff"
+import {
+  diffsHighlighterOptions,
+  diffsWorkerPoolOptions,
+} from "./diffWorkerConfig"
 import { ProjectChatHistoryPanel } from "./ProjectChatHistory"
 import type { HistoryRange } from "@/lib/historySummary"
 import { setPathDragData } from "@/lib/pathDrag"
-import type { RightSidebarTab } from "@/lib/projects"
+import {
+  loadDiffViewMode,
+  saveDiffViewMode,
+  type RightSidebarTab,
+} from "@/lib/projects"
 import {
   EMPTY_GIT_FILES,
   applyOptimisticGitFileMoves,
@@ -106,6 +128,8 @@ const NOTES_MIN_HEIGHT = 120
 const NOTES_MAX_HEIGHT = 480
 const NOTES_DEFAULT_HEIGHT = 220
 const NOTES_HEIGHT_STORAGE_KEY = "gearshift:notes-height"
+// Collapsed by default; last open/closed state persists across reloads.
+const NOTES_OPEN_STORAGE_KEY = "gearshift:notes-open"
 // Optimistic overlays are confirm-cleared once a refetch reflects the action,
 // so these TTLs are only a safety net for the rare case where reality never
 // catches up (e.g. external git tampering). Keep them generous.
@@ -116,6 +140,8 @@ const EMPTY_BRANCHES: string[] = []
 const EMPTY_PULL_REQUESTS: PullRequestInfo[] = []
 const EMPTY_COMMITS: CommitInfo[] = []
 
+export const OPEN_SIDEBAR_FILE_EVENT = "gearshift:openSidebarFile"
+
 type GitSubTab = "changes" | "prs" | "commits"
 
 const STATUS_STYLES: Record<GitStatus, string> = {
@@ -125,6 +151,15 @@ const STATUS_STYLES: Record<GitStatus, string> = {
   R: "text-sky-500",
   C: "text-sky-500",
   U: "text-red-500",
+}
+
+// Modified is the common case and stays unlabeled to keep rows quiet.
+const STATUS_LABELS: Partial<Record<GitStatus, string>> = {
+  A: "Added",
+  D: "Deleted",
+  R: "Renamed",
+  C: "Copied",
+  U: "Conflict",
 }
 
 function absolutePath(cwd: string, path: string) {
@@ -150,6 +185,14 @@ type Props = {
   onSummarizeChat?: (range: HistoryRange) => void
   onFocusSession?: (sessionId: string) => void
   topRightActions?: React.ReactNode
+  inspectionEnabled?: boolean
+}
+
+type SidebarInspection = {
+  kind: "file"
+  cwd: string
+  path: string
+  sourceTab: "git" | "files"
 }
 
 export const RightSidebar = memo(function RightSidebar({
@@ -166,14 +209,95 @@ export const RightSidebar = memo(function RightSidebar({
   onSummarizeChat,
   onFocusSession,
   topRightActions,
+  inspectionEnabled = false,
 }: Props) {
   const [internalTab, setInternalTab] = useState<RightSidebarTab>("git")
   const [gitSubTab, setGitSubTab] = useState<GitSubTab>("changes")
+  const [inspection, setInspection] = useState<SidebarInspection | null>(null)
+  const [openFilePathsByCwd, setOpenFilePathsByCwd] = useState<
+    Record<string, string[]>
+  >({})
+  const fileTabsScrollRef = useRef<HTMLDivElement>(null)
+  const activeFileTabRef = useRef<HTMLButtonElement>(null)
+  const [expandedDiffKeys, setExpandedDiffKeys] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [fileMdMode, setFileMdMode] = useState<MdMode>(() => readMdMode())
+  const [inlineDiffViewMode, setInlineDiffViewMode] = useState<
+    "unified" | "split"
+  >(() => loadDiffViewMode())
   const tab = activeTab ?? internalTab
+
+  const inspectDiff = useCallback(
+    (path: string, staged: boolean) => {
+      if (!inspectionEnabled || !cwd) {
+        onOpenDiff(path, staged)
+        return
+      }
+      const key = `${staged ? "staged" : "working"}:${path}`
+      setExpandedDiffKeys((current) => {
+        const next = new Set(current)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+    },
+    [cwd, inspectionEnabled, onOpenDiff]
+  )
+
+  const inspectFile = useCallback(
+    (path: string, sourceTab: "git" | "files") => {
+      if (!inspectionEnabled || !cwd) {
+        onOpenFile(path)
+        return
+      }
+      setOpenFilePathsByCwd((current) => {
+        const paths = current[cwd] ?? []
+        return paths.includes(path)
+          ? current
+          : { ...current, [cwd]: [...paths, path] }
+      })
+      setInternalTab("files")
+      onActiveTabChange?.("files")
+      setInspection({ kind: "file", cwd, path, sourceTab })
+    },
+    [cwd, inspectionEnabled, onActiveTabChange, onOpenFile]
+  )
+
+  useEffect(() => {
+    if (!inspectionEnabled || !cwd) return
+    const onOpenSidebarFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ cwd: string; path: string }>)
+        .detail
+      if (detail?.cwd !== cwd || !detail.path) return
+      inspectFile(detail.path, "files")
+    }
+    window.addEventListener(OPEN_SIDEBAR_FILE_EVENT, onOpenSidebarFile)
+    return () =>
+      window.removeEventListener(OPEN_SIDEBAR_FILE_EVENT, onOpenSidebarFile)
+  }, [cwd, inspectFile, inspectionEnabled])
+
+  useEffect(() => {
+    if (!inspection || inspection.cwd !== cwd) return
+    const frame = window.requestAnimationFrame(() => {
+      activeFileTabRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [cwd, inspection, openFilePathsByCwd])
   const [actionErrorsByCwd, setActionErrorsByCwd] = useState<
     Record<string, string>
   >({})
-  const [notesOpen, setNotesOpen] = useState(true)
+  const [notesOpen, setNotesOpen] = useState(
+    () => window.localStorage.getItem(NOTES_OPEN_STORAGE_KEY) === "1"
+  )
+  const handleNotesOpenChange = useCallback((open: boolean) => {
+    setNotesOpen(open)
+    window.localStorage.setItem(NOTES_OPEN_STORAGE_KEY, open ? "1" : "0")
+  }, [])
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
     null | "commit" | "push" | "sync" | "pull" | "publish"
@@ -401,6 +525,31 @@ export const RightSidebar = memo(function RightSidebar({
   )
   const hiddenStagedCount = stagedFiles.length - visibleStagedFiles.length
   const hiddenUnstagedCount = unstagedFiles.length - visibleUnstagedFiles.length
+  const stagedDiffKeys = useMemo(
+    () => stagedFiles.map((file) => `staged:${file.path}`),
+    [stagedFiles]
+  )
+  const unstagedDiffKeys = useMemo(
+    () => unstagedFiles.map((file) => `working:${file.path}`),
+    [unstagedFiles]
+  )
+  const collapseSectionDiffs = useCallback(
+    (keys: string[]) => {
+      setExpandedDiffKeys((prev) => {
+        const next = new Set(prev)
+        for (const key of keys) next.delete(key)
+        return next
+      })
+    },
+    [setExpandedDiffKeys]
+  )
+  const toggleDiffViewMode = useCallback(() => {
+    setInlineDiffViewMode((prev) => {
+      const next = prev === "split" ? "unified" : "split"
+      saveDiffViewMode(next)
+      return next
+    })
+  }, [setInlineDiffViewMode])
 
   const updateCachedFiles = useCallback(
     (paths: string[], staged: boolean) => {
@@ -1001,6 +1150,245 @@ export const RightSidebar = memo(function RightSidebar({
     return () => window.clearInterval(id)
   }, [cwd, isActive, runRefresh, largeChangeSet])
 
+  const activeInspection =
+    inspectionEnabled && inspection?.cwd === cwd ? inspection : null
+
+  const closeFilePreviews = useCallback(
+    (paths: string[]) => {
+      if (!cwd || !inspection || inspection.cwd !== cwd) return
+      const openFilePaths = openFilePathsByCwd[cwd] ?? [inspection.path]
+      const closing = new Set(paths)
+      const index = openFilePaths.indexOf(inspection.path)
+      const remaining = openFilePaths.filter((p) => !closing.has(p))
+      setOpenFilePathsByCwd((current) => ({ ...current, [cwd]: remaining }))
+      if (!closing.has(inspection.path)) return
+      const nextPath = remaining[Math.min(index, remaining.length - 1)]
+      if (nextPath) setInspection({ ...inspection, path: nextPath })
+      else setInspection(null)
+    },
+    [cwd, inspection, openFilePathsByCwd]
+  )
+
+  const closeFilePreview = useCallback(
+    (path: string) => closeFilePreviews([path]),
+    [closeFilePreviews]
+  )
+
+  useEffect(() => {
+    if (!activeInspection) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        !event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== "w"
+      ) {
+        return
+      }
+      const target = event.target instanceof Element ? event.target : null
+      if (!target?.closest("[data-sidebar-file-viewer='true']")) return
+      event.preventDefault()
+      event.stopPropagation()
+      closeFilePreview(activeInspection.path)
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [activeInspection, closeFilePreview])
+
+  if (activeInspection && cwd) {
+    const openFilePaths = openFilePathsByCwd[cwd] ?? [activeInspection.path]
+    const activeFileIsMarkdown = isMarkdownPath(activeInspection.path)
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            const next = value as RightSidebarTab
+            setInspection(null)
+            setInternalTab(next)
+            onActiveTabChange?.(next)
+          }}
+          className="shrink-0 gap-0"
+        >
+          <div className="flex h-[34px] items-center gap-2 border-b border-border px-3 pt-px [-webkit-app-region:drag]">
+            <TabsList
+              variant="line"
+              className="h-full gap-1 bg-transparent p-0 [-webkit-app-region:no-drag]"
+            >
+              <TabsTrigger
+                value="git"
+                className="!h-6 gap-1.5 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground"
+              >
+                Changes
+                {hasData && files.length > 0 && (
+                  <ChangeCountBadge count={files.length} />
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="files"
+                className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground"
+              >
+                Files
+              </TabsTrigger>
+              <TabsTrigger
+                value="history"
+                className="!h-6 rounded-sm !border-0 px-2 text-xs !text-foreground after:!opacity-0 hover:!bg-sidebar-accent/70 data-active:!bg-[color-mix(in_srgb,var(--sidebar-accent)_90%,var(--foreground)_4%)] data-active:!text-foreground"
+              >
+                History
+              </TabsTrigger>
+            </TabsList>
+            {topRightActions && (
+              <div className="ml-auto flex items-center gap-0.5 [-webkit-app-region:no-drag]">
+                {topRightActions}
+              </div>
+            )}
+          </div>
+        </Tabs>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="min-h-0 w-[38%] max-w-72 min-w-48 shrink-0 overflow-hidden border-r border-border bg-sidebar">
+            <FilesTree
+              cwd={cwd}
+              activePath={activeInspection.path}
+              onOpenFile={(path) => inspectFile(path, "files")}
+            />
+          </div>
+          <div
+            data-sidebar-file-viewer="true"
+            className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
+          >
+            <div className="flex h-[34px] shrink-0 items-center border-b border-border">
+              <div
+                ref={fileTabsScrollRef}
+                className="sidebar-file-tabs-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2"
+              >
+                {openFilePaths.map((path, i) => {
+                  const active = path === activeInspection.path
+                  const name = path.split(/[\\/]/).pop() ?? path
+                  return (
+                    <ContextMenu key={path}>
+                      <ContextMenuTrigger
+                        render={
+                          <button
+                            ref={active ? activeFileTabRef : undefined}
+                            type="button"
+                            title={path}
+                            onClick={() =>
+                              setInspection({
+                                ...activeInspection,
+                                path,
+                                sourceTab: "files",
+                              })
+                            }
+                            className={cn(
+                              "group/file-tab flex h-[26px] max-w-40 min-w-24 flex-1 basis-0 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-foreground/8 hover:text-foreground",
+                              active && "bg-foreground/12 text-foreground"
+                            )}
+                          >
+                            <FileIcon name={name} className="size-4 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate text-left">
+                              {name}
+                            </span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`Close ${name}`}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                closeFilePreview(path)
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ")
+                                  return
+                                event.preventDefault()
+                                event.stopPropagation()
+                                closeFilePreview(path)
+                              }}
+                              className="grid size-4 shrink-0 place-items-center rounded-sm opacity-0 group-hover/file-tab:opacity-100 hover:bg-foreground/15 focus:opacity-100"
+                            >
+                              <X className="size-3" />
+                            </span>
+                          </button>
+                        }
+                      />
+                      <ContextMenuContent className="min-w-[180px] whitespace-nowrap">
+                        <ContextMenuItem onClick={() => closeFilePreview(path)}>
+                          Close
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          disabled={openFilePaths.length <= 1}
+                          onClick={() =>
+                            closeFilePreviews(
+                              openFilePaths.filter((p) => p !== path)
+                            )
+                          }
+                        >
+                          Close Others
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          disabled={i >= openFilePaths.length - 1}
+                          onClick={() =>
+                            closeFilePreviews(openFilePaths.slice(i + 1))
+                          }
+                        >
+                          Close to the Right
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          onClick={() => closeFilePreviews(openFilePaths)}
+                        >
+                          Close All
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  )
+                })}
+              </div>
+              {activeFileIsMarkdown && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => {
+                          const next: MdMode =
+                            fileMdMode === "preview" ? "raw" : "preview"
+                          setFileMdMode(next)
+                          writeMdMode(next)
+                        }}
+                        aria-label={
+                          fileMdMode === "preview"
+                            ? "Show raw Markdown"
+                            : "Show Markdown preview"
+                        }
+                        aria-pressed={fileMdMode === "preview"}
+                        className="mr-1 shrink-0"
+                      >
+                        {fileMdMode === "preview" ? <Eye /> : <FileCode />}
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    {fileMdMode === "preview" ? "Show raw" : "Show preview"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden bg-background">
+              <FilePreview
+                cwd={cwd}
+                path={activeInspection.path}
+                isActive
+                mdMode={fileMdMode}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
       <Tabs
@@ -1148,106 +1536,149 @@ export const RightSidebar = memo(function RightSidebar({
                   />
                 </div>
               )}
-              <ScrollArea className="min-h-0 flex-1">
-                {!cwd && (
-                  <div className="px-4 py-3 text-xs text-muted-foreground">
-                    No project open
-                  </div>
-                )}
-                {cwd && !notRepo && loading && files.length === 0 && (
-                  <div className="px-4 py-3 text-xs text-muted-foreground">
-                    Loading changes…
-                  </div>
-                )}
-                {cwd && !notRepo && error && (
-                  <div className="px-4 py-3 text-xs text-red-500">{error}</div>
-                )}
-                {cwd &&
-                  !notRepo &&
-                  !loading &&
-                  !error &&
-                  files.length === 0 && (
+              <WorkerPoolContextProvider
+                poolOptions={diffsWorkerPoolOptions}
+                highlighterOptions={diffsHighlighterOptions}
+              >
+                <ScrollArea className="min-h-0 flex-1">
+                  {!cwd && (
                     <div className="px-4 py-3 text-xs text-muted-foreground">
-                      No changes
+                      No project open
                     </div>
                   )}
-                {cwd && stagedFiles.length > 0 && (
-                  <FileGroup
-                    label="Staged Changes"
-                    count={stagedFiles.length}
-                    onActionAll={unstageAll}
-                    actionAllLabel="Unstage all"
-                    actionAllIcon={<Minus className="size-3.5" />}
-                    footer={
-                      hiddenStagedCount > 0 ? (
-                        <ShowMoreChangesButton
-                          hiddenCount={hiddenStagedCount}
-                          onClick={() =>
-                            setStagedListLimit(
-                              (limit) => limit + CHANGE_LIST_BATCH_SIZE
-                            )
-                          }
-                        />
-                      ) : null
-                    }
-                  >
-                    {visibleStagedFiles.map((c) => (
-                      <FileRow
-                        key={`staged-${c.path}`}
-                        cwd={cwd}
-                        file={c}
-                        actionIcon={<Minus className="size-3.5" />}
-                        actionLabel="Unstage"
-                        onAction={() => unstagePath(c.path)}
-                        onOpen={() => onOpenDiff(c.path, true)}
-                        onOpenFile={() => onOpenFile(c.path)}
-                        busy={busy}
-                      />
-                    ))}
-                  </FileGroup>
-                )}
-                {cwd && unstagedFiles.length > 0 && (
-                  <FileGroup
-                    label="Changes"
-                    count={unstagedFiles.length}
-                    onActionAll={stageAll}
-                    actionAllLabel="Stage all"
-                    actionAllIcon={<Plus className="size-3.5" />}
-                    secondaryActionAll={discardAllUnstaged}
-                    secondaryActionAllLabel="Discard all"
-                    secondaryActionAllIcon={<Undo2 className="size-3.5" />}
-                    footer={
-                      hiddenUnstagedCount > 0 ? (
-                        <ShowMoreChangesButton
-                          hiddenCount={hiddenUnstagedCount}
-                          onClick={() =>
-                            setUnstagedListLimit(
-                              (limit) => limit + CHANGE_LIST_BATCH_SIZE
-                            )
-                          }
-                        />
-                      ) : null
-                    }
-                  >
-                    {visibleUnstagedFiles.map((c) => (
-                      <FileRow
-                        key={`unstaged-${c.path}`}
-                        cwd={cwd}
-                        file={c}
-                        actionIcon={<Plus className="size-3.5" />}
-                        actionLabel="Stage"
-                        onAction={() => stagePath(c.path)}
-                        secondaryActionIcon={<Undo2 className="size-3.5" />}
-                        secondaryActionLabel="Discard changes"
-                        onSecondaryAction={() => discardPath(c.path)}
-                        onOpen={() => onOpenDiff(c.path, false)}
-                        onOpenFile={() => onOpenFile(c.path)}
-                        busy={busy}
-                      />
-                    ))}
-                  </FileGroup>
-                )}
-              </ScrollArea>
+                  {cwd && !notRepo && loading && files.length === 0 && (
+                    <div className="px-4 py-3 text-xs text-muted-foreground">
+                      Loading changes…
+                    </div>
+                  )}
+                  {cwd && !notRepo && error && (
+                    <div className="px-4 py-3 text-xs text-red-500">
+                      {error}
+                    </div>
+                  )}
+                  {cwd &&
+                    !notRepo &&
+                    !loading &&
+                    !error &&
+                    files.length === 0 && (
+                      <div className="px-4 py-3 text-xs text-muted-foreground">
+                        No changes
+                      </div>
+                    )}
+                  {cwd && stagedFiles.length > 0 && (
+                    <FileGroup
+                      label="Staged Changes"
+                      count={stagedFiles.length}
+                      onActionAll={unstageAll}
+                      actionAllLabel="Unstage all"
+                      actionAllIcon={<Minus className="size-3.5" />}
+                      trailing={
+                        inspectionEnabled ? (
+                          <DiffViewHeaderActions
+                            splitView={inlineDiffViewMode === "split"}
+                            onToggleSplitView={toggleDiffViewMode}
+                            onCollapseAll={() =>
+                              collapseSectionDiffs(stagedDiffKeys)
+                            }
+                          />
+                        ) : undefined
+                      }
+                      footer={
+                        hiddenStagedCount > 0 ? (
+                          <ShowMoreChangesButton
+                            hiddenCount={hiddenStagedCount}
+                            onClick={() =>
+                              setStagedListLimit(
+                                (limit) => limit + CHANGE_LIST_BATCH_SIZE
+                              )
+                            }
+                          />
+                        ) : null
+                      }
+                    >
+                      {visibleStagedFiles.map((c) => {
+                        const diffKey = `staged:${c.path}`
+                        return (
+                          <InlineDiffRow
+                            key={diffKey}
+                            cwd={cwd}
+                            file={c}
+                            expanded={
+                              inspectionEnabled && expandedDiffKeys.has(diffKey)
+                            }
+                            actionIcon={<Minus className="size-3.5" />}
+                            actionLabel="Unstage"
+                            onAction={() => unstagePath(c.path)}
+                            onOpen={() => inspectDiff(c.path, true)}
+                            onOpenFile={() => inspectFile(c.path, "git")}
+                            viewMode={inlineDiffViewMode}
+                            busy={busy}
+                          />
+                        )
+                      })}
+                    </FileGroup>
+                  )}
+                  {cwd && unstagedFiles.length > 0 && (
+                    <FileGroup
+                      label="Changes"
+                      count={unstagedFiles.length}
+                      onActionAll={stageAll}
+                      actionAllLabel="Stage all"
+                      actionAllIcon={<Plus className="size-3.5" />}
+                      trailing={
+                        inspectionEnabled ? (
+                          <DiffViewHeaderActions
+                            splitView={inlineDiffViewMode === "split"}
+                            onToggleSplitView={toggleDiffViewMode}
+                            onCollapseAll={() =>
+                              collapseSectionDiffs(unstagedDiffKeys)
+                            }
+                          />
+                        ) : undefined
+                      }
+                      secondaryActionAll={discardAllUnstaged}
+                      secondaryActionAllLabel="Discard all"
+                      secondaryActionAllIcon={<Undo2 className="size-3.5" />}
+                      footer={
+                        hiddenUnstagedCount > 0 ? (
+                          <ShowMoreChangesButton
+                            hiddenCount={hiddenUnstagedCount}
+                            onClick={() =>
+                              setUnstagedListLimit(
+                                (limit) => limit + CHANGE_LIST_BATCH_SIZE
+                              )
+                            }
+                          />
+                        ) : null
+                      }
+                    >
+                      {visibleUnstagedFiles.map((c) => {
+                        const diffKey = `working:${c.path}`
+                        return (
+                          <InlineDiffRow
+                            key={diffKey}
+                            cwd={cwd}
+                            file={c}
+                            expanded={
+                              inspectionEnabled && expandedDiffKeys.has(diffKey)
+                            }
+                            actionIcon={<Plus className="size-3.5" />}
+                            actionLabel="Stage"
+                            onAction={() => stagePath(c.path)}
+                            secondaryActionIcon={<Undo2 className="size-3.5" />}
+                            secondaryActionLabel="Discard changes"
+                            onSecondaryAction={() => discardPath(c.path)}
+                            onOpen={() => inspectDiff(c.path, false)}
+                            onOpenFile={() => inspectFile(c.path, "git")}
+                            viewMode={inlineDiffViewMode}
+                            busy={busy}
+                          />
+                        )
+                      })}
+                    </FileGroup>
+                  )}
+                </ScrollArea>
+              </WorkerPoolContextProvider>
             </TabsContent>
             {SHOW_GIT_SUBTABS && (
               <>
@@ -1298,7 +1729,7 @@ export const RightSidebar = memo(function RightSidebar({
             <FilesTree
               cwd={cwd}
               activePath={activeFilePath}
-              onOpenFile={onOpenFile}
+              onOpenFile={(path) => inspectFile(path, "files")}
             />
           ) : (
             <div className="px-4 py-3 text-xs text-muted-foreground">
@@ -1324,7 +1755,7 @@ export const RightSidebar = memo(function RightSidebar({
         loading={notesQuery.isLoading}
         onSaved={handleNoteSaved}
         open={notesOpen}
-        onOpenChange={setNotesOpen}
+        onOpenChange={handleNotesOpenChange}
       />
     </div>
   )
@@ -2239,6 +2670,7 @@ function FileGroup({
   secondaryActionAll,
   secondaryActionAllLabel,
   secondaryActionAllIcon,
+  trailing,
   footer,
   children,
 }: {
@@ -2250,56 +2682,97 @@ function FileGroup({
   secondaryActionAll?: () => void
   secondaryActionAllLabel?: string
   secondaryActionAllIcon?: React.ReactNode
+  trailing?: React.ReactNode
   footer?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
-    <div className="group/section">
-      <div className="flex h-7 items-center gap-2 border-y border-border bg-card/80 px-3 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+    <div className="group/section px-3 pb-1">
+      <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-sidebar px-1 pt-2.5 pb-1.5 text-xs font-medium">
         <span>{label}</span>
-        <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-          {count}
-        </Badge>
-        <div className="ml-auto flex items-center gap-0.5">
+        <span className="text-muted-foreground tabular-nums">{count}</span>
+        <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/section:opacity-100 group-hover/section:opacity-100">
+          {trailing}
           {secondaryActionAll && secondaryActionAllLabel && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={secondaryActionAll}
-                    aria-label={secondaryActionAllLabel}
-                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
-                  >
-                    {secondaryActionAllIcon}
-                  </button>
-                }
-              />
-              <TooltipContent>{secondaryActionAllLabel}</TooltipContent>
-            </Tooltip>
+            <GroupHeaderButton
+              label={secondaryActionAllLabel}
+              icon={secondaryActionAllIcon}
+              onClick={secondaryActionAll}
+            />
           )}
           {onActionAll && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={onActionAll}
-                    aria-label={actionAllLabel}
-                    className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
-                  >
-                    {actionAllIcon}
-                  </button>
-                }
-              />
-              <TooltipContent>{actionAllLabel}</TooltipContent>
-            </Tooltip>
+            <GroupHeaderButton
+              label={actionAllLabel}
+              icon={actionAllIcon}
+              onClick={onActionAll}
+            />
           )}
         </div>
       </div>
-      <ul>{children}</ul>
-      {footer}
+      <div className="overflow-hidden rounded-lg border border-border/70 bg-card/40">
+        <ul className="divide-y divide-border/60">{children}</ul>
+        {footer}
+      </div>
     </div>
+  )
+}
+
+function DiffViewHeaderActions({
+  splitView,
+  onToggleSplitView,
+  onCollapseAll,
+}: {
+  splitView: boolean
+  onToggleSplitView: () => void
+  onCollapseAll: () => void
+}) {
+  return (
+    <>
+      <GroupHeaderButton
+        label={splitView ? "Unified view" : "Split view"}
+        icon={
+          splitView ? (
+            <Rows2 className="size-3.5" />
+          ) : (
+            <Columns2 className="size-3.5" />
+          )
+        }
+        onClick={onToggleSplitView}
+      />
+      <GroupHeaderButton
+        label="Collapse all"
+        icon={<ChevronsDownUp className="size-3.5" />}
+        onClick={onCollapseAll}
+      />
+    </>
+  )
+}
+
+function GroupHeaderButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string
+  icon: React.ReactNode
+  onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={label}
+            className="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/15 hover:text-foreground"
+          >
+            {icon}
+          </button>
+        }
+      />
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -2311,11 +2784,11 @@ function ShowMoreChangesButton({
   onClick: () => void
 }) {
   return (
-    <div className="border-t border-border/60 px-3 py-2">
+    <div className="border-t border-border/60 p-1">
       <button
         type="button"
         onClick={onClick}
-        className="w-full rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+        className="w-full rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
       >
         Show {Math.min(hiddenCount, CHANGE_LIST_BATCH_SIZE)} more of{" "}
         {hiddenCount}
@@ -2334,7 +2807,7 @@ function DiffStats({
   if (additions === undefined && deletions === undefined) return null
 
   return (
-    <div className="flex shrink-0 items-center gap-2 font-mono text-xs font-bold tabular-nums">
+    <div className="flex shrink-0 items-center gap-1.5 font-mono text-xs font-medium tabular-nums">
       <span className="text-[#00c896]">+{additions ?? 0}</span>
       <span className="text-rose-400">-{deletions ?? 0}</span>
     </div>
@@ -2360,12 +2833,60 @@ function TruncatedPathLabel({ path }: { path: string }) {
         delay={3000}
         render={
           <span ref={observe} className="min-w-0 flex-1 truncate font-mono">
-            {path}
+            {path.includes("/") && (
+              <span className="text-muted-foreground">
+                {path.slice(0, path.lastIndexOf("/") + 1)}
+              </span>
+            )}
+            {path.slice(path.lastIndexOf("/") + 1)}
           </span>
         }
       />
       <TooltipContent className="font-mono break-all">{path}</TooltipContent>
     </Tooltip>
+  )
+}
+
+type FileRowProps = {
+  cwd: string
+  file: GitFile
+  actionIcon: React.ReactNode
+  actionLabel: string
+  onAction: () => void
+  secondaryActionIcon?: React.ReactNode
+  secondaryActionLabel?: string
+  onSecondaryAction?: () => void
+  onOpen: () => void
+  onOpenFile: () => void
+  busy: boolean
+}
+
+function InlineDiffRow({
+  expanded,
+  viewMode,
+  ...rowProps
+}: FileRowProps & {
+  expanded: boolean
+  viewMode: "unified" | "split"
+}) {
+  return (
+    <>
+      <FileRow {...rowProps} />
+      {expanded && (
+        <li className="bg-background">
+          <SingleFileDiff
+            cwd={rowProps.cwd}
+            path={rowProps.file.path}
+            staged={rowProps.file.staged}
+            viewMode={viewMode}
+            onOpenFile={rowProps.onOpenFile}
+            sharedWorkerPool
+            hideFileHeader
+            fitContent
+          />
+        </li>
+      )}
+    </>
   )
 }
 
@@ -2381,19 +2902,7 @@ function FileRow({
   onOpen,
   onOpenFile,
   busy,
-}: {
-  cwd: string
-  file: GitFile
-  actionIcon: React.ReactNode
-  actionLabel: string
-  onAction: () => void
-  secondaryActionIcon?: React.ReactNode
-  secondaryActionLabel?: string
-  onSecondaryAction?: () => void
-  onOpen: () => void
-  onOpenFile: () => void
-  busy: boolean
-}) {
+}: FileRowProps) {
   const fileAbsPath = absolutePath(cwd, file.path)
 
   return (
@@ -2404,23 +2913,25 @@ function FileRow({
             draggable
             onDragStart={(e) => setPathDragData(e.dataTransfer, [fileAbsPath])}
             onClick={onOpen}
-            className="group/row flex cursor-pointer items-center border-b border-border/70 px-4 py-1.5 text-xs hover:bg-accent/40"
+            className="group/row flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent/40"
           >
-            <span
-              className={cn(
-                "w-4 shrink-0 text-center font-mono font-medium",
-                STATUS_STYLES[file.status] ?? "text-muted-foreground"
-              )}
-            >
-              {file.status}
-            </span>
             <FileIcon
               name={file.path.split("/").pop() ?? file.path}
-              className="mx-2 size-4 shrink-0"
+              className="size-4 shrink-0"
             />
             <TruncatedPathLabel path={file.path} />
-            <div className="relative flex h-5 min-w-14 shrink-0 items-center justify-end">
-              <div className="transition-opacity group-hover/row:opacity-0">
+            <div className="relative flex h-5 shrink-0 items-center justify-end">
+              <div className="flex items-center gap-2 transition-opacity group-hover/row:opacity-0">
+                {STATUS_LABELS[file.status] && (
+                  <span
+                    className={cn(
+                      "text-[11px]",
+                      STATUS_STYLES[file.status] ?? "text-muted-foreground"
+                    )}
+                  >
+                    {STATUS_LABELS[file.status]}
+                  </span>
+                )}
                 <DiffStats
                   additions={file.additions}
                   deletions={file.deletions}

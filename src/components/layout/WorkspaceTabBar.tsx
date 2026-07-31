@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import {
   FileDiff,
+  GitBranch,
   GitCommitVertical,
   MonitorPlay,
   Plus,
@@ -42,13 +43,7 @@ import {
   AGENT_TERMINAL_LABELS,
   AGENT_TERMINAL_NAMES,
 } from "@/lib/agentTerminalOptions"
-import type {
-  RuntimeAgentName,
-  TerminalAgentName,
-  TerminalPane,
-  TerminalTab,
-  WorkspaceTab,
-} from "./types"
+import type { TerminalAgentName, TerminalTab, WorkspaceTab } from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -124,13 +119,7 @@ type TabItemProps = {
   onOpenInVSCode?: () => void
 }
 
-function TabIcon({
-  tab,
-  agentName,
-}: {
-  tab: WorkspaceTab
-  agentName?: RuntimeAgentName
-}) {
+export function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
   if (tab.kind === "commit")
     return <GitCommitVertical className="size-3.5 shrink-0" />
@@ -144,11 +133,58 @@ function TabIcon({
       />
     )
   }
+  const activePane =
+    tab.panes.find((pane) => pane.id === tab.activePaneId) ?? tab.panes[0]
+  const agentName = terminalAgentIsActive(activePane?.agentStatus)
+    ? activePane?.agentStatus?.agentName
+    : undefined
   // An active agent's brand icon stands in for the generic terminal icon.
   if (hasAgentIcon(agentName)) {
     return <AgentIcon agent={agentName} className="size-3.5" />
   }
   return <TerminalSquare className="size-3.5 shrink-0" />
+}
+
+export function WorkspaceTitleBar({
+  title,
+  branch,
+  trailing,
+  leading,
+  draggable = false,
+}: {
+  title: string
+  branch?: string | null
+  trailing?: ReactNode
+  leading?: ReactNode
+  draggable?: boolean
+}) {
+  return (
+    <div
+      data-terminal-tab-drop-target="true"
+      className={cn(
+        "flex h-[38px] shrink-0 items-stretch pt-1",
+        draggable && "[-webkit-app-region:drag]"
+      )}
+    >
+      {leading && <div className="flex shrink-0 items-center">{leading}</div>}
+      <div
+        title={branch ? `${title} · ${branch}` : title}
+        className="pointer-events-none flex min-w-0 flex-1 items-center justify-start gap-2 px-3 text-xs font-medium"
+      >
+        <span className="truncate text-foreground dark:text-white/85">
+          {title}
+        </span>
+        {branch ? (
+          <span className="flex min-w-0 items-center gap-1 text-foreground/75 dark:text-white/65">
+            <span aria-hidden="true">·</span>
+            <GitBranch className="size-3 shrink-0" />
+            <span className="truncate">{branch}</span>
+          </span>
+        ) : null}
+      </div>
+      {trailing && <div className="flex shrink-0 items-center">{trailing}</div>}
+    </div>
+  )
 }
 
 function WorkspaceTabItem({
@@ -183,19 +219,6 @@ function WorkspaceTabItem({
   const hasWorkingAgent = isTerminal && agentState === "working"
   const hasAttentionAgent = isTerminal && agentState === "blocked"
   const hasDoneAgent = isTerminal && agentState === "done"
-  // The brand icon of the agent active in the *focused* pane (running, working,
-  // or waiting on the user) — matching how the tab title tracks the active
-  // pane. A focused pane with no agent shows the generic terminal icon, even if
-  // a sibling split pane is running an agent.
-  const paneAgent = (pane: TerminalPane | undefined) => {
-    if (!pane || !terminalAgentIsActive(pane.agentStatus)) return undefined
-    return pane.agentStatus?.agentName
-  }
-  const activeAgentName = isTerminal
-    ? paneAgent(
-        t.panes.find((pane) => pane.id === t.activePaneId) ?? t.panes[0]
-      )
-    : undefined
   const {
     attributes,
     listeners,
@@ -239,7 +262,7 @@ function WorkspaceTabItem({
         {...attributes}
         {...listeners}
       >
-        <TabIcon tab={t} agentName={activeAgentName} />
+        <WorkspaceTabIcon tab={t} />
         {hasWorkingAgent ? (
           <AgentSpinner className="-ml-1" />
         ) : hasAttentionAgent ? (
@@ -303,14 +326,10 @@ function WorkspaceTabItem({
             <ContextMenuSeparator />
           </>
         )}
-        {isPreview && (
-          <>
-            <ContextMenuItem onClick={() => onPin?.(t.id)}>
-              Keep Open
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )}
+        <ContextMenuItem onClick={() => onPin?.(t.id)}>
+          {t.pinned ? "Unpin Tab" : "Pin Tab"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onClose?.(t.id)}>Close</ContextMenuItem>
         <ContextMenuItem
           onClick={() => onCloseToRight?.(t.id)}

@@ -4136,6 +4136,10 @@ app.whenReady().then(async () => {
     return appDb.latestByProject()
   })
 
+  ipcMain.handle("term:history:latestBySession", async () => {
+    return appDb.latestBySession()
+  })
+
   ipcMain.handle("term:notes:get", async (_e, projectId: string) => {
     if (!projectId) return null
     return appDb.getProjectNote(projectId)

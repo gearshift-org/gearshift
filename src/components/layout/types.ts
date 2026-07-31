@@ -83,6 +83,8 @@ export type TerminalTab = {
   name: string
   /** User-set name; overrides everything else when present. */
   customName?: string
+  /** Keeps this tab above unpinned tabs in project tab lists. */
+  pinned?: boolean
   panes: TerminalPane[]
   /** Which pane currently has focus. */
   activePaneId: string
@@ -124,6 +126,7 @@ export type DiffTab = {
   staged: boolean
   /** True when opened as a "preview" — gets replaced by the next preview open. */
   preview?: boolean
+  pinned?: boolean
 }
 
 export type FileTab = {
@@ -134,6 +137,7 @@ export type FileTab = {
   path: string
   /** True when opened as a "preview" — gets replaced by the next preview open. */
   preview?: boolean
+  pinned?: boolean
 }
 
 export type CommitTab = {
@@ -146,6 +150,7 @@ export type CommitTab = {
   shortHash: string
   /** True when opened as a "preview" — gets replaced by the next preview open. */
   preview?: boolean
+  pinned?: boolean
 }
 
 export type DevPreviewTab = {
@@ -154,6 +159,7 @@ export type DevPreviewTab = {
   name: string
   /** Local dev-server URL rendered in the in-app preview. */
   url: string
+  pinned?: boolean
 }
 
 export type WorkspaceTab =

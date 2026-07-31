@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   detectAgentOutputFallbackSignal,
   detectAgentTitleFallbackSignal,
+  lastSubmittedTerminalTabId,
   projectAgentState,
   terminalAgentState,
   terminalTabAgentState,
@@ -112,6 +113,20 @@ describe("agent status semantics", () => {
         agentNeedsAttention: true,
       })
     ).toBe("unknown")
+  })
+
+  test("finds the terminal tab with the latest submitted message", () => {
+    const older = terminalTab([
+      { running: true, working: false, lastSubmitAt: 100 },
+    ])
+    older.id = "older"
+    const latest = terminalTab([
+      { running: true, working: false, lastSubmitAt: 200 },
+    ])
+    latest.id = "latest"
+
+    expect(lastSubmittedTerminalTabId([older, latest])).toBe("latest")
+    expect(lastSubmittedTerminalTabId([])).toBeNull()
   })
 })
 

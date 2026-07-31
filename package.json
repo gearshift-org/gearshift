@@ -1,7 +1,7 @@
 {
   "name": "gearshift",
   "private": true,
-  "version": "0.0.47",
+  "version": "0.0.48",
   "type": "module",
   "main": "dist-electron/main.js",
   "bin": {

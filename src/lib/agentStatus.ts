@@ -1,6 +1,6 @@
 import type {
   Project,
-  TerminalAgentName,
+  RuntimeAgentName,
   TerminalAgentStatus,
   TerminalPane,
   WorkspaceTab,
@@ -59,6 +59,24 @@ export function terminalTabAgentState(tab: WorkspaceTab): TerminalAgentState {
     (state, pane) => higherPriorityState(state, terminalPaneAgentState(pane)),
     "unknown"
   )
+}
+
+export function lastSubmittedTerminalTabId(
+  tabs: WorkspaceTab[]
+): string | null {
+  let latestTabId: string | null = null
+  let latestSubmitAt = 0
+  for (const tab of tabs) {
+    if (tab.kind !== "terminal") continue
+    for (const pane of tab.panes) {
+      const submittedAt = pane.agentStatus?.lastSubmitAt ?? 0
+      if (submittedAt > latestSubmitAt) {
+        latestSubmitAt = submittedAt
+        latestTabId = tab.id
+      }
+    }
+  }
+  return latestTabId
 }
 
 function projectHasTerminalPane(project: Project): boolean {
@@ -133,7 +151,7 @@ function normalizeSignalText(value: string): string {
 }
 
 export function detectAgentTitleFallbackSignal(
-  agentName: TerminalAgentName | undefined,
+  agentName: RuntimeAgentName | undefined,
   title: string
 ): AgentFallbackSignal | null {
   const trimmed = title.trim()
@@ -152,7 +170,7 @@ export function detectAgentTitleFallbackSignal(
 }
 
 export function detectAgentOutputFallbackSignal(
-  agentName: TerminalAgentName | undefined,
+  agentName: RuntimeAgentName | undefined,
   chunk: string
 ): AgentFallbackSignal | null {
   const text = normalizeSignalText(chunk.slice(-8000))

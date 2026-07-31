@@ -1,5 +1,12 @@
 import * as React from "react"
-import { PanelTop, History, Files, MessageSquare } from "lucide-react"
+import {
+  PanelTop,
+  History,
+  Files,
+  FolderTree,
+  MessageSquare,
+  Bell,
+} from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import {
   loadAutoHideTitleBar,
@@ -12,12 +19,16 @@ import {
   saveHistoryRetentionDays,
   loadProjectSidebarChatEnabled,
   saveProjectSidebarChatEnabled,
+  loadProjectSidebarTabsEnabled,
+  saveProjectSidebarTabsEnabled,
+  loadInAppAgentNotificationsEnabled,
+  saveInAppAgentNotificationsEnabled,
   HISTORY_RETENTION_DEFAULT_DAYS,
   HISTORY_RETENTION_MIN_DAYS,
 } from "@/lib/projects"
-import { cn } from "@/lib/utils"
 import { store } from "@/lib/store"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 
 type SettingToggleProps = {
   icon: LucideIcon
@@ -35,13 +46,7 @@ function SettingToggle({
   onChange,
 }: SettingToggleProps) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
-    >
+    <label className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium text-foreground">
@@ -51,21 +56,8 @@ function SettingToggle({
           {description}
         </span>
       </span>
-      <span
-        className={cn(
-          "relative h-5 w-9 shrink-0 rounded-full border border-border transition-colors",
-          checked ? "bg-primary" : "bg-muted"
-        )}
-        aria-hidden="true"
-      >
-        <span
-          className={cn(
-            "absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-background shadow-sm transition-transform",
-            checked ? "translate-x-4" : "translate-x-0.5"
-          )}
-        />
-      </span>
-    </button>
+      <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
+    </label>
   )
 }
 
@@ -85,6 +77,12 @@ export function GeneralPanel() {
   const [projectSidebarChat, setProjectSidebarChat] = React.useState(() =>
     loadProjectSidebarChatEnabled()
   )
+  const [projectSidebarTabs, setProjectSidebarTabs] = React.useState(() =>
+    loadProjectSidebarTabsEnabled()
+  )
+  const [inAppAgentNotifications, setInAppAgentNotifications] = React.useState(
+    () => loadInAppAgentNotificationsEnabled()
+  )
   React.useEffect(
     () =>
       store.onReady(() => {
@@ -93,6 +91,8 @@ export function GeneralPanel() {
         setRetentionEnabled(loadHistoryRetentionEnabled())
         setRetentionDays(String(loadHistoryRetentionDays()))
         setProjectSidebarChat(loadProjectSidebarChatEnabled())
+        setProjectSidebarTabs(loadProjectSidebarTabsEnabled())
+        setInAppAgentNotifications(loadInAppAgentNotificationsEnabled())
       }),
     []
   )
@@ -117,6 +117,16 @@ export function GeneralPanel() {
     saveProjectSidebarChatEnabled(enabled)
   }
 
+  const updateProjectSidebarTabs = (enabled: boolean) => {
+    setProjectSidebarTabs(enabled)
+    saveProjectSidebarTabsEnabled(enabled)
+  }
+
+  const updateInAppAgentNotifications = (enabled: boolean) => {
+    setInAppAgentNotifications(enabled)
+    saveInAppAgentNotificationsEnabled(enabled)
+  }
+
   const commitRetentionDays = (raw: string) => {
     const parsed = Math.floor(Number(raw))
     const next =
@@ -138,6 +148,13 @@ export function GeneralPanel() {
 
       <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-background">
         <SettingToggle
+          icon={Bell}
+          label="In-app agent notifications"
+          description="Show a notification card when a background agent finishes or needs input. Desktop notifications remain enabled."
+          checked={inAppAgentNotifications}
+          onChange={updateInAppAgentNotifications}
+        />
+        <SettingToggle
           icon={PanelTop}
           label="Auto-hide title bar"
           description="Hide the title bar and traffic lights after a short delay. Hover the top edge to slide it back down."
@@ -152,9 +169,16 @@ export function GeneralPanel() {
           onChange={updateProjectSidebarChat}
         />
         <SettingToggle
+          icon={FolderTree}
+          label="Show project tabs in sidebar"
+          description="Show the active project's open tabs below its folder in the project sidebar."
+          checked={projectSidebarTabs}
+          onChange={updateProjectSidebarTabs}
+        />
+        <SettingToggle
           icon={Files}
           label="Open each commit in its own tab"
-          description="Open every commit in a new tab instead of reusing one commit preview tab. File, diff, and dev previews always reuse one tab."
+          description="Open every commit in a new tab instead of reusing one commit preview tab. File, diff, and dev previews reuse one tab."
           checked={openFilesInOwnTab}
           onChange={updateOpenFilesInOwnTab}
         />

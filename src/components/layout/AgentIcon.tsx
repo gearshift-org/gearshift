@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import type { TerminalAgentName } from "./types"
+import type { RuntimeAgentName } from "./types"
 import { AGENT_SVG } from "./agentIcons"
 
 /**
@@ -10,7 +10,7 @@ export function AgentIcon({
   agent,
   className,
 }: {
-  agent: TerminalAgentName | undefined
+  agent: RuntimeAgentName | undefined
   className?: string
 }) {
   const svg = agent ? AGENT_SVG[agent] : undefined

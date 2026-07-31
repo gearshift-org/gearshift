@@ -2,11 +2,17 @@ import { describe, expect, test } from "bun:test"
 import {
   detectAgentOutputFallbackSignal,
   detectAgentTitleFallbackSignal,
+  lastSubmittedTerminalTabId,
   projectAgentState,
   terminalAgentState,
   terminalTabAgentState,
 } from "../src/lib/agentStatus"
-import type { Project, TerminalTab } from "../src/components/layout/types"
+import { toStoredAgentStatus } from "../src/lib/projects"
+import {
+  mergeRuntimeAgentName,
+  type Project,
+  type TerminalTab,
+} from "../src/components/layout/types"
 
 function terminalTab(
   statuses: TerminalTab["panes"][number]["agentStatus"][]
@@ -108,6 +114,20 @@ describe("agent status semantics", () => {
       })
     ).toBe("unknown")
   })
+
+  test("finds the terminal tab with the latest submitted message", () => {
+    const older = terminalTab([
+      { running: true, working: false, lastSubmitAt: 100 },
+    ])
+    older.id = "older"
+    const latest = terminalTab([
+      { running: true, working: false, lastSubmitAt: 200 },
+    ])
+    latest.id = "latest"
+
+    expect(lastSubmittedTerminalTabId([older, latest])).toBe("latest")
+    expect(lastSubmittedTerminalTabId([])).toBeNull()
+  })
 })
 
 describe("agent fallback signals", () => {
@@ -149,5 +169,67 @@ describe("agent fallback signals", () => {
         "Which country would you like to choose?\n1. Japan\n2. Italy\n6. Type your own answer\n↑↓ select  enter submit  esc dismiss"
       )
     ).toBe("blocked")
+  })
+})
+
+describe("runtime agent identity", () => {
+  test("keeps grok when claude hooks mislabel an active grok session", () => {
+    expect(mergeRuntimeAgentName("grok", "claude", true)).toBe("grok")
+    expect(mergeRuntimeAgentName("grok", undefined, true)).toBe("grok")
+  })
+
+  test("allows agent changes when the session is no longer running", () => {
+    expect(mergeRuntimeAgentName("grok", undefined, false)).toBeUndefined()
+    expect(mergeRuntimeAgentName("claude", "codex", false)).toBe("codex")
+  })
+})
+
+describe("agent status persistence", () => {
+  test("does not persist live states across restarts", () => {
+    expect(
+      toStoredAgentStatus(
+        {
+          running: true,
+          working: true,
+        },
+        { sessionActive: true }
+      )
+    ).toBeUndefined()
+
+    expect(
+      toStoredAgentStatus(
+        {
+          running: true,
+          working: false,
+          needsAttention: true,
+        },
+        { sessionActive: true }
+      )
+    ).toBeUndefined()
+  })
+
+  test("persists all agent status markers only while the terminal session is active", () => {
+    const status = {
+      running: true,
+      working: false,
+      completed: true,
+      completedAt: 200,
+      needsAttention: true,
+      workStartedAt: 100,
+      lastSubmitAt: 150,
+    }
+
+    expect(toStoredAgentStatus(status, { sessionActive: true })).toEqual({
+      completed: true,
+      completedAt: 200,
+      workStartedAt: 100,
+      lastSubmitAt: 150,
+    })
+
+    // Stopped/removed sessions drop the entire status subset (done, timestamps).
+    expect(
+      toStoredAgentStatus(status, { sessionActive: false })
+    ).toBeUndefined()
+    expect(toStoredAgentStatus(status)).toBeUndefined()
   })
 })

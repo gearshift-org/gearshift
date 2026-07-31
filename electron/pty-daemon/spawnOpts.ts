@@ -40,6 +40,12 @@ export function buildOpenOptions(opts: BuildOptions): ResolvedOpenOptions {
     COLORFGBG: colorFgBg,
     TERM_PROGRAM: "kitty",
   }
+  // The daemon may have been launched from an environment that disables ANSI
+  // color (e.g. a dev server started by an agent/script exporting NO_COLOR).
+  // Terminals we spawn are real interactive TUIs, so never inherit these.
+  for (const key of ["NO_COLOR", "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE"]) {
+    delete env[key]
+  }
   return {
     shell,
     args,

@@ -33,6 +33,10 @@ import { buildOpenOptions } from "./pty-daemon/spawnOpts"
 import * as appDb from "./db/appDb"
 import * as inputCapture from "./inputCapture"
 import {
+  supportedAgentName,
+  type DetectedAgentName,
+} from "./supportedAgentName"
+import {
   closeAgentHookServer,
   hookEnv,
   installAgentHooks,
@@ -91,7 +95,18 @@ type PullRequestInfo = {
 
 type AgentStatusInfo = {
   running: boolean
-  agentName?: TerminalAgentName
+  agentName?: DetectedAgentName
+}
+
+type RendererAgentStatusInfo = {
+  running: boolean
+  agentName?: DetectedAgentName
+}
+
+function toRendererAgentStatus(info: AgentStatusInfo): RendererAgentStatusInfo {
+  if (!info.running) return { running: false }
+  if (!info.agentName) return { running: true }
+  return { running: true, agentName: info.agentName }
 }
 
 app.setName("GearShift")
@@ -1388,55 +1403,6 @@ function isAllowlistedDotenv(name: string) {
   return name === ".env" || name.startsWith(".env.")
 }
 
-function supportedAgentName(command: string): AgentStatusInfo["agentName"] {
-  const lower = command.toLowerCase()
-  const tokens = lower.trim().split(/\s+/)
-  const basenames = tokens.map((token) =>
-    path.basename(token).replace(/\.(js|ts|mjs|cjs)$/, "")
-  )
-
-  // Path-component matches let us recognize agents launched via their node/bun
-  // wrappers, where the executable basename is just "node"/"bun" and only the
-  // script path identifies the agent (e.g. node /…/@anthropic-ai/claude-code/cli.js).
-  const hasPathSegment = (segment: string) =>
-    tokens.some(
-      (token) => token.includes(`/${segment}/`) || token.endsWith(`/${segment}`)
-    )
-
-  if (
-    basenames.some((base) => base === "claude" || base === "claude-code") ||
-    hasPathSegment("claude-code") ||
-    hasPathSegment("@anthropic-ai/claude-code")
-  ) {
-    return "claude"
-  }
-  if (
-    basenames.some((base) => base === "codex" || base === "codex-cli") ||
-    hasPathSegment("codex") ||
-    hasPathSegment("codex-cli") ||
-    hasPathSegment("@openai/codex")
-  ) {
-    return "codex"
-  }
-  if (
-    basenames.some((base) => base === "opencode") ||
-    hasPathSegment("opencode") ||
-    hasPathSegment("@opencode/cli") ||
-    hasPathSegment("sst/opencode")
-  ) {
-    return "opencode"
-  }
-  if (
-    basenames.some((base) => base === "pi") ||
-    hasPathSegment("pi-coding-agent") ||
-    hasPathSegment("@earendil-works/pi-coding-agent") ||
-    hasPathSegment("@mariozechner/pi-coding-agent")
-  ) {
-    return "pi"
-  }
-  return undefined
-}
-
 async function listProcessChildren(): Promise<
   Map<number, Array<{ pid: number; command: string }>>
 > {
@@ -1467,14 +1433,17 @@ async function detectPtyAgent(rootPid: number): Promise<AgentStatusInfo> {
     const childrenByParent = await listProcessChildren()
     const queue = [...(childrenByParent.get(rootPid) ?? [])]
     const seen = new Set<number>()
+    let firstMatch: DetectedAgentName | undefined
     while (queue.length > 0) {
       const proc = queue.shift()!
       if (seen.has(proc.pid)) continue
       seen.add(proc.pid)
       const agentName = supportedAgentName(proc.command)
-      if (agentName) return { running: true, agentName }
+      if (agentName === "grok") return { running: true, agentName: "grok" }
+      if (agentName && !firstMatch) firstMatch = agentName
       queue.push(...(childrenByParent.get(proc.pid) ?? []))
     }
+    if (firstMatch) return { running: true, agentName: firstMatch }
   } catch {
     // Process inspection is best-effort; the UI falls back to no agent.
   }
@@ -2061,6 +2030,60 @@ function isDefaultBranch(currentBranch: string, defaultBranch: string | null) {
   )
 }
 
+const PULL_REQUEST_LOOKUP_CACHE_MS = 30_000
+type PullRequestLookup = { raw: string; defaultBranch: string | null }
+const pullRequestLookupCache = new Map<
+  string,
+  { expiresAt: number; value: PullRequestLookup }
+>()
+const pullRequestLookupInFlight = new Map<string, Promise<PullRequestLookup>>()
+
+async function getPullRequestLookup(
+  cwd: string,
+  currentBranch: string,
+  gh: string,
+  env: NodeJS.ProcessEnv
+): Promise<PullRequestLookup> {
+  const key = `${cwd}\0${currentBranch}`
+  const cached = pullRequestLookupCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+
+  const existing = pullRequestLookupInFlight.get(key)
+  if (existing) return existing
+
+  const lookup = Promise.all([
+    execFileP(
+      gh,
+      [
+        "pr",
+        "list",
+        "--head",
+        currentBranch,
+        "--state",
+        "open",
+        "--json",
+        "number,id,title,url",
+        "--limit",
+        "1",
+      ],
+      { cwd, env, maxBuffer: 20 * 1024 * 1024 }
+    ).then((res) => res.stdout),
+    getDefaultBranch(cwd),
+  ]).then(([raw, defaultBranch]) => ({ raw, defaultBranch }))
+
+  pullRequestLookupInFlight.set(key, lookup)
+  try {
+    const value = await lookup
+    pullRequestLookupCache.set(key, {
+      expiresAt: Date.now() + PULL_REQUEST_LOOKUP_CACHE_MS,
+      value,
+    })
+    return value
+  } finally {
+    pullRequestLookupInFlight.delete(key)
+  }
+}
+
 function isPathInside(parent: string, child: string): boolean {
   const rel = path.relative(parent, child)
   return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel))
@@ -2168,6 +2191,12 @@ function parseGitStatus(
   }
 
   return { staged, unstaged }
+}
+
+// git prints one "* Unmerged path <file>" notice line per conflicted file
+// ahead of the actual patch; the diff parser can't handle them.
+function stripUnmergedNotices(patch: string): string {
+  return patch.replace(/^\* Unmerged path .*(?:\r?\n|$)/gm, "")
 }
 
 function isProbablyBinaryBuffer(buf: Buffer): boolean {
@@ -3477,25 +3506,12 @@ app.whenReady().then(async () => {
       }
 
       try {
-        const [raw, defaultBranch] = await Promise.all([
-          execFileP(
-            gh,
-            [
-              "pr",
-              "list",
-              "--head",
-              currentBranch,
-              "--state",
-              "open",
-              "--json",
-              "number,id,title,url",
-              "--limit",
-              "1",
-            ],
-            { cwd, env, maxBuffer: 20 * 1024 * 1024 }
-          ).then((res) => res.stdout),
-          getDefaultBranch(cwd),
-        ])
+        const { raw, defaultBranch } = await getPullRequestLookup(
+          cwd,
+          currentBranch,
+          gh,
+          env
+        )
         const pullRequest = parsePullRequest(raw)
         return {
           ok: true,
@@ -3878,6 +3894,22 @@ app.whenReady().then(async () => {
         if (staged) args.push("--cached")
         args.push("--", filePath)
         let patch = await runGitAllowExit1(cwd, args)
+        // A conflicted file yields a combined diff (`diff --cc`) — or, with
+        // --cached, only an "* Unmerged path" notice — neither of which the
+        // diff renderer can parse. Diff the working tree against "our" stage
+        // instead so conflict markers render as added lines (like GitHub
+        // Desktop), and strip the notice line git prepends.
+        if (/^(diff --cc|\* Unmerged path)/m.test(patch)) {
+          patch = stripUnmergedNotices(
+            await runGitAllowExit1(cwd, [
+              "diff",
+              "--no-color",
+              "--ours",
+              "--",
+              filePath,
+            ])
+          )
+        }
         // Empty result for an unstaged path may mean an untracked new file —
         // synthesize a diff vs /dev/null the way diffAll does.
         if (!patch.trim() && !staged) {
@@ -3931,8 +3963,12 @@ app.whenReady().then(async () => {
       return { ok: false, error: "no-cwd", unstagedPatch: "", stagedPatch: "" }
     }
     try {
-      const [unstagedRaw, stagedPatch, statusRaw] = await Promise.all([
-        runGit(cwd, ["diff", "--no-color"]),
+      // --ours: for conflicted files, diff the working tree against "our"
+      // stage as a normal unified diff (conflict markers show as added
+      // lines) instead of an unparseable combined diff. Identical to a plain
+      // diff when nothing is unmerged.
+      const [unstagedRaw, stagedRaw, statusRaw] = await Promise.all([
+        runGit(cwd, ["diff", "--no-color", "--ours"]),
         runGit(cwd, ["diff", "--no-color", "--cached"]),
         runGit(cwd, [
           "status",
@@ -3941,11 +3977,12 @@ app.whenReady().then(async () => {
           "--untracked-files=all",
         ]),
       ])
+      const stagedPatch = stripUnmergedNotices(stagedRaw)
       const untracked = parseGitStatus(statusRaw)
         .unstaged.filter((file) => file.status === "A")
         .map((file) => file.path)
       const untrackedPatch = await buildUntrackedPatch(cwd, untracked)
-      const unstagedPatch = [unstagedRaw, untrackedPatch]
+      const unstagedPatch = [stripUnmergedNotices(unstagedRaw), untrackedPatch]
         .filter(Boolean)
         .join("\n")
       return { ok: true, unstagedPatch, stagedPatch }
@@ -4059,8 +4096,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("term:agentStatus", async (_e, id: string) => {
     const pid = daemonClient?.getPid(id)
-    if (!pid) return { running: false } satisfies AgentStatusInfo
-    return detectPtyAgent(pid)
+    if (!pid) return { running: false } satisfies RendererAgentStatusInfo
+    return toRendererAgentStatus(await detectPtyAgent(pid))
   })
 
   ipcMain.handle(
@@ -4097,6 +4134,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("term:history:latestByProject", async () => {
     return appDb.latestByProject()
+  })
+
+  ipcMain.handle("term:history:latestBySession", async () => {
+    return appDb.latestBySession()
   })
 
   ipcMain.handle("term:notes:get", async (_e, projectId: string) => {

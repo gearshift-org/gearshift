@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
-import { Columns2, Eye, FileCode, Rows3 } from "lucide-react"
+import { Columns2, Eye, FileCode, Rows3, X } from "lucide-react"
 import {
   DndContext,
   DragOverlay,
@@ -51,6 +51,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { Button } from "@/components/ui/button"
 import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { AGENT_TERMINAL_LABELS } from "@/lib/agentTerminalOptions"
@@ -95,6 +96,7 @@ type Props = {
     direction: "horizontal" | "vertical"
   ) => void
   onClosePane?: (tabId: string, paneId: string) => void
+  onCloseTab?: (tabId: string) => void
   onFocusPane?: (tabId: string, paneId: string) => void
   onTerminalFocusChange?: (
     tabId: string,
@@ -910,6 +912,7 @@ function PaneContent({
         cwd={project.path}
         path={tab.path}
         staged={tab.staged}
+        isActive={isActive}
         viewMode={diffViewMode}
         mdMode={mdMode}
         onOpenFile={onOpenFile}
@@ -952,6 +955,7 @@ export function WorkspacePane({
   onAddTerminal,
   onSplitTerminal,
   onClosePane,
+  onCloseTab,
   onFocusPane,
   onTerminalFocusChange,
   onRenamePane,
@@ -1037,9 +1041,11 @@ export function WorkspacePane({
   }, [activeTab, isMediaDiffActive])
   // Only the diff tab benefits from a raw/preview switch on media — the
   // file tab always renders the media preview. So the toggle is shown when:
-  //   - active tab is a markdown file/diff (preview vs source), or
+  //   - active tab is a markdown file (preview vs source; markdown diffs
+  //     always show the raw diff), or
   //   - active tab is a media diff (preview media/PDF vs the textual diff)
-  const showMdToggle = isMarkdownActive || isMediaDiffActive
+  const showMdToggle =
+    (isMarkdownActive && activeTab?.kind === "file") || isMediaDiffActive
   const activeFileDirtyStatus = activeTab
     ? fileDirtyStatuses[activeTab.id]
     : undefined
@@ -1142,6 +1148,25 @@ export function WorkspacePane({
                 </TooltipContent>
               </Tooltip>
             )}
+            {activeTab &&
+              (activeTab.kind === "file" || activeTab.kind === "diff") && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onCloseTab?.(activeTab.id)}
+                        aria-label={`Close ${tabDisplayName(activeTab)}`}
+                      >
+                        <X />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Close preview</TooltipContent>
+                </Tooltip>
+              )}
           </div>
         </div>
       )}

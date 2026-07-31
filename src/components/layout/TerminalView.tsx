@@ -28,7 +28,12 @@ import {
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
-import type { TerminalAgentName, TerminalAgentStatus } from "./types"
+import { prepareAgentPaste } from "@/lib/terminalPaste"
+import {
+  mergeRuntimeAgentName,
+  type RuntimeAgentName,
+  type TerminalAgentStatus,
+} from "./types"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -68,7 +73,7 @@ type Props = {
 
 const DARK_THEME = {
   background: "#151515",
-  foreground: "#d4d4d4",
+  foreground: "#b2b2b2",
   cursor: "#d4d4d4",
   selectionBackground: "#264f78",
   selectionForeground: "#ffffff",
@@ -80,7 +85,7 @@ const DARK_THEME = {
   blue: "#2472c8",
   magenta: "#bc3fbc",
   cyan: "#11a8cd",
-  white: "#e5e5e5",
+  white: "#c6c6c6",
   // Bright variants — brightBlack drives zsh-autosuggestions "ghost" text.
   brightBlack: "#666666",
   brightRed: "#f14c4c",
@@ -89,7 +94,7 @@ const DARK_THEME = {
   brightBlue: "#3b8eea",
   brightMagenta: "#d670d6",
   brightCyan: "#29b8db",
-  brightWhite: "#fafafa",
+  brightWhite: "#d4d4d4",
 }
 const LIGHT_THEME = {
   background: "#f8f8f8",
@@ -139,14 +144,14 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-cool": {
       background: "#15181d",
-      foreground: "#d3d8e0",
+      foreground: "#b1b6bd",
       cursor: "#d3d8e0",
       selectionBackground: "#2d4a6b",
       selectionInactiveBackground: "#33414f",
     },
     "dark-warm": {
       background: "#1a1815",
-      foreground: "#d9d2c7",
+      foreground: "#b7b1a7",
       cursor: "#d9d2c7",
       selectionBackground: "#5c4a2e",
       selectionInactiveBackground: "#413a30",
@@ -177,21 +182,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-rose": {
       background: "#1d181a",
-      foreground: "#e0d2d6",
+      foreground: "#bdb1b5",
       cursor: "#e0d2d6",
       selectionBackground: "#6b2d42",
       selectionInactiveBackground: "#4a3338",
     },
     "dark-forest": {
       background: "#161916",
-      foreground: "#d2dbd0",
+      foreground: "#b0b8af",
       cursor: "#d2dbd0",
       selectionBackground: "#2d6b3a",
       selectionInactiveBackground: "#334a37",
     },
     "dark-violet": {
       background: "#19161f",
-      foreground: "#d8d2e0",
+      foreground: "#b6b1bd",
       cursor: "#d8d2e0",
       selectionBackground: "#4a2d6b",
       selectionInactiveBackground: "#3a3349",
@@ -222,21 +227,21 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-atom-one": {
       background: "#282c34",
-      foreground: "#abb2bf",
+      foreground: "#939aa6",
       cursor: "#abb2bf",
       selectionBackground: "#3e4451",
       selectionInactiveBackground: "#353b45",
     },
     "dark-nebula-pandas": {
       background: "#27273a",
-      foreground: "#fcf6ff",
+      foreground: "#d6d1dc",
       cursor: "#97ee91",
       selectionBackground: "#42557b",
       selectionInactiveBackground: "#353551",
     },
     "dark-night-owl": {
       background: "#011627",
-      foreground: "#d6deeb",
+      foreground: "#b0bac8",
       cursor: "#80a4c2",
       selectionBackground: "#1d3b53",
       selectionInactiveBackground: "#0b2942",
@@ -251,7 +256,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-palenight": {
       background: "#292d3e",
-      foreground: "#bfc7d5",
+      foreground: "#a4abba",
       cursor: "#7e57c2",
       selectionBackground: "#444a73",
       selectionInactiveBackground: "#3a3f58",
@@ -266,7 +271,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-material-color": {
       background: "#212121",
-      foreground: "#eeffff",
+      foreground: "#c9d7d7",
       cursor: "#82aaff",
       selectionBackground: "#404040",
       selectionInactiveBackground: "#333333",
@@ -281,7 +286,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-monokai-pro": {
       background: "#2d2a2e",
-      foreground: "#fcfcfa",
+      foreground: "#d7d6d5",
       cursor: "#78dce8",
       selectionBackground: "#5b595c",
       selectionInactiveBackground: "#403e41",
@@ -296,7 +301,7 @@ const TERMINAL_VARIANTS: Partial<Record<ThemeId, Partial<typeof DARK_THEME>>> =
     },
     "dark-claude": {
       background: "#262624",
-      foreground: "#c2c0b6",
+      foreground: "#a6a49c",
       cursor: "#d97757",
       selectionBackground: "#5c4030",
       selectionInactiveBackground: "#3f352e",
@@ -309,6 +314,8 @@ export function getTerminalTheme(themeId: ThemeId): typeof DARK_THEME {
   return overrides ? { ...base, ...overrides } : base
 }
 
+const SEARCH_HIGHLIGHT_LIMIT = 1000
+
 const SEARCH_DECORATIONS = {
   matchBackground: "#a8a8a833",
   matchBorder: "#a8a8a866",
@@ -316,6 +323,33 @@ const SEARCH_DECORATIONS = {
   activeMatchBackground: "#facc15aa",
   activeMatchBorder: "#facc15",
   activeMatchColorOverviewRuler: "#facc15",
+}
+
+type SearchAddonInternals = SearchAddon & {
+  _highlightTimeout?: { clear?: () => void }
+  _state?: {
+    reset?: () => void
+    clearCachedTerm?: () => void
+    lastSearchOptions?: unknown
+  }
+}
+
+function resetSearchAddon(search: SearchAddon) {
+  const internals = search as SearchAddonInternals
+
+  // xterm-search keeps a private write/resize debounce that can replay the
+  // previous search after the public clearDecorations() API runs. Codex redraws
+  // often, so cancel that pending work and clear the cached term/options too.
+  internals._highlightTimeout?.clear?.()
+  search.clearDecorations()
+  search.clearActiveDecoration()
+
+  if (internals._state?.reset) {
+    internals._state.reset()
+  } else if (internals._state) {
+    internals._state.clearCachedTerm?.()
+    internals._state.lastSearchOptions = undefined
+  }
 }
 
 // DEC private mode codes for color-scheme update notifications.
@@ -583,7 +617,13 @@ const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
 // advisory for normal working/done transitions. Strong blocked-prompt cues can
 // still override working because some TUIs ask inline questions without firing
 // a dedicated needs-attention hook.
-const HOOK_BACKED_AGENTS = new Set(["claude", "codex", "opencode", "pi"])
+const HOOK_BACKED_AGENTS = new Set([
+  "claude",
+  "codex",
+  "opencode",
+  "pi",
+  "grok",
+])
 
 function shouldSuppressLiveFit() {
   return LIVE_FIT_SUPPRESSING_BODY_CLASSES.some((className) =>
@@ -733,18 +773,17 @@ function pasteText(
   term: Terminal,
   sessionId: string,
   text: string,
-  agentName?: TerminalAgentName
+  agentName?: RuntimeAgentName,
+  multilineEnterSequence = "\x1b\r"
 ) {
   if (!text) return
 
-  if (agentName === "pi") {
-    // Pi treats pasted returns like submit. Convert pasted line breaks to the
-    // same modified Enter sequence used by Shift+Enter so multiline prompts
-    // stay in the composer instead of submitting each line.
-    const normalized = text.replace(/\r\n?/g, "\n").replace(/\n+$/g, "")
-    if (normalized) {
-      window.term.write(sessionId, normalized.split("\n").join("\x1b[13;2u"))
-    }
+  if (agentName) {
+    const prepared = prepareAgentPaste(
+      text,
+      agentName === "pi" ? "\x1b[13;2u" : multilineEnterSequence
+    )
+    if (prepared) window.term.write(sessionId, prepared)
     return
   }
 
@@ -754,7 +793,8 @@ function pasteText(
 async function pasteClipboard(
   term: Terminal,
   sessionId: string,
-  agentName?: TerminalAgentName
+  agentName?: RuntimeAgentName,
+  multilineEnterSequence = "\x1b\r"
 ) {
   try {
     if (await window.clipboardApi.hasImage()) {
@@ -773,7 +813,13 @@ async function pasteClipboard(
   } catch {
     // fall through to text paste
   }
-  pasteText(term, sessionId, await navigator.clipboard.readText(), agentName)
+  pasteText(
+    term,
+    sessionId,
+    await navigator.clipboard.readText(),
+    agentName,
+    multilineEnterSequence
+  )
   safeTerminalFocus(term)
 }
 
@@ -872,6 +918,7 @@ export function TerminalView({
   const commitCheckTimerRef = useRef<number | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
+  const modifiedEnterSequenceRef = useRef("\x1b\r")
 
   const [searchOpen, setSearchOpen] = useState(false)
   // Mirror of searchOpen for handlers created once at terminal init.
@@ -915,6 +962,24 @@ export function TerminalView({
     cwdRef.current = cwd
   }, [cwd])
 
+  const clearSearchDecorations = useCallback(() => {
+    const term = termRef.current
+    const refreshTerm = () => {
+      if (!term || termRef.current !== term || term.rows <= 0) return
+      term.refresh(0, term.rows - 1)
+    }
+    const search = searchRef.current
+    if (search) resetSearchAddon(search)
+    term?.clearSelection()
+    term?.element
+      ?.querySelectorAll(
+        ".xterm-find-result-decoration, .xterm-find-active-result-decoration"
+      )
+      .forEach((element) => element.remove())
+    refreshTerm()
+    requestAnimationFrame(refreshTerm)
+  }, [])
+
   const openSearch = useCallback(() => {
     setSearchOpen(true)
     searchOpenRef.current = true
@@ -927,10 +992,10 @@ export function TerminalView({
   const closeSearch = useCallback(() => {
     setSearchOpen(false)
     searchOpenRef.current = false
-    searchRef.current?.clearDecorations()
+    clearSearchDecorations()
     const term = termRef.current
     if (term) safeTerminalFocus(term)
-  }, [])
+  }, [clearSearchDecorations])
 
   useEffect(() => {
     onTitleChangeRef.current = onTitleChange
@@ -951,6 +1016,30 @@ export function TerminalView({
   const openDevPreview = useCallback((url: string) => {
     onOpenDevPreviewRef.current?.(url)
   }, [])
+
+  // AppShell clears a pane's completed / needs-attention markers when the user
+  // views the pane, but that clear only lives in parent state. Fold it back
+  // into the local status ref — otherwise the next emit that spreads the
+  // current status (status poll, session-title refresh, split-induced churn,
+  // Enter re-emit) resurrects the stale completed flag and the completion
+  // indicator/notification fires again for a turn the user already saw.
+  useEffect(() => {
+    if (!initialAgentStatus) return
+    const current = agentStatusRef.current
+    const clearedCompleted =
+      current.completed === true && initialAgentStatus.completed === false
+    const clearedAttention =
+      current.needsAttention === true &&
+      initialAgentStatus.needsAttention === false
+    if (!clearedCompleted && !clearedAttention) return
+    agentStatusRef.current = {
+      ...current,
+      ...(clearedCompleted
+        ? { completed: false, completedAt: undefined }
+        : null),
+      ...(clearedAttention ? { needsAttention: false } : null),
+    }
+  }, [initialAgentStatus])
 
   const emitAgentStatus = useCallback((next: TerminalAgentStatus) => {
     // Carry the last-known agent-native session id onto every status so it
@@ -986,7 +1075,7 @@ export function TerminalView({
   const refreshAgentSessionTitle = useCallback(async () => {
     const agent = agentStatusRef.current.agentName
     const agentSessionId = agentSessionIdRef.current
-    if (!agent || !agentSessionId) return
+    if (!agent || agent === "grok" || !agentSessionId) return
     try {
       const title = await window.term.agentSessionTitle({
         agent,
@@ -1084,7 +1173,7 @@ export function TerminalView({
   const applyFallbackAgentSignal = useCallback(
     (
       signal: AgentFallbackSignal | null,
-      source: "title" | "output" | "input"
+      source: "title" | "output" | "snapshot" | "input"
     ) => {
       if (!signal) return
       const shouldRespectHookAuthority =
@@ -1095,6 +1184,7 @@ export function TerminalView({
 
       const now = Date.now()
       if (signal === "blocked") {
+        if (source === "snapshot" && current.completed) return
         fallbackActiveTurnRef.current = true
         emitAgentStatus({
           ...current,
@@ -1108,6 +1198,19 @@ export function TerminalView({
       }
 
       if (signal === "working") {
+        // A spinner title before any prompt was submitted is TUI startup
+        // noise, not a turn — Codex animates a braille spinner while MCP
+        // servers handshake right after launch. Trusting it would light the
+        // busy indicator on a freshly opened idle agent, and the follow-up
+        // idle title would then mint a false completion.
+        if (
+          source !== "input" &&
+          !hasSubmittedToAgentRef.current &&
+          !fallbackActiveTurnRef.current &&
+          !current.working
+        ) {
+          return
+        }
         fallbackActiveTurnRef.current = true
         lastAgentActivityAtRef.current = now
         emitAgentStatus({
@@ -1122,6 +1225,20 @@ export function TerminalView({
       }
 
       if (source === "output") return
+      if (source === "snapshot") {
+        // Replayed history can only prove the agent is idle *now*. It must
+        // never mint a fresh completion (the turn may long since have been
+        // seen and dismissed) nor wipe a real unviewed completed marker.
+        fallbackActiveTurnRef.current = false
+        if (current.working || current.needsAttention) {
+          emitAgentStatus({
+            ...current,
+            working: false,
+            needsAttention: false,
+          })
+        }
+        return
+      }
       const hadFallbackTurn =
         fallbackActiveTurnRef.current ||
         current.working ||
@@ -1290,7 +1407,7 @@ export function TerminalView({
       },
     })
     const fit = new FitAddon()
-    const search = new SearchAddon()
+    const search = new SearchAddon({ highlightLimit: SEARCH_HIGHLIGHT_LIMIT })
     const webLinks = new WebLinksAddon((event, uri) => {
       openTerminalUrl(term, event, uri, openDevPreview)
     })
@@ -1347,7 +1464,9 @@ export function TerminalView({
       // the terminal. Every such re-run fires this event, so enforce the
       // invariant here: no decorations while the overlay is closed.
       if (!searchOpenRef.current) {
-        if (e.resultCount > 0) search.clearDecorations()
+        if (e.resultCount > 0) {
+          clearSearchDecorations()
+        }
         return
       }
       setSearchResults((prev) =>
@@ -1360,35 +1479,47 @@ export function TerminalView({
       )
     })
 
+    const afterSearchSub = search.onAfterSearch(() => {
+      // clearDecorations() inside onDidChangeResults runs before xterm-search
+      // writes its cached term back. Clear once more after closed searches so
+      // stale write/resize debounces cannot keep resurrecting highlights.
+      if (!searchOpenRef.current) {
+        clearSearchDecorations()
+      }
+    })
+
     // Snapshot replay paints historical PTY output into a fresh xterm instance.
     // It must be side-effect-free: xterm answers old terminal queries (DA,
     // XTVERSION, OSC color requests, DECRQSS, …) by firing `onData`. Feeding
     // those answers into the current shell makes them appear as prompt text.
     let replayingSnapshot = false
+    // Last window title parsed during snapshot replay; evaluated once after
+    // the replay finishes instead of feeding every historical title into the
+    // agent-status fallback detector.
+    let lastReplayedTitle: string | undefined
 
     // Use the legacy ESC+Enter newline sequence by default because Claude Code,
     // Codex, and OpenCode already understand it. If a TUI probes/enables
     // modified keyboard modes (like pi), switch Enter to an explicit modified
     // Enter sequence instead.
-    let modifiedEnterSequence = "\x1b\r"
     const kittyKeyboardQuerySub = term.parser.registerCsiHandler(
       { prefix: "?", final: "u" },
       () => {
-        if (!replayingSnapshot) modifiedEnterSequence = "\x1b[13;2u"
+        if (!replayingSnapshot) modifiedEnterSequenceRef.current = "\x1b[13;2u"
         return true
       }
     )
     const kittyKeyboardPushSub = term.parser.registerCsiHandler(
       { prefix: ">", final: "u" },
       () => {
-        if (!replayingSnapshot) modifiedEnterSequence = "\x1b[13;2u"
+        if (!replayingSnapshot) modifiedEnterSequenceRef.current = "\x1b[13;2u"
         return true
       }
     )
     const kittyKeyboardPopSub = term.parser.registerCsiHandler(
       { prefix: "<", final: "u" },
       () => {
-        if (!replayingSnapshot) modifiedEnterSequence = "\x1b\r"
+        if (!replayingSnapshot) modifiedEnterSequenceRef.current = "\x1b\r"
         return true
       }
     )
@@ -1399,7 +1530,8 @@ export function TerminalView({
         const second = Array.isArray(params[1]) ? params[1][0] : params[1]
         if (first !== 4) return false
         if (!replayingSnapshot) {
-          modifiedEnterSequence = second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
+          modifiedEnterSequenceRef.current =
+            second === 0 ? "\x1b\r" : "\x1b[27;2;13~"
         }
         return true
       }
@@ -1526,6 +1658,12 @@ export function TerminalView({
       const ctrl = e.ctrlKey
       const shift = e.shiftKey
 
+      if (searchOpenRef.current && key === "escape") {
+        e.preventDefault()
+        closeSearch()
+        return false
+      }
+
       // Cmd+F — open search overlay. Let Ctrl+F pass through to terminal
       // TUIs like OpenCode, where it can be an in-app shortcut.
       if (meta && !ctrl && !alt && !shift && key === "f") {
@@ -1546,7 +1684,12 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+          void pasteClipboard(
+            term,
+            sessionId,
+            agentStatusRef.current.agentName,
+            modifiedEnterSequenceRef.current
+          )
           return false
         }
         if (key === "a") {
@@ -1573,7 +1716,12 @@ export function TerminalView({
         }
         if (key === "v") {
           e.preventDefault()
-          void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+          void pasteClipboard(
+            term,
+            sessionId,
+            agentStatusRef.current.agentName,
+            modifiedEnterSequenceRef.current
+          )
           return false
         }
       }
@@ -1646,7 +1794,7 @@ export function TerminalView({
         const enterSequence =
           agentStatusRef.current.agentName === "pi"
             ? "\x1b[13;2u"
-            : modifiedEnterSequence
+            : modifiedEnterSequenceRef.current
         window.term.write(sessionId, enterSequence)
         return false
       }
@@ -1818,8 +1966,21 @@ export function TerminalView({
             current.agentName,
             terminalRecentBufferText(term)
           ),
-          "output"
+          "snapshot"
         )
+        // Evaluate only the final replayed title, and only as a "snapshot"
+        // signal — it reflects the agent's state as of the replayed history,
+        // so it may mark the pane working/blocked but never freshly completed.
+        if (lastReplayedTitle !== undefined) {
+          applyFallbackAgentSignal(
+            detectAgentTitleFallbackSignal(
+              agentStatusRef.current.agentName,
+              lastReplayedTitle
+            ),
+            "snapshot"
+          )
+          lastReplayedTitle = undefined
+        }
         if (colorSchemeSubscribedRef.current) writeColorSchemeReport()
         attachLiveData()
       })
@@ -1888,6 +2049,16 @@ export function TerminalView({
       if (displayTitle !== lastEmittedTitle) {
         lastEmittedTitle = displayTitle
         onTitleChangeRef.current?.(displayTitle)
+      }
+      // Snapshot replay re-parses historical title sequences (spinner titles
+      // from past turns followed by the final idle title), which would replay
+      // the whole working→idle transition into the fallback detector and mint
+      // a fresh "completed" for a turn the user already saw. Remember only the
+      // last replayed title; it is evaluated once after replay as a weak
+      // "snapshot" signal (see the snapshot() handler below).
+      if (replayingSnapshot) {
+        lastReplayedTitle = trimmed
+        return
       }
       const current = agentStatusRef.current
       applyFallbackAgentSignal(
@@ -2011,6 +2182,7 @@ export function TerminalView({
       inputSub.dispose()
       titleSub.dispose()
       resultsSub.dispose()
+      afterSearchSub.dispose()
       scrollSub.dispose()
       webLinks.dispose()
       kittyKeyboardQuerySub.dispose()
@@ -2044,6 +2216,8 @@ export function TerminalView({
   }, [
     sessionId,
     openSearch,
+    closeSearch,
+    clearSearchDecorations,
     openDevPreview,
     markAgentWorking,
     clearAgentWorking,
@@ -2059,11 +2233,22 @@ export function TerminalView({
         const term = termRef.current
         if (!term) return
         if (text) {
-          pasteText(term, sessionId, text, agentStatusRef.current.agentName)
+          pasteText(
+            term,
+            sessionId,
+            text,
+            agentStatusRef.current.agentName,
+            modifiedEnterSequenceRef.current
+          )
           safeTerminalFocus(term)
           return
         }
-        void pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+        void pasteClipboard(
+          term,
+          sessionId,
+          agentStatusRef.current.agentName,
+          modifiedEnterSequenceRef.current
+        )
       }),
     [sessionId]
   )
@@ -2105,6 +2290,22 @@ export function TerminalView({
 
     const refreshAgentStatus = async () => {
       try {
+        const statusBeforePoll = agentStatusRef.current
+        const hookIsAuthoritative =
+          activeHookWorkRef.current ||
+          Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
+        // Hook-backed agents already push lifecycle changes to the renderer.
+        // Avoid scanning the entire OS process table every two seconds while
+        // that stronger signal is active; the fallback poll resumes after the
+        // authority window in case a stop event was lost.
+        if (
+          hookIsAuthoritative &&
+          statusBeforePoll.running &&
+          statusBeforePoll.agentName &&
+          HOOK_BACKED_AGENTS.has(statusBeforePoll.agentName)
+        ) {
+          return
+        }
         const detected = await window.term.agentStatus(sessionId)
         if (cancelled) return
         const current = agentStatusRef.current
@@ -2125,10 +2326,15 @@ export function TerminalView({
         // must not downgrade running or working, since process detection
         // misses agents launched via node/bun wrappers.
         if (hookAuthoritative) {
+          const running = current.running || detected.running
           emitAgentStatus({
-            running: current.running || detected.running,
+            running,
             working: current.completed ? false : current.working,
-            agentName: current.agentName ?? detected.agentName,
+            agentName: mergeRuntimeAgentName(
+              current.agentName,
+              current.agentName ?? detected.agentName,
+              running
+            ),
             workStartedAt: current.workStartedAt,
             completedAt: current.completedAt,
             completed: current.completed,
@@ -2147,7 +2353,11 @@ export function TerminalView({
               ? false
               : current.working || recentlyActive
             : false,
-          agentName: detected.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            detected.agentName,
+            detected.running
+          ),
           workStartedAt:
             detected.running || current.completed
               ? current.workStartedAt
@@ -2248,7 +2458,11 @@ export function TerminalView({
         emitAgentStatus({
           running: true,
           working: true,
-          agentName: event.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            event.agentName,
+            true
+          ),
           workStartedAt: now,
           completedAt: undefined,
           completed: false,
@@ -2273,7 +2487,11 @@ export function TerminalView({
         emitAgentStatus({
           running: current.running || activeHookWorkRef.current,
           working: false,
-          agentName: event.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            event.agentName,
+            current.running || activeHookWorkRef.current
+          ),
           workStartedAt: current.workStartedAt,
           completedAt: undefined,
           completed: false,
@@ -2307,7 +2525,11 @@ export function TerminalView({
         emitAgentStatus({
           ...current,
           working: false,
-          agentName: event.agentName,
+          agentName: mergeRuntimeAgentName(
+            current.agentName,
+            event.agentName,
+            current.running
+          ),
           completedAt: undefined,
           completed: false,
           needsAttention: false,
@@ -2317,7 +2539,11 @@ export function TerminalView({
       emitAgentStatus({
         running: current.running,
         working: false,
-        agentName: event.agentName,
+        agentName: mergeRuntimeAgentName(
+          current.agentName,
+          event.agentName,
+          current.running
+        ),
         workStartedAt: current.workStartedAt,
         completedAt: Date.now(),
         completed: true,
@@ -2431,25 +2657,28 @@ export function TerminalView({
   }, [focusRequest, isActive, searchOpen])
 
   const runSearch = useCallback(
-    (q: string, direction: "next" | "prev" = "next") => {
+    (q: string, direction: "next" | "prev" = "next", incremental = false) => {
       const search = searchRef.current
       if (!search) return
+      if (!searchOpenRef.current) return
       if (!q) {
-        search.clearDecorations()
+        clearSearchDecorations()
         setSearchResults({ resultIndex: -1, resultCount: 0 })
         return
       }
-      const opts = { decorations: SEARCH_DECORATIONS }
+      const opts = { decorations: SEARCH_DECORATIONS, incremental }
       if (direction === "next") search.findNext(q, opts)
       else search.findPrevious(q, opts)
     },
-    []
+    [clearSearchDecorations]
   )
 
   useEffect(() => {
     if (!searchOpen) return
     const id = requestAnimationFrame(() =>
-      runSearch(deferredSearchQuery, "next")
+      // Match VS Code's terminal find widget: typing updates the current result
+      // incrementally without advancing through every match.
+      runSearch(deferredSearchQuery, "prev", true)
     )
     return () => cancelAnimationFrame(id)
   }, [deferredSearchQuery, searchOpen, runSearch])
@@ -2468,7 +2697,12 @@ export function TerminalView({
   const pasteFromClipboard = async () => {
     const term = termRef.current
     if (!term) return
-    await pasteClipboard(term, sessionId, agentStatusRef.current.agentName)
+    await pasteClipboard(
+      term,
+      sessionId,
+      agentStatusRef.current.agentName,
+      modifiedEnterSequenceRef.current
+    )
   }
 
   const selectAll = () => {

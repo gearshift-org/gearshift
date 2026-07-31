@@ -121,7 +121,7 @@ const termApi = {
   agentStatus: (id: string) =>
     ipcRenderer.invoke("term:agentStatus", id) as Promise<{
       running: boolean
-      agentName?: "claude" | "codex" | "opencode" | "pi"
+      agentName?: "claude" | "codex" | "opencode" | "pi" | "grok"
     }>,
   agentSessionTitle: (args: {
     agent: "claude" | "codex" | "opencode" | "pi"
@@ -150,11 +150,11 @@ const termApi = {
       event: {
         agentName: "claude" | "codex" | "opencode" | "pi"
         event:
-        | "start"
-        | "stop"
-        | "needs_attention"
-        | "subagent_start"
-        | "subagent_stop"
+          | "start"
+          | "stop"
+          | "needs_attention"
+          | "subagent_start"
+          | "subagent_stop"
         body?: string
       }
     ) => cb(event)
@@ -196,6 +196,10 @@ const termApi = {
       ) as Promise<ChatHistoryMessage[]>,
     latestByProject: () =>
       ipcRenderer.invoke("term:history:latestByProject") as Promise<
+        Record<string, number>
+      >,
+    latestBySession: () =>
+      ipcRenderer.invoke("term:history:latestBySession") as Promise<
         Record<string, number>
       >,
     delete: (id: string) =>

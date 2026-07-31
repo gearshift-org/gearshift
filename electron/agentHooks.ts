@@ -6,7 +6,7 @@ import path from "node:path"
 export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi"
 
 export type AgentHookEvent = {
-  agentName: TerminalAgentName
+  agentName: TerminalAgentName | "grok"
   event:
     | "start"
     | "stop"
@@ -54,8 +54,8 @@ function parseAgentHookPayload(
   const agentSessionId = hasAgentSessionId
     ? parts[parts.length - 1]?.trim()
     : ""
-  const agentName = agentRaw as TerminalAgentName
-  if (!["claude", "codex", "opencode", "pi"].includes(agentName)) {
+  const agentName = agentRaw as TerminalAgentName | "grok"
+  if (!["claude", "codex", "opencode", "pi", "grok"].includes(agentName)) {
     return null
   }
   const event =
@@ -268,9 +268,18 @@ if [ -z "\${GEARSHIFT_AGENT_SOCKET:-}" ] || [ -z "\${GEARSHIFT_SESSION_ID:-}" ];
 fi
 
 case "$agent" in
-  claude|codex|opencode|pi) ;;
+  claude|codex|opencode|pi|grok) ;;
   *) exit 0 ;;
 esac
+
+# Grok Build also discovers and runs Claude Code's hooks (~/.claude/settings.json),
+# which would double-fire every event mislabeled as "claude". Grok sets
+# GROK_HOOK_EVENT/GROK_SESSION_ID for hook processes; when a claude-labeled
+# invocation carries those, it is really Grok running the Claude hook — drop it
+# and let the dedicated grok hook (~/.grok/hooks/) report instead.
+if [ "$agent" != "grok" ] && [ -n "\${GROK_HOOK_EVENT:-}\${GROK_SESSION_ID:-}" ]; then
+  exit 0
+fi
 
 # Read a bounded slice of stdin once (if any). The agent's own session id lives
 # in this JSON ("session_id") and we want it for every event, so we can no
@@ -282,13 +291,29 @@ if [ ! -t 0 ]; then
   input="$(head -c 65536 || true)"
 fi
 
-# The agent-native session id (Claude/Codex emit it as "session_id" on stdin).
+# Second Grok-dedup line of defense (in case the GROK_* env vars ever go
+# away): Grok's hook payload uses camelCase "hookEventName" while Claude's
+# uses snake_case "hook_event_name". A claude-labeled invocation carrying a
+# camelCase payload is Grok running Claude's hooks — drop it.
+if [ "$agent" != "grok" ] && [[ "$input" == *'"hookEventName"'* ]]; then
+  exit 0
+fi
+
+# The agent-native session id (Claude/Codex emit it as "session_id" on stdin;
+# Grok uses camelCase "sessionId" and also exports GROK_SESSION_ID).
 # Best-effort: stays empty for agents/events that don't include it.
 agent_session_id=""
 if [ -n "$input" ] && [[ "$input" == *'"session_id"'* ]]; then
   agent_session_id=$(printf '%s' "$input" \\
     | grep -o '"session_id":"[^"]*"' \\
     | head -1 | cut -d'"' -f4 || true)
+elif [ -n "$input" ] && [[ "$input" == *'"sessionId"'* ]]; then
+  agent_session_id=$(printf '%s' "$input" \\
+    | grep -o '"sessionId":"[^"]*"' \\
+    | head -1 | cut -d'"' -f4 || true)
+fi
+if [ -z "$agent_session_id" ] && [ "$agent" = "grok" ]; then
+  agent_session_id="\${GROK_SESSION_ID:-}"
 fi
 
 case "$event" in
@@ -306,11 +331,17 @@ case "$event" in
       *) event="subagent_stop" ;;
     esac
     # Carry the subagent id in the body so the renderer can pair start/stop.
+    # Claude emits snake_case "agent_id"; Grok emits camelCase "agentId".
     body=""
     if [ -n "$input" ]; then
       body=$(printf '%s' "$input" \\
         | grep -o '"agent_id":"[^"]*"' \\
         | head -1 | cut -d'"' -f4 || true)
+      if [ -z "$body" ]; then
+        body=$(printf '%s' "$input" \\
+          | grep -o '"agentId":"[^"]*"' \\
+          | head -1 | cut -d'"' -f4 || true)
+      fi
     fi
     ;;
   *)
@@ -432,6 +463,80 @@ async function installCodexHooks(scriptPath: string): Promise<void> {
     Notification: mergeMarkedHookEntry(
       hooks.Notification,
       buildCommandHookEntry(cmd("needs_attention"))
+    ),
+  }
+  await writeJsonWithBackup(hooksPath, settings)
+}
+
+async function installGrokHooks(scriptPath: string): Promise<void> {
+  // Grok Build discovers hook files from ~/.grok/hooks/*.json (same event
+  // vocabulary as Claude Code, camelCase stdin payload). A dedicated file
+  // keeps our entries out of the user's own hook files. Grok also runs Claude
+  // Code's hooks from ~/.claude/settings.json; the hook script drops those
+  // duplicate claude-labeled invocations when GROK_* env vars are present.
+  const hooksPath = path.join(
+    app.getPath("home"),
+    ".grok",
+    "hooks",
+    "gearshift.json"
+  )
+  const settings = await readJsonObject(hooksPath)
+  const hooks =
+    settings.hooks &&
+    typeof settings.hooks === "object" &&
+    !Array.isArray(settings.hooks)
+      ? (settings.hooks as Record<string, unknown>)
+      : {}
+  const q = shellSingleQuote(scriptPath)
+  const cmd = (event: string) =>
+    `${q} grok ${shellSingleQuote(event)} # ${AGENT_HOOK_MARKER}`
+  settings.hooks = {
+    ...hooks,
+    // Do not mark the pane busy on agent/TUI launch. The busy indicator should
+    // only start once the user submits a prompt in the terminal TUI.
+    SessionStart: removeMarkedHookEntries(hooks.SessionStart),
+    UserPromptSubmit: mergeMarkedHookEntry(
+      hooks.UserPromptSubmit,
+      buildCommandHookEntry(cmd("start"), 5)
+    ),
+    // Keep the busy indicator alive across long multi-tool turns (an empty
+    // matcher matches every tool in Grok's regex matcher semantics).
+    PostToolUse: mergeMarkedHookEntry(
+      hooks.PostToolUse,
+      buildCommandHookEntry(cmd("start"), 5)
+    ),
+    PostToolUseFailure: mergeMarkedHookEntry(
+      hooks.PostToolUseFailure,
+      buildCommandHookEntry(cmd("start"), 5)
+    ),
+    Stop: mergeMarkedHookEntry(
+      hooks.Stop,
+      buildCommandHookEntry(cmd("stop"), 10)
+    ),
+    StopFailure: mergeMarkedHookEntry(
+      hooks.StopFailure,
+      buildCommandHookEntry(cmd("stop"), 10)
+    ),
+    SessionEnd: mergeMarkedHookEntry(
+      hooks.SessionEnd,
+      buildCommandHookEntry(cmd("stop"), 5)
+    ),
+    // Deliberately NO Notification mapping: Grok fires Notification events
+    // liberally (even at prompt submit, echoing the user's prompt), not just
+    // for permission prompts — mapping it to needs_attention spams
+    // notifications. Blocked prompts are caught by the strong text-detection
+    // cues instead. Also remove any previously installed entry.
+    Notification: removeMarkedHookEntries(hooks.Notification),
+    // Grok runs parallel subagents; pair their lifecycles so the renderer can
+    // hold the "completed" signal until the last one finishes instead of
+    // notifying when the first Stop arrives mid-turn.
+    SubagentStart: mergeMarkedHookEntry(
+      hooks.SubagentStart,
+      buildCommandHookEntry(cmd("subagent_start"), 5)
+    ),
+    SubagentStop: mergeMarkedHookEntry(
+      hooks.SubagentStop,
+      buildCommandHookEntry(cmd("subagent_stop"), 5)
     ),
   }
   await writeJsonWithBackup(hooksPath, settings)
@@ -789,6 +894,7 @@ export async function installAgentHooks(): Promise<void> {
   const installers = [
     installClaudeHooks(scriptPath),
     installCodexHooks(scriptPath),
+    installGrokHooks(scriptPath),
     writeOpenCodePlugin(),
     writePiExtension(),
   ]

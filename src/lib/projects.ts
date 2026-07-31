@@ -6,13 +6,14 @@ import type {
 } from "@/components/layout/types"
 
 // Subset of the (otherwise ephemeral) agent status that's worth persisting so
-// the "last message sent here" indicator and the completed/needs-input markers
-// survive an app restart. Live fields (running/working/agentName) are always
-// re-detected from the PTY on launch, so they're intentionally omitted.
+// markers (completed, last-submit badge timestamps) survive an app restart
+// while the terminal session is still alive. Live fields (running/working/
+// needsAttention/agentName) are always re-detected from the PTY on launch.
+// The whole subset is session-scoped: if the terminal session is stopped or
+// removed, nothing from agentStatus is kept.
 export type StoredAgentStatus = {
   completed?: boolean
   completedAt?: number
-  needsAttention?: boolean
   workStartedAt?: number
   lastSubmitAt?: number
 }
@@ -32,21 +33,26 @@ export type StoredPane = {
   agentSessionId?: string
   /** Human-readable agent session title (AI title or first prompt) shown as the pane title. */
   agentSessionTitle?: string
-  /** Persisted agent-status subset (completed/needs-input/last-submit markers). */
+  /** Persisted agent-status subset (completed/last-submit markers). */
   agentStatus?: StoredAgentStatus
 }
 
 // Build the persistable subset of a runtime agent status (drops live fields and
 // returns undefined when there's nothing worth saving).
+//
+// All agent status is session-scoped: `sessionActive` must be true (a daemon
+// terminal session still exists). Stopped/removed sessions drop the entire
+// subset so blocked/working/done/idle markers and last-submit badges cannot
+// outlive the terminal.
 export function toStoredAgentStatus(
-  status: TerminalAgentStatus | undefined
+  status: TerminalAgentStatus | undefined,
+  options?: { sessionActive?: boolean }
 ): StoredAgentStatus | undefined {
-  if (!status) return undefined
+  if (!status || options?.sessionActive !== true) return undefined
   const stored: StoredAgentStatus = {}
   if (status.completed) stored.completed = true
   if (typeof status.completedAt === "number")
     stored.completedAt = status.completedAt
-  if (status.needsAttention) stored.needsAttention = true
   if (typeof status.workStartedAt === "number")
     stored.workStartedAt = status.workStartedAt
   if (typeof status.lastSubmitAt === "number")
@@ -54,13 +60,18 @@ export function toStoredAgentStatus(
   return Object.keys(stored).length > 0 ? stored : undefined
 }
 
-function parseStoredAgentStatus(value: unknown): StoredAgentStatus | undefined {
+function parseStoredAgentStatus(
+  value: unknown,
+  options?: { sessionActive?: boolean }
+): StoredAgentStatus | undefined {
   if (!value || typeof value !== "object") return undefined
+  // Legacy snapshots may still carry status after a session died — only
+  // hydrate when a daemon session id is still attached.
+  if (options?.sessionActive !== true) return undefined
   const v = value as Record<string, unknown>
   const stored: StoredAgentStatus = {}
   if (v.completed === true) stored.completed = true
   if (typeof v.completedAt === "number") stored.completedAt = v.completedAt
-  if (v.needsAttention === true) stored.needsAttention = true
   if (typeof v.workStartedAt === "number")
     stored.workStartedAt = v.workStartedAt
   if (typeof v.lastSubmitAt === "number") stored.lastSubmitAt = v.lastSubmitAt
@@ -114,6 +125,8 @@ export type StoredTab = {
   shortHash?: string
   /** True for ephemeral "preview" tabs (replaced by the next preview open). */
   preview?: boolean
+  /** Keeps this tab above unpinned tabs in project tab lists. */
+  pinned?: boolean
   /** Local dev-server URL, for dev preview tabs. */
   url?: string
 }
@@ -126,9 +139,15 @@ export type StoredProject = {
   updatedAt?: number
   tabs?: StoredTab[]
   activeTabId?: string
-  /** Sidebar "agent finished" marker — persisted so it survives a restart. */
+  /**
+   * Sidebar "agent finished" marker — only persisted while a terminal session
+   * still backs a completed pane. Dropped when sessions stop or are removed.
+   */
   agentDone?: boolean
-  /** Sidebar "agent needs input" marker — persisted so it survives a restart. */
+  /**
+   * Sidebar "needs input" marker. Not restored from disk (live PTY/hooks own
+   * it); also cleared at runtime when no session-backed pane is blocked.
+   */
   agentNeedsAttention?: boolean
 }
 
@@ -275,6 +294,11 @@ function pushRecent(
   return [value, ...list.filter((v) => v !== value)].slice(0, max)
 }
 
+export function recencyIndex(recents: string[], value: string): number {
+  const index = recents.indexOf(value)
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
+
 export function loadPaletteRecents(): PaletteRecents {
   try {
     const raw = store.get(PALETTE_RECENTS_KEY)
@@ -398,14 +422,8 @@ export function loadProjects(): StoredProject[] {
           typeof p?.name === "string" &&
           typeof p?.path === "string"
       )
-      .map((p) => ({
-        ...p,
-        spaceId:
-          typeof p.spaceId === "string" && p.spaceId
-            ? p.spaceId
-            : DEFAULT_SPACE_ID,
-        ...(typeof p.updatedAt === "number" ? { updatedAt: p.updatedAt } : {}),
-        tabs: Array.isArray(p.tabs)
+      .map((p) => {
+        const tabs = Array.isArray(p.tabs)
           ? p.tabs
               .filter(
                 (t: unknown): t is StoredTab =>
@@ -445,14 +463,14 @@ export function loadProjects(): StoredProject[] {
                           !!pp && typeof (pp as StoredPane).id === "string"
                       )
                       .map((pp) => {
+                        const sessionActive = typeof pp.sessionId === "string"
                         const agentStatus = parseStoredAgentStatus(
-                          pp.agentStatus
+                          pp.agentStatus,
+                          { sessionActive }
                         )
                         return {
                           id: pp.id,
-                          ...(typeof pp.sessionId === "string"
-                            ? { sessionId: pp.sessionId }
-                            : {}),
+                          ...(sessionActive ? { sessionId: pp.sessionId } : {}),
                           ...(typeof pp.autoTitle === "string"
                             ? { autoTitle: pp.autoTitle }
                             : {}),
@@ -490,8 +508,31 @@ export function loadProjects(): StoredProject[] {
                     : {}),
                 }
               })
-          : [],
-      }))
+          : []
+        // Completion markers only stick while a terminal session still exists.
+        // Drop project-level agentDone when no pane has an active-session
+        // completed flag (covers legacy snapshots and stopped sessions).
+        const hasActiveCompleted = tabs.some((t) => {
+          if (!("panes" in t) || !Array.isArray(t.panes)) return false
+          return t.panes.some((pp) => pp.sessionId && pp.agentStatus?.completed)
+        })
+        return {
+          ...p,
+          // Legacy snapshots may contain stale needs-input markers. Do not
+          // restore them; an attached terminal must re-detect live blocked state.
+          agentNeedsAttention: undefined,
+          agentDone:
+            hasActiveCompleted && p.agentDone === true ? true : undefined,
+          spaceId:
+            typeof p.spaceId === "string" && p.spaceId
+              ? p.spaceId
+              : DEFAULT_SPACE_ID,
+          ...(typeof p.updatedAt === "number"
+            ? { updatedAt: p.updatedAt }
+            : {}),
+          tabs,
+        }
+      })
   } catch {
     return []
   }
@@ -792,6 +833,7 @@ export function savePinnedProjectPaths(paths: string[]): void {
 const RIGHT_SIDEBAR_TAB_KEY = "gearshift.rightSidebarTab"
 const AUTO_HIDE_TITLE_BAR_KEY = "gearshift.autoHideTitleBar"
 const OPEN_FILES_IN_OWN_TAB_KEY = "gearshift.openFilesInOwnTab"
+const IN_APP_AGENT_NOTIFICATIONS_KEY = "gearshift.inAppAgentNotifications"
 const HISTORY_RETENTION_ENABLED_KEY = "gearshift.historyRetentionEnabled"
 const HISTORY_RETENTION_DAYS_KEY = "gearshift.historyRetentionDays"
 
@@ -800,6 +842,8 @@ export const HISTORY_RETENTION_MIN_DAYS = 1
 
 export const AUTO_HIDE_TITLE_BAR_EVENT = "gearshift:autoHideTitleBarChanged"
 export const OPEN_FILES_IN_OWN_TAB_EVENT = "gearshift:openFilesInOwnTabChanged"
+export const IN_APP_AGENT_NOTIFICATIONS_EVENT =
+  "gearshift:inAppAgentNotificationsChanged"
 export type RightSidebarTab = "git" | "files" | "history"
 
 export function loadRightSidebarTab(): RightSidebarTab {
@@ -844,8 +888,7 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
 }
 
 // When enabled, commit clicks open their own tab instead of reusing a shared
-// preview tab. File, diff, and dev-preview opens always use singleton preview
-// tabs so browsing does not flood the tab bar.
+// preview tab. File, diff, and dev-preview opens use singleton preview tabs.
 export function loadOpenFilesInOwnTab(): boolean {
   try {
     return store.get(OPEN_FILES_IN_OWN_TAB_KEY) !== "0"
@@ -869,8 +912,30 @@ export function saveOpenFilesInOwnTab(enabled: boolean): void {
   }
 }
 
-export const PROJECT_SIDEBAR_CHAT_EVENT =
-  "gearshift:projectSidebarChatChanged"
+export function loadInAppAgentNotificationsEnabled(): boolean {
+  try {
+    return store.get(IN_APP_AGENT_NOTIFICATIONS_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveInAppAgentNotificationsEnabled(enabled: boolean): void {
+  try {
+    store.set(IN_APP_AGENT_NOTIFICATIONS_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(IN_APP_AGENT_NOTIFICATIONS_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export const PROJECT_SIDEBAR_CHAT_EVENT = "gearshift:projectSidebarChatChanged"
 const PROJECT_SIDEBAR_CHAT_KEY = "gearshift.projectSidebarChat"
 
 export function loadProjectSidebarChatEnabled(): boolean {
@@ -887,6 +952,33 @@ export function saveProjectSidebarChatEnabled(enabled: boolean): void {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent<boolean>(PROJECT_SIDEBAR_CHAT_EVENT, {
+          detail: enabled,
+        })
+      )
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export const PROJECT_SIDEBAR_TABS_EVENT = "gearshift:projectSidebarTabsChanged"
+const PROJECT_SIDEBAR_TABS_KEY = "gearshift.projectSidebarTabs"
+
+export function loadProjectSidebarTabsEnabled(): boolean {
+  try {
+    // Enabled by default so the folder hierarchy is visible immediately.
+    return store.get(PROJECT_SIDEBAR_TABS_KEY) !== "0"
+  } catch {
+    return true
+  }
+}
+
+export function saveProjectSidebarTabsEnabled(enabled: boolean): void {
+  try {
+    store.set(PROJECT_SIDEBAR_TABS_KEY, enabled ? "1" : "0")
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<boolean>(PROJECT_SIDEBAR_TABS_EVENT, {
           detail: enabled,
         })
       )

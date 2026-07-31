@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 import { PanelRight } from "lucide-react"
 import { ProjectGitStatusBadge } from "./ProjectGitStatusBadge"
-import { UpdateButton } from "./UpdateButton"
 import {
   Tooltip,
   TooltipContent,
@@ -43,7 +42,6 @@ export function TitleBar({
     <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-background [-webkit-app-region:drag]">
       {showTrafficLightSpacer && <div className="w-[88px] shrink-0" />}
       {leading}
-      <UpdateButton />
       <div className="flex-1" />
       {showRightControls && (
         <>

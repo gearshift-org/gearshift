@@ -1552,6 +1552,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       plugins: true,
+      // Keep rAF/timers running while the window is hidden or occluded.
+      // Otherwise streaming agent output piles up unparsed and lands as one
+      // giant xterm write on refocus, stalling the first keystrokes (VS Code
+      // disables throttling for the same reason).
+      backgroundThrottling: false,
     },
   })
   if (VITE_DEV_SERVER_URL && process.platform === "darwin") {

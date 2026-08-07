@@ -20,6 +20,10 @@ const PENDING_DATA_CAP = 256 * 1024
 const DATA_FLUSH_INTERVAL_MS = 16
 // Safety valve: don't let a single batch grow unbounded under extreme output.
 const DATA_FLUSH_MAX_BYTES = 256 * 1024
+// TUI agents redraw the input line in several chunks per keystroke, so a
+// single-chunk bypass isn't enough: flush everything unbatched for a short
+// window after user input to keep typing echo instant.
+const INPUT_PRIORITY_WINDOW_MS = 50
 
 export interface OpenOptions {
   shell: string
@@ -48,6 +52,7 @@ interface SessionHandle {
   batchBytes: number
   batchTimer: NodeJS.Timeout | null
   lastFlushAt: number
+  prioritizeUntil: number
 }
 
 export interface AttachResult {
@@ -273,15 +278,18 @@ export class DaemonClient {
       batchBytes: 0,
       batchTimer: null,
       lastFlushAt: 0,
+      prioritizeUntil: 0,
     }
   }
 
   private queueData(s: SessionHandle, chunk: string): void {
     s.batchChunks.push(chunk)
     s.batchBytes += chunk.length
+    const now = Date.now()
     if (
+      now < s.prioritizeUntil ||
       s.batchBytes >= DATA_FLUSH_MAX_BYTES ||
-      Date.now() - s.lastFlushAt >= DATA_FLUSH_INTERVAL_MS
+      now - s.lastFlushAt >= DATA_FLUSH_INTERVAL_MS
     ) {
       this.flushData(s)
       return
@@ -425,6 +433,8 @@ export class DaemonClient {
   }
 
   write(sessionId: string, data: string): void {
+    const s = this.sessions.get(sessionId)
+    if (s) s.prioritizeUntil = Date.now() + INPUT_PRIORITY_WINDOW_MS
     this.send({ type: "input", sessionId, data })
   }
 

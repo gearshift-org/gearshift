@@ -591,6 +591,9 @@ const SUBAGENT_PENDING_MAX_MS = 30 * 60 * 1000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
+// After a keystroke, PTY output flushes unbatched for this long so multi-chunk
+// TUI input-line redraws render immediately instead of waiting out the rAF.
+const INPUT_ECHO_PRIORITY_MS = 50
 const TERMINAL_RESIZE_SETTLE_MS = 120
 const TERMINAL_PTY_RESIZE_THROTTLE_MS = 120
 // Scrollback line count past which a live (per-frame) column resize is deferred
@@ -1910,6 +1913,7 @@ export function TerminalView({
     let pendingLiveData = ""
     let liveDataRaf: number | undefined
     let liveDataFallbackTimer: number | undefined
+    let prioritizeLiveDataUntil = 0
     const flushLiveData = () => {
       if (liveDataRaf !== undefined) {
         cancelAnimationFrame(liveDataRaf)
@@ -1938,9 +1942,18 @@ export function TerminalView({
     }
     const onDataChunk = (chunk: string) => {
       pendingLiveData += chunk
+      // PTY echo is the user's visual typing feedback, and agent TUIs redraw
+      // the input line in several chunks per keystroke. Bypass the output rAF
+      // batch for a short window after input so a busy agent stream cannot
+      // make keystrokes feel delayed. Sustained output remains batched.
+      if (performance.now() < prioritizeLiveDataUntil) {
+        flushLiveData()
+        return
+      }
       if (liveDataRaf === undefined) {
         liveDataRaf = requestAnimationFrame(flushLiveData)
-        // rAF stops while the window is hidden/occluded (macOS), which would
+        // Defense in depth: backgroundThrottling is disabled on the window,
+        // but if rAF ever stops while hidden/occluded (macOS), that would
         // let pendingLiveData grow without bound under a streaming agent and
         // then land as one giant write. The timeout keeps draining regardless.
         liveDataFallbackTimer = window.setTimeout(flushLiveData, 250)
@@ -1991,6 +2004,7 @@ export function TerminalView({
 
     const inputSub = term.onData((d) => {
       if (replayingSnapshot) return
+      prioritizeLiveDataUntil = performance.now() + INPUT_ECHO_PRIORITY_MS
       // The moment the user types into the terminal, retire the floating commit
       // affordance — they're driving the session themselves. (commitChanges
       // writes via window.term.write, which bypasses onData, so triggering the

@@ -115,6 +115,7 @@ import {
 } from "@/lib/projects"
 import { parseSettingsSection } from "@/routes/settings/settingsSections"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
+import { tabIdAfterClose } from "@/lib/tabNavigation"
 import {
   AGENT_TERMINAL_LABELS,
   getAgentTerminalOptions,
@@ -3476,13 +3477,13 @@ export function AppShell() {
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== projectId) return p
-        const closingIdx = p.tabs.findIndex((t) => t.id === id)
         const tabs = p.tabs.filter((t) => t.id !== id)
-        let nextActive = p.activeTabId
-        if (p.activeTabId === id) {
-          const nextIdx = Math.max(0, closingIdx - 1)
-          nextActive = tabs[nextIdx]?.id ?? ""
-        }
+        const nextActive = tabIdAfterClose(
+          p.tabs,
+          p.activeTabId,
+          id,
+          lastTerminalByProjectRef.current[projectId]
+        )
         // Closed terminal sessions drop completion; recompute project marker.
         return withSessionScopedAgentStatus({
           ...p,
@@ -3492,10 +3493,14 @@ export function AppShell() {
       })
     )
     if (projectId === activeProjectId && id === activeTabId) {
-      const closingIdx = project?.tabs.findIndex((t) => t.id === id) ?? -1
-      const remaining = project?.tabs.filter((t) => t.id !== id) ?? []
-      const nextIdx = Math.max(0, closingIdx - 1)
-      const next = remaining[nextIdx]?.id
+      const next = project
+        ? tabIdAfterClose(
+            project.tabs,
+            activeTabId,
+            id,
+            lastTerminalByProjectRef.current[projectId]
+          )
+        : ""
       if (next) navigateToTab(next)
       else navigateToProject(projectId)
     }

@@ -1,7 +1,7 @@
 // Async-hydrated key/value store. Cache starts empty so the UI can paint
 // immediately; the JSON snapshot is fetched in parallel via IPC, and
 // `onReady` consumers re-sync their state once it lands. Writes update the
-// snapshot and persist (debounced) through the main process. Falls back to
+// snapshot and persist (debounced, 250ms) through the main process. Falls back to
 // localStorage when no Electron bridge is available (pure-web preview).
 
 export type Store = {
@@ -68,11 +68,38 @@ function createStore(): Store {
     },
   )
 
+  // Debounced for real. A running agent updates pane titles and agent status
+  // repeatedly, and each of those calls saveProjects() -> set(), so an
+  // immediate write meant copying the whole snapshot and structured-cloning it
+  // across IPC many times a second on the renderer's main thread — the same
+  // thread that has to echo the user's keystrokes.
+  const PERSIST_DEBOUNCE_MS = 250
+  let persistTimer: ReturnType<typeof setTimeout> | undefined
+
+  const flush = () => {
+    if (persistTimer !== undefined) {
+      clearTimeout(persistTimer)
+      persistTimer = undefined
+    }
+    if (!ready) return
+    void api.write({ ...cache })
+  }
+
   const persist = () => {
     // Suppress writes until hydration completes — initial useState empties
     // would otherwise clobber the on-disk snapshot.
     if (!ready) return
-    void api.write({ ...cache })
+    if (persistTimer !== undefined) return
+    persistTimer = setTimeout(flush, PERSIST_DEBOUNCE_MS)
+  }
+
+  // Never lose the trailing write on quit/reload.
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flush)
+    window.addEventListener("beforeunload", flush)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush()
+    })
   }
 
   return {

@@ -14,9 +14,9 @@ import {
 const DEFAULT_BUFFER_CAP = 256 * 1024
 
 // Per-session idle threshold: kill the PTY (but leave the tab) after no user
-// input for 24 h. Output, attach, and resize do not reset this timer: the goal
+// input for 48 h. Output, attach, and resize do not reset this timer: the goal
 // is "user has not touched this terminal", not "process is quiet".
-const SESSION_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000
+const SESSION_IDLE_TIMEOUT_MS = 48 * 60 * 60 * 1000
 const IDLE_SWEEP_INTERVAL_MS = 5 * 60 * 1000
 // Commit input activity at most once per second with a trailing update. This
 // keeps keystroke bursts cheap while still making the final typed character the
@@ -45,6 +45,8 @@ interface Session {
   lastActivityAt: number
   pendingActivityAt: number | null
   activityTimer: NodeJS.Timeout | null
+  outChunks: string[]
+  outImmediate: NodeJS.Immediate | null
 }
 
 interface ClientState {
@@ -141,7 +143,7 @@ export class Server {
     this.idleTimer.unref()
   }
 
-  // Sweep every 5 min; force-stop any session idle for >= 24 h. The renderer
+  // Sweep every 5 min; force-stop any session idle for >= 48 h. The renderer
   // sees a normal exit event and flips the pane back to pending-start; the
   // tab entry stays in the project so the user can re-launch.
   private startSessionIdleSweep(): void {
@@ -150,7 +152,7 @@ export class Server {
       for (const session of this.sessions.values()) {
         if (now - session.lastActivityAt >= SESSION_IDLE_TIMEOUT_MS) {
           process.stderr.write(
-            `[pty-daemon] session ${session.id} idle >24h, killing\n`,
+            `[pty-daemon] session ${session.id} idle >48h, killing\n`,
           )
           this.terminateSession(session)
         }
@@ -297,6 +299,8 @@ export class Server {
       lastActivityAt: Date.now(),
       pendingActivityAt: null,
       activityTimer: null,
+      outChunks: [],
+      outImmediate: null,
     }
     this.sessions.set(msg.sessionId, session)
     state.attached.add(msg.sessionId)
@@ -317,6 +321,11 @@ export class Server {
       })
       return
     }
+    // Deliver any coalesced output to the *existing* subscribers before this
+    // socket joins. Those bytes are already in the ring, so they go out in the
+    // replay below — leaving them queued would send them to the new subscriber
+    // a second time.
+    this.flushOut(session)
     session.subscribers.add(socket)
     state.attached.add(msg.sessionId)
     this.send(socket, {
@@ -438,6 +447,8 @@ export class Server {
   ): void {
     if (this.sessions.get(session.id) !== session) return
     this.clearActivityTimer(session)
+    // The process's final output must reach subscribers before its exit.
+    this.flushOut(session)
     const encoded = encodeFrame({
       type: "exit",
       sessionId: session.id,
@@ -473,16 +484,39 @@ export class Server {
     }
   }
 
+  // Coalesce everything node-pty emits within one event-loop turn into a
+  // single frame. A busy TUI agent emits many small chunks per redraw, and
+  // each frame costs the *client* (the Electron main process) a socket event
+  // and a JSON.parse on the same thread that relays the user's keystrokes.
+  // setImmediate runs at the end of the current turn, so this cuts frame count
+  // sharply while adding no measurable delay.
+  private flushOut(session: Session): void {
+    if (session.outImmediate) {
+      clearImmediate(session.outImmediate)
+      session.outImmediate = null
+    }
+    if (session.outChunks.length === 0) return
+    const data =
+      session.outChunks.length === 1
+        ? session.outChunks[0]
+        : session.outChunks.join("")
+    session.outChunks = []
+    const encoded = encodeFrame({
+      type: "data",
+      sessionId: session.id,
+      data,
+    })
+    for (const sub of session.subscribers) {
+      if (!sub.destroyed && sub.writable) sub.write(encoded)
+    }
+  }
+
   private wirePtyEvents(session: Session): void {
     session.pty.onData((chunk) => {
       this.appendToRing(session, chunk)
-      const encoded = encodeFrame({
-        type: "data",
-        sessionId: session.id,
-        data: chunk,
-      })
-      for (const sub of session.subscribers) {
-        if (!sub.destroyed && sub.writable) sub.write(encoded)
+      session.outChunks.push(chunk)
+      if (!session.outImmediate) {
+        session.outImmediate = setImmediate(() => this.flushOut(session))
       }
     })
     session.pty.onExit(({ exitCode, signal }) => {

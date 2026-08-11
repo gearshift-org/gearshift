@@ -409,7 +409,7 @@ function killAllPanes(tab: WorkspaceTab) {
   for (const pane of tab.panes) {
     if (pane.pendingStart) continue
     // Daemon keys sessions by sessionId; pane.id is the stable DOM key and
-    // may not match. Using pane.id here would orphan the PTY until the 24h
+    // may not match. Using pane.id here would orphan the PTY until the 48h
     // idle sweep.
     const sid = pane.sessionId
     if (!sid) continue
@@ -3049,7 +3049,7 @@ export function AppShell() {
   )
 
   // Subscribe to onExit for every running pane so that when the daemon
-  // force-stops a session (24 h idle sweep) or the user types `exit`, the
+  // force-stops a session (48 h idle sweep) or the user types `exit`, the
   // tab entry stays but the pane flips back to pendingStart and can be
   // restarted with the "Start terminal" button.
   useEffect(() => {

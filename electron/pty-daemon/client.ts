@@ -20,10 +20,12 @@ const PENDING_DATA_CAP = 256 * 1024
 const DATA_FLUSH_INTERVAL_MS = 16
 // Safety valve: don't let a single batch grow unbounded under extreme output.
 const DATA_FLUSH_MAX_BYTES = 256 * 1024
-// TUI agents redraw the input line in several chunks per keystroke, so a
-// single-chunk bypass isn't enough: flush everything unbatched for a short
-// window after user input to keep typing echo instant.
-const INPUT_PRIORITY_WINDOW_MS = 50
+// While the user is interacting, this hop must add as close to zero delay as
+// possible: a busy agent can take well over 100ms to redraw its input line, so
+// a 50ms window expired before the echo it was meant to prioritize even
+// arrived. Keep the window long enough to cover a slow redraw and to stay open
+// across continuous typing.
+const INPUT_PRIORITY_WINDOW_MS = 250
 
 export interface OpenOptions {
   shell: string
@@ -51,6 +53,7 @@ interface SessionHandle {
   batchChunks: string[]
   batchBytes: number
   batchTimer: NodeJS.Timeout | null
+  batchImmediate: NodeJS.Immediate | null
   lastFlushAt: number
   prioritizeUntil: number
 }
@@ -277,6 +280,7 @@ export class DaemonClient {
       batchChunks: [],
       batchBytes: 0,
       batchTimer: null,
+      batchImmediate: null,
       lastFlushAt: 0,
       prioritizeUntil: 0,
     }
@@ -285,20 +289,28 @@ export class DaemonClient {
   private queueData(s: SessionHandle, chunk: string): void {
     s.batchChunks.push(chunk)
     s.batchBytes += chunk.length
-    const now = Date.now()
-    if (
-      now < s.prioritizeUntil ||
-      s.batchBytes >= DATA_FLUSH_MAX_BYTES ||
-      now - s.lastFlushAt >= DATA_FLUSH_INTERVAL_MS
-    ) {
+    if (s.batchBytes >= DATA_FLUSH_MAX_BYTES) {
+      this.flushData(s)
+      return
+    }
+    // Inside the input window, flush on setImmediate rather than on a timer.
+    // A TUI redraws its input line in several socket chunks that all land in
+    // the same event-loop turn, so this still collapses them into one IPC
+    // message — but it adds no wall-clock delay at all, where even a 2ms timer
+    // does. Outside the window, sustained agent output stays on the 16ms timer
+    // so a long stream can't flood the renderer with messages.
+    if (Date.now() < s.prioritizeUntil) {
+      if (!s.batchImmediate) {
+        s.batchImmediate = setImmediate(() => this.flushData(s))
+      }
+      return
+    }
+    if (Date.now() - s.lastFlushAt >= DATA_FLUSH_INTERVAL_MS) {
       this.flushData(s)
       return
     }
     if (!s.batchTimer) {
-      s.batchTimer = setTimeout(
-        () => this.flushData(s),
-        DATA_FLUSH_INTERVAL_MS,
-      )
+      s.batchTimer = setTimeout(() => this.flushData(s), DATA_FLUSH_INTERVAL_MS)
     }
   }
 
@@ -306,6 +318,10 @@ export class DaemonClient {
     if (s.batchTimer) {
       clearTimeout(s.batchTimer)
       s.batchTimer = null
+    }
+    if (s.batchImmediate) {
+      clearImmediate(s.batchImmediate)
+      s.batchImmediate = null
     }
     if (s.batchChunks.length === 0) return
     const data =
@@ -320,6 +336,10 @@ export class DaemonClient {
     if (s.batchTimer) {
       clearTimeout(s.batchTimer)
       s.batchTimer = null
+    }
+    if (s.batchImmediate) {
+      clearImmediate(s.batchImmediate)
+      s.batchImmediate = null
     }
     s.batchChunks = []
     s.batchBytes = 0
@@ -433,9 +453,16 @@ export class DaemonClient {
   }
 
   write(sessionId: string, data: string): void {
-    const s = this.sessions.get(sessionId)
-    if (s) s.prioritizeUntil = Date.now() + INPUT_PRIORITY_WINDOW_MS
+    // Get the keystroke onto the socket before doing anything else. Everything
+    // below is bookkeeping for the *return* trip; running it first would delay
+    // the byte the user is waiting on.
     this.send({ type: "input", sessionId, data })
+    const s = this.sessions.get(sessionId)
+    if (!s) return
+    s.prioritizeUntil = Date.now() + INPUT_PRIORITY_WINDOW_MS
+    // Drain whatever is already queued so this keystroke's echo isn't
+    // delivered behind a 16ms batch timer armed before the window opened.
+    this.flushData(s)
   }
 
   resize(sessionId: string, cols: number, rows: number): void {

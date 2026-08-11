@@ -25,6 +25,16 @@ import {
   detectAgentTitleFallbackSignal,
   type AgentFallbackSignal,
 } from "@/lib/agentStatus"
+import {
+  EchoTimer,
+  observeLongTasks,
+  terminalPerfThreshold,
+} from "@/lib/terminalPerf"
+import { markUserTyping } from "@/lib/typingActivity"
+import {
+  subscribeAgentStatus,
+  type PolledAgentStatus,
+} from "@/lib/agentStatusPoll"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
@@ -578,7 +588,6 @@ function openTerminalUrl(
   }
   void window.shellApi.openExternal(expanded)
 }
-const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 10000
 // While a hook event has been seen within this window, the process-detection
 // poller is treated as advisory only — it can promote running/agentName but
@@ -591,9 +600,23 @@ const SUBAGENT_PENDING_MAX_MS = 30 * 60 * 1000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
-// After a keystroke, PTY output flushes unbatched for this long so multi-chunk
-// TUI input-line redraws render immediately instead of waiting out the rAF.
-const INPUT_ECHO_PRIORITY_MS = 50
+// After a keystroke, PTY output goes straight to xterm instead of waiting on
+// the output rAF, so multi-chunk TUI input-line redraws are parsed and ready
+// for the next frame. A busy agent can take >100ms to redraw its input line,
+// so this has to outlast a slow echo — and it should stay open across
+// continuous typing. Matches INPUT_PRIORITY_WINDOW_MS on the daemon hop.
+const INPUT_ECHO_PRIORITY_MS = 250
+// Cadence of the off-write-path agent-signal scan, and how much recent output
+// it keeps between runs (the detector only reads the last 8KB anyway).
+const AGENT_SIGNAL_SCAN_MS = 120
+const AGENT_SIGNAL_SCAN_BYTES = 8000
+// Flush cadence for panes that aren't on screen. Output still lands in order
+// and in full (capped by LIVE_DATA_BACKLOG_CAP); it just isn't paid for at
+// frame rate while nobody can see it.
+const HIDDEN_PANE_FLUSH_MS = 150
+// Ceiling on undrained PTY output held in the renderer before it is written to
+// xterm. Only reachable if the drain stalls entirely (see onDataChunk).
+const LIVE_DATA_BACKLOG_CAP = 1024 * 1024
 const TERMINAL_RESIZE_SETTLE_MS = 120
 const TERMINAL_PTY_RESIZE_THROTTLE_MS = 120
 // Scrollback line count past which a live (per-frame) column resize is deferred
@@ -844,6 +867,9 @@ export function TerminalView({
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const fitTerminalRef = useRef<(() => boolean) | null>(null)
+  // Lets the reveal effect drain the hidden-pane output batch (owned by the
+  // terminal init effect) without waiting for its next timer.
+  const flushLiveDataRef = useRef<(() => void) | null>(null)
   // Mirrors the isVisible prop for the fit path (created once at init). When a
   // fit is skipped because the pane is hidden, it's flagged here and replayed
   // as one authoritative fit on reveal.
@@ -1914,6 +1940,51 @@ export function TerminalView({
     let liveDataRaf: number | undefined
     let liveDataFallbackTimer: number | undefined
     let prioritizeLiveDataUntil = 0
+    // Instrumentation only (see lib/terminalPerf); inert unless the devtools
+    // flag is set.
+    const echoTimer = new EchoTimer(sessionId)
+
+    // Agent-signal scanning is deliberately NOT on the write path. The blocked
+    // detector normalizes up to 8KB of text and markAgentWorking re-arms a
+    // timer; doing that per write turned "write output to xterm" — the thing
+    // standing between the user and their echo — into a text-processing job
+    // running at output rate. Nothing here is latency-sensitive (it drives a
+    // spinner and an attention badge), so it runs on its own slow timer over
+    // the text seen since the last scan.
+    let signalScanText = ""
+    let signalScanTimer: number | undefined
+    const runSignalScan = () => {
+      signalScanTimer = undefined
+      const text = signalScanText
+      signalScanText = ""
+      const current = agentStatusRef.current
+      if (!text || !current.running || !current.agentName) return
+      applyFallbackAgentSignal(
+        detectAgentOutputFallbackSignal(current.agentName, text),
+        "output"
+      )
+      if (OUTPUT_ACTIVITY_AGENTS.has(current.agentName)) markAgentWorking()
+    }
+    const queueSignalScan = (chunk: string) => {
+      const current = agentStatusRef.current
+      if (!current.running || !current.agentName) return
+      // The detector only ever looks at the last 8KB, so keeping more than
+      // that between scans is wasted copying under a fast stream.
+      signalScanText = (signalScanText + chunk).slice(-AGENT_SIGNAL_SCAN_BYTES)
+      if (signalScanTimer === undefined) {
+        signalScanTimer = window.setTimeout(
+          runSignalScan,
+          AGENT_SIGNAL_SCAN_MS
+        )
+      }
+    }
+
+    const writeToTerm = (chunk: string) => {
+      echoTimer.markWritten()
+      term.write(chunk, () => echoTimer.markParsed())
+      queueSignalScan(chunk)
+    }
+
     const flushLiveData = () => {
       if (liveDataRaf !== undefined) {
         cancelAnimationFrame(liveDataRaf)
@@ -1926,28 +1997,52 @@ export function TerminalView({
       if (!pendingLiveData) return
       const chunk = pendingLiveData
       pendingLiveData = ""
-      term.write(chunk)
-      const current = agentStatusRef.current
-      applyFallbackAgentSignal(
-        detectAgentOutputFallbackSignal(current.agentName, chunk),
-        "output"
-      )
-      if (
-        current.running &&
-        current.agentName &&
-        OUTPUT_ACTIVITY_AGENTS.has(current.agentName)
-      ) {
-        markAgentWorking()
-      }
+      writeToTerm(chunk)
     }
+    flushLiveDataRef.current = flushLiveData
     const onDataChunk = (chunk: string) => {
-      pendingLiveData += chunk
-      // PTY echo is the user's visual typing feedback, and agent TUIs redraw
-      // the input line in several chunks per keystroke. Bypass the output rAF
-      // batch for a short window after input so a busy agent stream cannot
-      // make keystrokes feel delayed. Sustained output remains batched.
+      echoTimer.markArrived()
+      // PTY echo is the user's visual typing feedback. While they are
+      // interacting, hand the bytes to xterm the instant they arrive: xterm's
+      // own write buffer already coalesces and its renderer is frame-throttled,
+      // so this cannot paint more than once per frame — but it does guarantee
+      // the echo is parsed and ready when that frame comes, instead of sitting
+      // in a JS buffer waiting on our rAF. Sustained output with no one typing
+      // stays on the rAF batch, which keeps a long stream cheap.
       if (performance.now() < prioritizeLiveDataUntil) {
-        flushLiveData()
+        if (pendingLiveData) {
+          const queued = pendingLiveData
+          pendingLiveData = ""
+          writeToTerm(queued)
+        }
+        writeToTerm(chunk)
+        return
+      }
+      pendingLiveData += chunk
+      // Hard bound on the backlog. With renderer backgrounding disabled the
+      // drain should never stall, but if it ever does (a long pause in another
+      // app under a streaming agent), an unbounded buffer would land as one
+      // multi-megabyte parse on return and freeze typing for seconds. Keep the
+      // tail from a line boundary — the same trade-off the daemon's capped
+      // scrollback snapshot already makes.
+      if (pendingLiveData.length > LIVE_DATA_BACKLOG_CAP) {
+        const tail = pendingLiveData.slice(-LIVE_DATA_BACKLOG_CAP)
+        const lineStart = tail.indexOf("\n")
+        pendingLiveData = lineStart === -1 ? tail : tail.slice(lineStart + 1)
+      }
+      // A hidden pane has no pixels to produce, but every write it makes still
+      // parses escape sequences and mutates the xterm buffer on the one main
+      // thread the *visible* terminal needs to echo keystrokes. With several
+      // agents running in background tabs that is most of the renderer's
+      // budget spent on output nobody is looking at. Batch those far more
+      // coarsely; the pane is authoritatively refit and redrawn on reveal.
+      if (!isVisibleRef.current) {
+        if (liveDataFallbackTimer === undefined) {
+          liveDataFallbackTimer = window.setTimeout(
+            flushLiveData,
+            HIDDEN_PANE_FLUSH_MS
+          )
+        }
         return
       }
       if (liveDataRaf === undefined) {
@@ -1998,13 +2093,35 @@ export function TerminalView({
         attachLiveData()
       })
     })
+    // Returning from another app: drain whatever arrived while away on the spot
+    // rather than waiting for the next frame/timer to be un-throttled.
+    const drainOnReveal = () => {
+      if (document.visibilityState === "visible") flushLiveData()
+    }
+    window.addEventListener("focus", drainOnReveal)
+    document.addEventListener("visibilitychange", drainOnReveal)
+
     const offExit = window.term.onExit(sessionId, () => {
       term.write("\r\n\x1b[31m[process exited]\x1b[0m\r\n")
     })
 
     const inputSub = term.onData((d) => {
       if (replayingSnapshot) return
+      // Send first, think later. Everything below is local bookkeeping for UI
+      // affordances; none of it affects the bytes the PTY receives, and all of
+      // it used to run before the keystroke left the renderer.
+      window.term.write(sessionId, d)
+      // Tell the rest of the renderer to keep its non-urgent work (sidebar git
+      // status, file tree) off the main thread until this burst of typing ends.
+      markUserTyping()
+      if (terminalPerfThreshold() !== null) {
+        observeLongTasks()
+        echoTimer.markSent()
+      }
       prioritizeLiveDataUntil = performance.now() + INPUT_ECHO_PRIORITY_MS
+      // Drain anything already waiting on the output rAF now, so this
+      // keystroke's echo isn't queued behind a frame's worth of agent output.
+      flushLiveData()
       // The moment the user types into the terminal, retire the floating commit
       // affordance — they're driving the session themselves. (commitChanges
       // writes via window.term.write, which bypasses onData, so triggering the
@@ -2049,7 +2166,6 @@ export function TerminalView({
             now + USER_INPUT_ECHO_SUPPRESS_MS
         }
       }
-      window.term.write(sessionId, d)
     })
     let lastEmittedTitle: string | undefined
     const titleSub = term.onTitleChange((t) => {
@@ -2177,6 +2293,12 @@ export function TerminalView({
       if (liveDataFallbackTimer !== undefined) {
         window.clearTimeout(liveDataFallbackTimer)
       }
+      if (signalScanTimer !== undefined) {
+        window.clearTimeout(signalScanTimer)
+      }
+      flushLiveDataRef.current = null
+      window.removeEventListener("focus", drainOnReveal)
+      document.removeEventListener("visibilitychange", drainOnReveal)
       for (const timer of startupFitTimers) window.clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
       if (agentWorkingTimerRef.current) {
@@ -2302,16 +2424,37 @@ export function TerminalView({
   useEffect(() => {
     let cancelled = false
 
-    const refreshAgentStatus = async () => {
-      try {
+    const applyAgentStatus = (detected: PolledAgentStatus | null) => {
+      if (cancelled) return
+      if (detected === null) {
+        // Don't clobber hook state on a transient IPC failure either.
+        const current = agentStatusRef.current
+        const hookAuthoritative =
+          activeHookWorkRef.current ||
+          Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
+        if (hookAuthoritative) return
+        // Preserve the persisted/last-known completed + submit markers on a
+        // transient failure instead of wiping them.
+        emitAgentStatus({
+          running: false,
+          working: false,
+          completed: current.completed,
+          completedAt: current.completedAt,
+          needsAttention: current.needsAttention,
+          lastSubmitAt: current.lastSubmitAt,
+          agentName: current.agentName,
+        })
+        return
+      }
+      {
         const statusBeforePoll = agentStatusRef.current
         const hookIsAuthoritative =
           activeHookWorkRef.current ||
           Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
         // Hook-backed agents already push lifecycle changes to the renderer.
-        // Avoid scanning the entire OS process table every two seconds while
-        // that stronger signal is active; the fallback poll resumes after the
-        // authority window in case a stop event was lost.
+        // Ignore process detection while that stronger signal is active; the
+        // fallback resumes after the authority window in case a stop event was
+        // lost.
         if (
           hookIsAuthoritative &&
           statusBeforePoll.running &&
@@ -2320,8 +2463,6 @@ export function TerminalView({
         ) {
           return
         }
-        const detected = await window.term.agentStatus(sessionId)
-        if (cancelled) return
         const current = agentStatusRef.current
         if (!current.running && detected.running) {
           hasSubmittedToAgentRef.current = false
@@ -2389,40 +2530,17 @@ export function TerminalView({
           needsAttention: detected.running ? current.needsAttention : false,
           lastSubmitAt: current.lastSubmitAt,
         })
-      } catch {
-        if (!cancelled) {
-          // Don't clobber hook state on a transient IPC failure either.
-          const current = agentStatusRef.current
-          const hookAuthoritative =
-            activeHookWorkRef.current ||
-            Date.now() - lastHookEventAtRef.current <
-              HOOK_AUTHORITATIVE_WINDOW_MS
-          if (!hookAuthoritative) {
-            // Preserve the persisted/last-known completed + submit markers on a
-            // transient failure instead of wiping them.
-            emitAgentStatus({
-              running: false,
-              working: false,
-              completed: current.completed,
-              completedAt: current.completedAt,
-              needsAttention: current.needsAttention,
-              lastSubmitAt: current.lastSubmitAt,
-              agentName: current.agentName,
-            })
-          }
-        }
       }
     }
 
-    void refreshAgentStatus()
-    const interval = window.setInterval(
-      () => void refreshAgentStatus(),
-      AGENT_STATUS_POLL_MS
-    )
+    // One shared timer polls every mounted pane in a single IPC round trip —
+    // see lib/agentStatusPoll. Panes for inactive projects stay mounted, so a
+    // per-pane interval made this cost grow with every open project.
+    const unsubscribe = subscribeAgentStatus(sessionId, applyAgentStatus)
 
     return () => {
       cancelled = true
-      window.clearInterval(interval)
+      unsubscribe()
     }
   }, [sessionId, emitAgentStatus])
 
@@ -2648,6 +2766,10 @@ export function TerminalView({
   // lets the opacity flip land first so the fit reads settled layout.
   useEffect(() => {
     isVisibleRef.current = isVisible
+    // Coming back on screen: write out whatever the coarse hidden-pane batch
+    // is still holding before the pane paints, so the reveal doesn't show a
+    // stale frame and then jump.
+    if (isVisible) flushLiveDataRef.current?.()
     if (!isVisible || !hiddenFitPendingRef.current) return
     hiddenFitPendingRef.current = false
     const id = requestAnimationFrame(() => {

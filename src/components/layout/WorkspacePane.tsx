@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -944,7 +945,14 @@ function PaneContent({
   )
 }
 
-export function WorkspacePane({
+// Memoized: every open project keeps a WorkspacePane mounted (hidden, not
+// unmounted), and the projects state above changes many times a second while an
+// agent works. Without this, a title change in one project re-rendered every
+// other project's tabs and terminals too — the cost of that scaled with how
+// many projects the user had open, which is exactly when it hurt most.
+// Handlers from WorkspaceSplit are identity-stable (see useStableHandlers), so
+// this only re-renders when its own project object changes.
+export const WorkspacePane = memo(function WorkspacePane({
   project,
   isActive = true,
   activeTabId: activeTabIdOverride,
@@ -1240,4 +1248,4 @@ export function WorkspacePane({
       </div>
     </div>
   )
-}
+})

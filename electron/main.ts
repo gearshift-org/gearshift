@@ -4329,8 +4329,7 @@ app.on("before-quit", () => {
   cliOpenServer?.close()
   cliOpenServer = null
   // Sessions outlive Electron. Just detach the client; the daemon keeps
-  // PTYs alive until the user kills them, the daemon's own no-clients
-  // grace timer fires, or the 48h per-session idle sweep triggers.
+  // PTYs alive until the user closes them or their processes exit.
   daemonClient?.disconnect()
   sessionOwners.clear()
   sessionProjects.clear()

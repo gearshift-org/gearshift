@@ -1106,6 +1106,7 @@ function ProjectSidebarRow({
           <div
             role="navigation"
             aria-label={`${p.name} tabs`}
+            data-terminal-tab-drop-target={isActive ? "true" : undefined}
             className="flex flex-col gap-0.5 pb-1"
           >
             {(() => {

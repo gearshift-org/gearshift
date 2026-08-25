@@ -13,16 +13,6 @@ import {
 
 const DEFAULT_BUFFER_CAP = 256 * 1024
 
-// Per-session idle threshold: kill the PTY (but leave the tab) after no user
-// input for 48 h. Output, attach, and resize do not reset this timer: the goal
-// is "user has not touched this terminal", not "process is quiet".
-const SESSION_IDLE_TIMEOUT_MS = 48 * 60 * 60 * 1000
-const IDLE_SWEEP_INTERVAL_MS = 5 * 60 * 1000
-// Commit input activity at most once per second with a trailing update. This
-// keeps keystroke bursts cheap while still making the final typed character the
-// effective idle baseline.
-const USER_ACTIVITY_DEBOUNCE_MS = 1_000
-
 // Grace between SIGHUP and the SIGKILL fallback when terminating a session.
 const KILL_GRACE_MS = 2_000
 // After SIGKILL, give node-pty a short chance to emit onExit before we forcibly
@@ -42,9 +32,6 @@ interface Session {
   ringChunks: string[]
   ringBytes: number
   subscribers: Set<net.Socket>
-  lastActivityAt: number
-  pendingActivityAt: number | null
-  activityTimer: NodeJS.Timeout | null
   outChunks: string[]
   outImmediate: NodeJS.Immediate | null
 }
@@ -69,7 +56,6 @@ export class Server {
   private readonly clients = new Map<net.Socket, ClientState>()
   private server: net.Server | null = null
   private idleTimer: NodeJS.Timeout | null = null
-  private sessionIdleSweep: NodeJS.Timeout | null = null
 
   constructor(opts: ServerOptions) {
     this.socketPath = opts.socketPath
@@ -97,17 +83,12 @@ export class Server {
       })
     })
     this.startIdleWatch()
-    this.startSessionIdleSweep()
   }
 
   async close(): Promise<void> {
     if (this.idleTimer) {
       clearTimeout(this.idleTimer)
       this.idleTimer = null
-    }
-    if (this.sessionIdleSweep) {
-      clearInterval(this.sessionIdleSweep)
-      this.sessionIdleSweep = null
     }
     const server = this.server
     this.server = null
@@ -141,25 +122,6 @@ export class Server {
     }
     this.idleTimer = setTimeout(tick, 5 * 60_000)
     this.idleTimer.unref()
-  }
-
-  // Sweep every 5 min; force-stop any session idle for >= 48 h. The renderer
-  // sees a normal exit event and flips the pane back to pending-start; the
-  // tab entry stays in the project so the user can re-launch.
-  private startSessionIdleSweep(): void {
-    const sweep = () => {
-      const now = Date.now()
-      for (const session of this.sessions.values()) {
-        if (now - session.lastActivityAt >= SESSION_IDLE_TIMEOUT_MS) {
-          process.stderr.write(
-            `[pty-daemon] session ${session.id} idle >48h, killing\n`,
-          )
-          this.terminateSession(session)
-        }
-      }
-    }
-    this.sessionIdleSweep = setInterval(sweep, IDLE_SWEEP_INTERVAL_MS)
-    this.sessionIdleSweep.unref()
   }
 
   private onConnection(socket: net.Socket): void {
@@ -296,9 +258,6 @@ export class Server {
       ringChunks: [],
       ringBytes: 0,
       subscribers: new Set([socket]),
-      lastActivityAt: Date.now(),
-      pendingActivityAt: null,
-      activityTimer: null,
       outChunks: [],
       outImmediate: null,
     }
@@ -341,7 +300,6 @@ export class Server {
   private handleInput(msg: Extract<ClientMessage, { type: "input" }>): void {
     const session = this.sessions.get(msg.sessionId)
     if (!session) return
-    this.recordUserActivity(session)
     try {
       session.pty.write(msg.data)
     } catch {
@@ -406,32 +364,6 @@ export class Server {
     timer.unref()
   }
 
-  private recordUserActivity(session: Session): void {
-    const now = Date.now()
-    session.pendingActivityAt = now
-    // Immediate throttled update prevents a near-expired terminal from being
-    // killed while the user is actively typing.
-    if (now - session.lastActivityAt >= USER_ACTIVITY_DEBOUNCE_MS) {
-      session.lastActivityAt = now
-    }
-    if (session.activityTimer) return
-    session.activityTimer = setTimeout(() => {
-      session.activityTimer = null
-      if (session.pendingActivityAt != null) {
-        session.lastActivityAt = session.pendingActivityAt
-        session.pendingActivityAt = null
-      }
-    }, USER_ACTIVITY_DEBOUNCE_MS)
-    session.activityTimer.unref()
-  }
-
-  private clearActivityTimer(session: Session): void {
-    if (!session.activityTimer) return
-    clearTimeout(session.activityTimer)
-    session.activityTimer = null
-    session.pendingActivityAt = null
-  }
-
   private destroyPty(session: Session): void {
     try {
       session.pty.destroy?.()
@@ -446,7 +378,6 @@ export class Server {
     signal?: number,
   ): void {
     if (this.sessions.get(session.id) !== session) return
-    this.clearActivityTimer(session)
     // The process's final output must reach subscribers before its exit.
     this.flushOut(session)
     const encoded = encodeFrame({

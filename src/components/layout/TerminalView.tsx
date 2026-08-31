@@ -8,7 +8,13 @@ import {
   useState,
   type CSSProperties,
 } from "react"
-import { ChevronDown, ChevronUp, X } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronUp,
+  CloudUpload,
+  GitCommitHorizontal,
+  X,
+} from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
@@ -37,8 +43,13 @@ import {
 } from "@/lib/agentStatusPoll"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
-import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
+import {
+  fetchGitQueryData,
+  gitQueryKey,
+  type GitQueryData,
+} from "@/lib/gitStatusQuery"
 import { prepareAgentPaste } from "@/lib/terminalPaste"
+import { writeAgentPrompt } from "@/lib/historySummary"
 import {
   mergeRuntimeAgentName,
   type RuntimeAgentName,
@@ -60,7 +71,7 @@ type Props = {
   sessionId: string
   // Project working directory for this pane. Used to read the shared git-status
   // query (the same data behind the sidebar change counter) so the post-task
-  // "Commit changes" affordance only appears when there are changes.
+  // Git action affordance only appears when there is work to commit or push.
   cwd?: string
   isActive?: boolean
   // Whether this pane is on screen. Inactive projects/tabs stay mounted but
@@ -636,8 +647,18 @@ const LIVE_FIT_SUPPRESSING_BODY_CLASSES = ["gs-sidebar-resizing"]
 // Temporarily hide the top-right terminal recap box while testing terminal UX.
 // Keep the full code path intact; flip this back to true to restore it.
 const TERMINAL_RECAP_BOX_ENABLED = false
-// Floating commit affordance temporarily disabled; keep the code path intact.
-const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
+const FLOATING_COMMIT_AFFORDANCE_ENABLED = true
+const FLOATING_TERMINAL_BUTTON_CLASS =
+  "rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+
+function hasPendingGitAction(data: GitQueryData | undefined): boolean {
+  return !!(
+    data &&
+    (data.files.length > 0 ||
+      data.ahead > 0 ||
+      (!data.hasUpstream && !!data.currentBranch))
+  )
+}
 // Agents that can report authoritative lifecycle hooks (start/stop via the
 // agent socket). While a hook is active/recent, fallback detection stays
 // advisory for normal working/done transitions. Strong blocked-prompt cues can
@@ -671,9 +692,6 @@ function terminalRecentBufferText(term: Terminal, maxLines = 80): string {
 // Hookless agents fall back to "terminal produced output while running" as a
 // busy signal. All supported agents currently have hooks, so keep this empty.
 const OUTPUT_ACTIVITY_AGENTS = new Set<string>()
-// Delay between writing a prompt and the Enter that submits it, so the agent's
-// input box registers the full text first. Mirrors AppShell's writeAgentPrompt.
-const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
 const COMMIT_STATUS_CHECK_DELAY_MS = 200
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
@@ -945,6 +963,8 @@ export function TerminalView({
   const anonSubagentSeqRef = useRef(0)
   const recapTimerRef = useRef<number | undefined>(undefined)
   const commitCheckTimerRef = useRef<number | undefined>(undefined)
+  const gitActionSuppressedRef = useRef(false)
+  const lastDetectedAgentRunningRef = useRef<boolean | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
   const modifiedEnterSequenceRef = useRef("\x1b\r")
@@ -964,28 +984,25 @@ export function TerminalView({
     message: ChatHistoryMessage | null
     kind: "completed" | "needs_attention"
   } | null>(null)
-  // Floating "Commit changes" affordance shown after an agent turn finishes with
-  // uncommitted changes. Same action as the sidebar's "Commit with AI".
+  // Floating Git affordance shown while the agent is idle and the project has
+  // uncommitted changes or local commits waiting to be pushed.
   // "closing" keeps it mounted long enough to play the exit animation.
   const [commitUi, setCommitUi] = useState<"hidden" | "open" | "closing">(
     "hidden"
   )
-  const commitDismissedRef = useRef(false)
-  // Mirror commitUi into a ref so the terminal's one-time key/input handlers can
-  // read the current value without being re-attached on every state change.
-  const commitUiRef = useRef(commitUi)
   useLayoutEffect(() => {
     themeRef.current = { isDark, theme: themeObj }
   }, [isDark, themeObj])
-  useEffect(() => {
-    commitUiRef.current = commitUi
-  }, [commitUi])
   const queryClient = useQueryClient()
   const { data: gitData } = useQuery({
     queryKey: gitQueryKey(cwd ?? null),
     queryFn: () => fetchGitQueryData(cwd!),
     enabled: FLOATING_COMMIT_AFFORDANCE_ENABLED && !!cwd,
   })
+  const gitDataRef = useRef(gitData)
+  useEffect(() => {
+    gitDataRef.current = gitData
+  }, [gitData])
   const cwdRef = useRef(cwd)
   useEffect(() => {
     cwdRef.current = cwd
@@ -1080,6 +1097,9 @@ export function TerminalView({
       lastSubmitAt: lastAgentSubmitAtRef.current || next.lastSubmitAt,
     }
     const prev = agentStatusRef.current
+    if (!prev.running && merged.running) {
+      gitActionSuppressedRef.current = false
+    }
     if (
       prev.running === merged.running &&
       prev.working === merged.working &&
@@ -1095,6 +1115,19 @@ export function TerminalView({
       return
     }
     agentStatusRef.current = merged
+    if (FLOATING_COMMIT_AFFORDANCE_ENABLED) {
+      const data = gitDataRef.current
+      const shouldShow =
+        !gitActionSuppressedRef.current &&
+        merged.running &&
+        !!merged.agentName &&
+        !merged.working &&
+        !merged.needsAttention &&
+        hasPendingGitAction(data)
+      setCommitUi((current) =>
+        shouldShow ? "open" : current === "open" ? "closing" : current
+      )
+    }
     onAgentStatusChangeRef.current?.(merged)
   }, [])
 
@@ -1152,16 +1185,8 @@ export function TerminalView({
     [sessionId]
   )
 
-  // Animate out, then unmount once the exit animation finishes (onAnimationEnd).
-  const dismissCommit = useCallback(() => {
-    commitDismissedRef.current = true
-    setCommitUi((s) => (s === "open" ? "closing" : s))
-  }, [])
-
-  // After an agent turn finishes, surface the commit affordance only when the
-  // project actually has changes. Reads the same git-status query that backs the
-  // sidebar change counter (shared React Query cache, keyed by cwd) and refetches
-  // so the count reflects whatever the agent just wrote.
+  // After an agent turn finishes, refresh the same Git query that backs the
+  // sidebar and show the matching action for dirty or ahead-only repositories.
   const maybeShowCommit = useCallback(() => {
     if (!FLOATING_COMMIT_AFFORDANCE_ENABLED) return
     const dir = cwdRef.current
@@ -1181,10 +1206,17 @@ export function TerminalView({
         })
         .then((data) => {
           if (cwdRef.current !== dir) return
-          if (data.files.length > 0) {
-            commitDismissedRef.current = false
-            setCommitUi("open")
-          }
+          const status = agentStatusRef.current
+          const shouldShow =
+            !gitActionSuppressedRef.current &&
+            status.running &&
+            !!status.agentName &&
+            !status.working &&
+            !status.needsAttention &&
+            hasPendingGitAction(data)
+          setCommitUi((current) =>
+            shouldShow ? "open" : current === "open" ? "closing" : current
+          )
         })
         .catch(() => {
           // Not a repo / git error — just don't offer the affordance.
@@ -1274,6 +1306,7 @@ export function TerminalView({
         current.needsAttention
       fallbackActiveTurnRef.current = false
       if (hadFallbackTurn) {
+        gitActionSuppressedRef.current = false
         emitAgentStatus({
           ...current,
           working: false,
@@ -1299,36 +1332,39 @@ export function TerminalView({
     [emitAgentStatus, hooksAreAuthoritative, maybeShowCommit, scheduleRecap]
   )
 
-  // Keep the affordance honest while it's open: if the changes disappear (e.g.
-  // the agent committed them), close it. Never auto-opens — the affordance is
-  // only surfaced by maybeShowCommit() after an agent finishes a turn, so it
-  // can't linger when no agent ran.
+  // Keep the affordance synchronized with Git state, including on initial load.
   useEffect(() => {
-    if (!gitData || gitData.files.length !== 0) return
+    if (!gitData) return
+    const status = agentStatusRef.current
+    const shouldShow =
+      !gitActionSuppressedRef.current &&
+      status.running &&
+      !!status.agentName &&
+      !status.working &&
+      !status.needsAttention &&
+      hasPendingGitAction(gitData)
     const id = requestAnimationFrame(() => {
-      setCommitUi((s) => (s === "open" ? "closing" : s))
+      setCommitUi((current) =>
+        shouldShow ? "open" : current === "open" ? "closing" : current
+      )
     })
     return () => cancelAnimationFrame(id)
   }, [gitData])
 
-  const commitChanges = useCallback(() => {
+  const runGitAction = useCallback(() => {
     // Start the exit animation right away so the pill slides out smoothly on
-    // click. The message + Enter are still written on the submit delay in the
-    // background, so the agent receives them just after.
+    // click. The shared prompt helper writes and submits the instruction.
     setCommitUi((s) => (s === "open" ? "closing" : s))
-    window.term.write(sessionId, "commit changes")
-    window.setTimeout(() => {
-      window.term.write(sessionId, "\r")
-    }, AGENT_PROMPT_SUBMIT_DELAY_MS)
+    const hasUncommittedChanges = (gitDataRef.current?.files.length ?? 0) > 0
+    writeAgentPrompt(
+      sessionId,
+      hasUncommittedChanges
+        ? "Review all current changes, create an appropriate commit, and push it to the remote."
+        : "Push the unpushed commits to the remote."
+    )
     const term = termRef.current
     if (term) safeTerminalFocus(term)
   }, [sessionId])
-  // Ref so the one-time terminal key handler can invoke the latest commitChanges.
-  const commitChangesRef = useRef(commitChanges)
-  useEffect(() => {
-    commitChangesRef.current = commitChanges
-  }, [commitChanges])
-
   const clearAgentWorking = useCallback(() => {
     if (agentWorkingTimerRef.current) {
       window.clearTimeout(agentWorkingTimerRef.current)
@@ -1338,6 +1374,8 @@ export function TerminalView({
     fallbackActiveTurnRef.current = false
     lastAgentActivityAtRef.current = 0
     hasSubmittedToAgentRef.current = false
+    gitActionSuppressedRef.current = true
+    setCommitUi((state) => (state === "open" ? "closing" : state))
     const current = agentStatusRef.current
     if (current.working || current.needsAttention) {
       emitAgentStatus({
@@ -1801,20 +1839,6 @@ export function TerminalView({
         return false
       }
 
-      // ⌘⏎ — submit the floating "commit changes" affordance while it's showing.
-      if (
-        meta &&
-        !ctrl &&
-        !alt &&
-        !shift &&
-        key === "enter" &&
-        commitUiRef.current === "open"
-      ) {
-        e.preventDefault()
-        commitChangesRef.current()
-        return false
-      }
-
       // ⇧⏎ / ⌘⇧⏎ — insert newline in TUI prompts (Claude Code, Codex,
       // OpenCode, pi). Terminals send CR (\r) on Enter, so send the active
       // modified-Enter sequence instead of a normal Enter.
@@ -2122,14 +2146,6 @@ export function TerminalView({
       // Drain anything already waiting on the output rAF now, so this
       // keystroke's echo isn't queued behind a frame's worth of agent output.
       flushLiveData()
-      // The moment the user types into the terminal, retire the floating commit
-      // affordance — they're driving the session themselves. (commitChanges
-      // writes via window.term.write, which bypasses onData, so triggering the
-      // commit doesn't dismiss itself here.)
-      if (commitUiRef.current === "open") {
-        commitDismissedRef.current = true
-        setCommitUi("closing")
-      }
       const current = agentStatusRef.current
       if (current.running) {
         const now = Date.now()
@@ -2447,6 +2463,26 @@ export function TerminalView({
         return
       }
       {
+        const wasDetectedRunning = lastDetectedAgentRunningRef.current
+        lastDetectedAgentRunningRef.current = detected.running
+        if (detected.running && wasDetectedRunning === false) {
+          // The process poll can observe a real close/reopen even while the
+          // hook-backed status remains warm briefly. Treat that transition as
+          // a fresh agent lifecycle so a canceled turn does not suppress the
+          // Git action forever in this terminal.
+          gitActionSuppressedRef.current = false
+          const current = agentStatusRef.current
+          const data = gitDataRef.current
+          if (
+            current.running &&
+            !!current.agentName &&
+            !current.working &&
+            !current.needsAttention &&
+            hasPendingGitAction(data)
+          ) {
+            setCommitUi("open")
+          }
+        }
         const statusBeforePoll = agentStatusRef.current
         const hookIsAuthoritative =
           activeHookWorkRef.current ||
@@ -2579,6 +2615,7 @@ export function TerminalView({
         // (UserPromptSubmit). Treats agent as running even before the
         // process-name poll catches up.
         activeHookWorkRef.current = true
+        gitActionSuppressedRef.current = false
         fallbackActiveTurnRef.current = false
         hasSubmittedToAgentRef.current = true
         const now = Date.now()
@@ -2681,6 +2718,7 @@ export function TerminalView({
         completed: true,
         needsAttention: false,
       })
+      gitActionSuppressedRef.current = false
       // Turn finished — AI titles (Claude/OpenCode) are finalized by now.
       void refreshAgentSessionTitle()
       scheduleRecap("completed")
@@ -2860,6 +2898,10 @@ export function TerminalView({
         ? "0/0"
         : ""
       : `${searchResults.resultIndex + 1}/${searchResults.resultCount}`
+  const hasUncommittedChanges = (gitData?.files.length ?? 0) > 0
+  const gitActionLabel = hasUncommittedChanges
+    ? "Commit and Push"
+    : "Push Changes"
 
   return (
     <ContextMenu>
@@ -2893,8 +2935,8 @@ export function TerminalView({
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
             className={cn(
-              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full border border-border bg-background text-foreground shadow-md fade-in slide-in-from-bottom-2 hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110",
-              "bottom-4"
+              "absolute bottom-4 left-1/2 z-10 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-2",
+              FLOATING_TERMINAL_BUTTON_CLASS
             )}
           >
             <ChevronDown data-icon="inline-start" />
@@ -2902,12 +2944,11 @@ export function TerminalView({
           </Button>
         )}
         {FLOATING_COMMIT_AFFORDANCE_ENABLED &&
-          commitUi !== "hidden" &&
-          !showScrollToBottom && (
-            // Outer element owns the bottom-left placement; the inner element owns
+          commitUi !== "hidden" && (
+            // Outer element owns the top-center placement; the inner element owns
             // the slide animation so the exit keyframes do not move the anchor.
             <div
-              className="absolute bottom-4 left-4 z-10"
+              className="absolute top-4 left-1/2 z-10 -translate-x-1/2"
               onClick={(e) => e.stopPropagation()}
               onContextMenu={(e) => e.stopPropagation()}
             >
@@ -2923,29 +2964,22 @@ export function TerminalView({
                     ? // fill-mode-forwards holds the final (opacity 0) frame until
                       // unmount; without it the element snaps back to opaque for a
                       // frame at animation end — the exit "flicker".
-                      "animate-out fill-mode-forwards fade-out slide-out-to-bottom-2"
-                    : "animate-in fade-in slide-in-from-bottom-2"
+                      "animate-out fill-mode-forwards fade-out slide-out-to-top-2"
+                    : "animate-in fade-in slide-in-from-top-2"
                 )}
               >
                 <Button
                   type="button"
-                  onClick={commitChanges}
-                  aria-label="Commit changes with AI"
-                  className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+                  onClick={runGitAction}
+                  aria-label={`${gitActionLabel} with agent`}
+                  className={FLOATING_TERMINAL_BUTTON_CLASS}
                 >
-                  Commit changes
-                  <kbd className="ml-1 rounded border border-current/40 bg-foreground/10 px-1.5 py-0.5 text-[10px] leading-none font-semibold opacity-100">
-                    ⌘⏎
-                  </kbd>
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  onClick={dismissCommit}
-                  aria-label="Dismiss"
-                  className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
-                >
-                  <X />
+                  {hasUncommittedChanges ? (
+                    <GitCommitHorizontal data-icon="inline-start" />
+                  ) : (
+                    <CloudUpload data-icon="inline-start" />
+                  )}
+                  {gitActionLabel}
                 </Button>
               </div>
             </div>

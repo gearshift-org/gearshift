@@ -85,7 +85,11 @@ export type TerminalTab = {
   customName?: string
   /** Keeps this tab above unpinned tabs in project tab lists. */
   pinned?: boolean
+  /** Internal container used when previews open before any terminal exists. */
+  previewOnly?: boolean
   panes: TerminalPane[]
+  /** The full-workspace file or Git preview currently covering this tab. */
+  previews?: WorkspacePreview[]
   /** Which pane currently has focus. */
   activePaneId: string
   /**
@@ -139,6 +143,8 @@ export type FileTab = {
   preview?: boolean
   pinned?: boolean
 }
+
+export type WorkspacePreview = FileTab | DiffTab
 
 export type CommitTab = {
   kind: "commit"

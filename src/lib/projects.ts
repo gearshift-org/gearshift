@@ -3,6 +3,7 @@ import type {
   TerminalAgentName,
   TerminalAgentStatus,
   TerminalLayout,
+  WorkspacePreview,
 } from "@/components/layout/types"
 
 // Subset of the (otherwise ephemeral) agent status that's worth persisting so
@@ -111,6 +112,8 @@ export type StoredTab = {
   kind?: "terminal" | "file" | "diff" | "commit" | "devPreview"
   /** Persisted multi-pane state. Falls back to [{ id: tab.id }] for older snapshots. */
   panes?: StoredPane[]
+  previews?: WorkspacePreview[]
+  previewOnly?: boolean
   activePaneId?: string
   /** Persisted recursive split arrangement over pane ids. */
   layout?: TerminalLayout
@@ -496,6 +499,21 @@ export function loadProjects(): StoredProject[] {
                   id: t.id,
                   name: t.name,
                   panes,
+                  ...(Array.isArray(t.previews)
+                    ? {
+                        previews: t.previews
+                          .filter(
+                            (preview): preview is WorkspacePreview =>
+                              !!preview &&
+                              (preview.kind === "file" ||
+                                preview.kind === "diff") &&
+                              typeof preview.id === "string" &&
+                              typeof preview.name === "string" &&
+                              typeof preview.path === "string"
+                          )
+                          .slice(-1),
+                      }
+                    : {}),
                   ...(typeof t.activePaneId === "string" &&
                   panes.some((pp) => pp.id === t.activePaneId)
                     ? { activePaneId: t.activePaneId }
@@ -503,6 +521,7 @@ export function loadProjects(): StoredProject[] {
                   ...(typeof t.customName === "string"
                     ? { customName: t.customName }
                     : {}),
+                  ...(t.previewOnly === true ? { previewOnly: true } : {}),
                   ...(t.layout && typeof t.layout === "object"
                     ? { layout: t.layout as TerminalLayout }
                     : {}),
@@ -888,7 +907,8 @@ export function saveAutoHideTitleBar(enabled: boolean): void {
 }
 
 // When enabled, commit clicks open their own tab instead of reusing a shared
-// preview tab. File, diff, and dev-preview opens use singleton preview tabs.
+// preview tab. File and diff opens use the active terminal tab's full-workspace
+// preview; dev-preview opens use a singleton preview tab.
 export function loadOpenFilesInOwnTab(): boolean {
   try {
     return store.get(OPEN_FILES_IN_OWN_TAB_KEY) !== "0"

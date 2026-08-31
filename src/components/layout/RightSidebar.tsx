@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { runWhenNotTyping } from "@/lib/typingActivity"
 import {
   Collapsible,
   CollapsibleContent,
@@ -691,11 +692,19 @@ export const RightSidebar = memo(function RightSidebar({
     if (!cwd) return
     let watchId: string | null = null
     let refreshTimer: number | null = null
+    // Watcher-driven refresh only: re-running git status and repainting the
+    // change list is not urgent, so it waits for a gap in the user's typing
+    // rather than stalling a keystroke. Explicit user actions call runRefresh
+    // directly and are unaffected.
+    let cancelIdleRefresh: (() => void) | null = null
     const scheduleRefresh = () => {
       if (refreshTimer !== null) window.clearTimeout(refreshTimer)
       refreshTimer = window.setTimeout(() => {
         refreshTimer = null
-        void runRefresh()
+        cancelIdleRefresh = runWhenNotTyping(() => {
+          cancelIdleRefresh = null
+          void runRefresh()
+        })
       }, REFRESH_DEBOUNCE_MS)
     }
     const offChanged = window.fsApi.onChanged((event) => {
@@ -708,6 +717,7 @@ export const RightSidebar = memo(function RightSidebar({
     })
     return () => {
       if (refreshTimer !== null) window.clearTimeout(refreshTimer)
+      cancelIdleRefresh?.()
       offChanged()
       if (watchId) window.fsApi.unwatchProject(watchId)
     }

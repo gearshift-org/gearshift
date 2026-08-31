@@ -514,6 +514,41 @@
   --sidebar-ring: #d97757;
 }
 
+/* Light · Bearded Theme Coffee Cream */
+[data-theme="light-coffee"] {
+  --background: #f4f1f0;
+  --foreground: #36221d;
+  --card: #faf8f7;
+  --card-foreground: #36221d;
+  --popover: #fffdfc;
+  --popover-foreground: #36221d;
+  --secondary: #eee9e7;
+  --secondary-foreground: #36221d;
+  --primary: #d3694c;
+  --primary-foreground: #1a0a06;
+  --muted: #eee9e7;
+  --muted-foreground: #a69692;
+  --accent: #d3694c;
+  --accent-foreground: #1a0a06;
+  --destructive: #ff3a3a;
+  --border: #d5c9c3;
+  --input: #eee9e7;
+  --ring: #d3694c;
+  --chart-1: #009db5;
+  --chart-2: #51a200;
+  --chart-3: #ce6700;
+  --chart-4: #ce4985;
+  --chart-5: #009b74;
+  --sidebar: #eee9e7;
+  --sidebar-foreground: #36221d;
+  --sidebar-primary: #d3694c;
+  --sidebar-primary-foreground: #1a0a06;
+  --sidebar-accent: #e6dfdc;
+  --sidebar-accent-foreground: #36221d;
+  --sidebar-border: #d5c9c3;
+  --sidebar-ring: #d3694c;
+}
+
 /* Dark · Cool — blue-gray tint */
 [data-theme="dark-cool"] {
   --background: #171a1f;
@@ -899,6 +934,41 @@
   --sidebar-accent-foreground: #d8d6cc;
   --sidebar-border: #181816;
   --sidebar-ring: #d97757;
+}
+
+/* Dark · Bearded Theme Coffee */
+[data-theme="dark-coffee"] {
+  --background: #292423;
+  --foreground: #ceb5b0;
+  --card: #342e2c;
+  --card-foreground: #ceb5b0;
+  --popover: #51403b;
+  --popover-foreground: #ceb5b0;
+  --secondary: #37302f;
+  --secondary-foreground: #ffffff;
+  --primary: #f09177;
+  --primary-foreground: #292423;
+  --muted: #312b2a;
+  --muted-foreground: #8c7169;
+  --accent: #f09177;
+  --accent-foreground: #292423;
+  --destructive: #f24343;
+  --border: #181615;
+  --input: #453c3a;
+  --ring: #f09177;
+  --chart-1: #6eddd6;
+  --chart-2: #94d652;
+  --chart-3: #f7d979;
+  --chart-4: #e480ad;
+  --chart-5: #3ceaa8;
+  --sidebar: #231f1e;
+  --sidebar-foreground: #ceb5b0;
+  --sidebar-primary: #f09177;
+  --sidebar-primary-foreground: #292423;
+  --sidebar-accent: #51403b;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #181615;
+  --sidebar-ring: #f09177;
 }
 
 @layer base {

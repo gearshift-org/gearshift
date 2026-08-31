@@ -115,6 +115,7 @@ import {
 } from "@/lib/projects"
 import { parseSettingsSection } from "@/routes/settings/settingsSections"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
+import { tabIdAfterClose } from "@/lib/tabNavigation"
 import {
   AGENT_TERMINAL_LABELS,
   getAgentTerminalOptions,
@@ -243,9 +244,20 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               name: t.name,
               customName: t.customName,
               ...(t.pinned ? { pinned: true } : {}),
+              ...(t.previewOnly ? { previewOnly: true } : {}),
               panes,
+              ...(t.previews?.length
+                ? { previews: t.previews.slice(-1) }
+                : {}),
               activePaneId,
-              ...(t.layout ? { layout: t.layout } : {}),
+              ...(t.layout && panes.length > 0
+                ? {
+                    layout: ensureLayout(
+                      t.layout,
+                      panes.map((pane) => pane.id)
+                    ),
+                  }
+                : {}),
             },
           ]
         }),
@@ -408,8 +420,8 @@ function killAllPanes(tab: WorkspaceTab) {
   for (const pane of tab.panes) {
     if (pane.pendingStart) continue
     // Daemon keys sessions by sessionId; pane.id is the stable DOM key and
-    // may not match. Using pane.id here would orphan the PTY until the 24h
-    // idle sweep.
+    // may not match. Using pane.id here would leave the PTY running after its
+    // pane is gone.
     const sid = pane.sessionId
     if (!sid) continue
     try {
@@ -484,8 +496,10 @@ function serializeProjects(projects: Project[]): StoredProject[] {
         name: t.name,
         ...(t.customName ? { customName: t.customName } : {}),
         ...(t.pinned ? { pinned: true } : {}),
+        ...(t.previewOnly ? { previewOnly: true } : {}),
         ...(t.layout ? { layout: t.layout } : {}),
         activePaneId: t.activePaneId,
+        ...(t.previews?.length ? { previews: t.previews } : {}),
         panes: t.panes.map((pp) => {
           // Persist the live sessionId for running panes, and keep the
           // pending one for panes the user hasn't activated yet — that way
@@ -2509,6 +2523,34 @@ export function AppShell() {
     async (tabId: string, paneId: string) => {
       const tab = activeProject?.tabs.find((t) => t.id === tabId)
       if (!tab || tab.kind !== "terminal") return
+      const preview = tab.previews?.find((item) => item.id === paneId)
+      if (preview) {
+        if (tab.previewOnly && tab.panes.length === 0) {
+          closeTabRef.current?.(tabId)
+          return
+        }
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id !== activeProjectId
+              ? p
+              : {
+                  ...p,
+                  tabs: p.tabs.map((t) => {
+                    if (t.id !== tabId || t.kind !== "terminal") return t
+                    return {
+                      ...t,
+                      previews: [],
+                      layout: ensureLayout(
+                        t.layout,
+                        t.panes.map((pane) => pane.id)
+                      ),
+                    }
+                  }),
+                }
+          )
+        )
+        return
+      }
       const pane = tab.panes.find((pp) => pp.id === paneId)
       if (!pane) return
       if (tab.panes.length <= 1) {
@@ -2646,61 +2688,79 @@ export function AppShell() {
   const openDiffTab = useCallback(
     (path: string, staged: boolean) => {
       if (!activeProject) return
-      // Already open (pinned or preview) for the exact same path/staged — focus.
-      const exact = activeProject.tabs.find(
-        (t) => t.kind === "diff" && t.path === path && t.staged === staged
-      )
-      if (exact) {
-        navigateToTab(exact.id)
-        return
-      }
-      // Diff opens always reuse one shared preview tab so browsing changes does
-      // not keep adding tabs.
-      const preview = activeProject.tabs.find(
-        (t) => t.kind === "diff" && t.preview
-      )
-      if (preview) {
+      const host =
+        activeProject.tabs.find(
+          (tab) =>
+            tab.id === activeProject.activeTabId && tab.kind === "terminal"
+        ) ?? activeProject.tabs.find((tab) => tab.kind === "terminal")
+      if (!host || host.kind !== "terminal") {
+        const hostId = makeId()
+        const previewId = makeId()
         setProjects((prev) =>
-          prev.map((p) =>
-            p.id === activeProject.id
-              ? {
-                  ...p,
-                  tabs: p.tabs.map((t) =>
-                    t.id === preview.id && t.kind === "diff"
-                      ? { ...t, path, staged, name: basename(path) }
-                      : t
-                  ),
-                  activeTabId: preview.id,
+          prev.map((project) =>
+            project.id !== activeProject.id
+              ? project
+              : {
+                  ...project,
+                  tabs: [
+                    ...project.tabs,
+                    {
+                      kind: "terminal" as const,
+                      id: hostId,
+                      name: "Preview",
+                      previewOnly: true,
+                      panes: [],
+                      previews: [
+                        {
+                          kind: "diff" as const,
+                          id: previewId,
+                          name: basename(path),
+                          path,
+                          staged,
+                          preview: true,
+                        },
+                      ],
+                      activePaneId: "",
+                    },
+                  ],
+                  activeTabId: hostId,
                 }
-              : p
           )
         )
-        navigateToTab(preview.id)
+        navigateToTab(hostId)
         return
       }
-      const id = makeId()
       setProjects((prev) =>
         prev.map((p) =>
           p.id === activeProject.id
             ? {
                 ...p,
-                tabs: [
-                  ...p.tabs,
-                  {
+                tabs: p.tabs.map((tab) => {
+                  if (tab.id !== host.id || tab.kind !== "terminal") return tab
+                  const existing = tab.previews?.at(-1)
+                  const preview = {
                     kind: "diff" as const,
-                    id,
+                    id: existing?.id ?? makeId(),
                     name: basename(path),
                     path,
                     staged,
                     preview: true,
-                  },
-                ],
-                activeTabId: id,
+                  }
+                  return {
+                    ...tab,
+                    previews: [preview],
+                    layout: ensureLayout(
+                      tab.layout,
+                      tab.panes.map((pane) => pane.id)
+                    ),
+                  }
+                }),
+                activeTabId: host.id,
               }
             : p
         )
       )
-      navigateToTab(id)
+      navigateToTab(host.id)
     },
     [activeProject, navigateToTab]
   )
@@ -2713,57 +2773,77 @@ export function AppShell() {
       if (line != null) {
         setFileReveal((prev) => ({ path, line, seq: (prev?.seq ?? 0) + 1 }))
       }
-      const exact = activeProject.tabs.find(
-        (t) => t.kind === "file" && t.path === path
-      )
-      if (exact) {
-        navigateToTab(exact.id)
-        return
-      }
-      const preview = activeProject.tabs.find(
-        (t) => t.kind === "file" && t.preview
-      )
-      if (preview) {
+      const host =
+        activeProject.tabs.find(
+          (tab) =>
+            tab.id === activeProject.activeTabId && tab.kind === "terminal"
+        ) ?? activeProject.tabs.find((tab) => tab.kind === "terminal")
+      if (!host || host.kind !== "terminal") {
+        const hostId = makeId()
+        const previewId = makeId()
         setProjects((prev) =>
-          prev.map((p) =>
-            p.id === activeProject.id
-              ? {
-                  ...p,
-                  tabs: p.tabs.map((t) =>
-                    t.id === preview.id && t.kind === "file"
-                      ? { ...t, path, name: basename(path) }
-                      : t
-                  ),
-                  activeTabId: preview.id,
+          prev.map((project) =>
+            project.id !== activeProject.id
+              ? project
+              : {
+                  ...project,
+                  tabs: [
+                    ...project.tabs,
+                    {
+                      kind: "terminal" as const,
+                      id: hostId,
+                      name: "Preview",
+                      previewOnly: true,
+                      panes: [],
+                      previews: [
+                        {
+                          kind: "file" as const,
+                          id: previewId,
+                          name: basename(path),
+                          path,
+                          preview: true,
+                        },
+                      ],
+                      activePaneId: "",
+                    },
+                  ],
+                  activeTabId: hostId,
                 }
-              : p
           )
         )
-        navigateToTab(preview.id)
+        navigateToTab(hostId)
         return
       }
-      const id = makeId()
       setProjects((prev) =>
         prev.map((p) =>
           p.id === activeProject.id
             ? {
                 ...p,
-                tabs: [
-                  ...p.tabs,
-                  {
+                tabs: p.tabs.map((tab) => {
+                  if (tab.id !== host.id || tab.kind !== "terminal") return tab
+                  const existing = tab.previews?.at(-1)
+                  const preview = {
                     kind: "file" as const,
-                    id,
+                    id: existing?.id ?? makeId(),
                     name: basename(path),
                     path,
                     preview: true,
-                  },
-                ],
-                activeTabId: id,
+                  }
+                  return {
+                    ...tab,
+                    previews: [preview],
+                    layout: ensureLayout(
+                      tab.layout,
+                      tab.panes.map((pane) => pane.id)
+                    ),
+                  }
+                }),
+                activeTabId: host.id,
               }
             : p
         )
       )
-      navigateToTab(id)
+      navigateToTab(host.id)
     },
     [activeProject, navigateToTab]
   )
@@ -3047,9 +3127,8 @@ export function AppShell() {
     [projects, resolvedTheme]
   )
 
-  // Subscribe to onExit for every running pane so that when the daemon
-  // force-stops a session (24 h idle sweep) or the user types `exit`, the
-  // tab entry stays but the pane flips back to pendingStart and can be
+  // Subscribe to onExit for every running pane so that when its process exits,
+  // the tab entry stays but the pane flips back to pendingStart and can be
   // restarted with the "Start terminal" button.
   useEffect(() => {
     const offs: Array<() => void> = []
@@ -3476,13 +3555,13 @@ export function AppShell() {
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== projectId) return p
-        const closingIdx = p.tabs.findIndex((t) => t.id === id)
         const tabs = p.tabs.filter((t) => t.id !== id)
-        let nextActive = p.activeTabId
-        if (p.activeTabId === id) {
-          const nextIdx = Math.max(0, closingIdx - 1)
-          nextActive = tabs[nextIdx]?.id ?? ""
-        }
+        const nextActive = tabIdAfterClose(
+          p.tabs,
+          p.activeTabId,
+          id,
+          lastTerminalByProjectRef.current[projectId]
+        )
         // Closed terminal sessions drop completion; recompute project marker.
         return withSessionScopedAgentStatus({
           ...p,
@@ -3492,10 +3571,14 @@ export function AppShell() {
       })
     )
     if (projectId === activeProjectId && id === activeTabId) {
-      const closingIdx = project?.tabs.findIndex((t) => t.id === id) ?? -1
-      const remaining = project?.tabs.filter((t) => t.id !== id) ?? []
-      const nextIdx = Math.max(0, closingIdx - 1)
-      const next = remaining[nextIdx]?.id
+      const next = project
+        ? tabIdAfterClose(
+            project.tabs,
+            activeTabId,
+            id,
+            lastTerminalByProjectRef.current[projectId]
+          )
+        : ""
       if (next) navigateToTab(next)
       else navigateToProject(projectId)
     }
@@ -3583,12 +3666,18 @@ export function AppShell() {
     closeActiveTabRef.current = () => {
       if (!activeTabId) return
       const active = activeProject?.tabs.find((t) => t.id === activeTabId)
+      const activePreview =
+        active?.kind === "terminal" ? active.previews?.at(-1) : undefined
+      if (activePreview) {
+        void closePane(activeTabId, activePreview.id)
+        return
+      }
       if (
         active?.kind === "terminal" &&
         active.panes.length > 1 &&
         active.activePaneId
       ) {
-        closePane(activeTabId, active.activePaneId)
+        void closePane(activeTabId, active.activePaneId)
         return
       }
       closeTab(activeTabId)
@@ -4214,7 +4303,9 @@ export function AppShell() {
                   />
                 ) : (
                   <WorkspaceTabBar
-                    tabs={activeProject.tabs}
+                    tabs={activeProject.tabs.filter(
+                      (tab) => tab.kind !== "terminal" || !tab.previewOnly
+                    )}
                     activeId={activeTabId}
                     animationScopeKey={activeProject.id}
                     openingTabId={openingTerminalTabId}

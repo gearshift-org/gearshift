@@ -8,7 +8,13 @@ import {
   useState,
   type CSSProperties,
 } from "react"
-import { ChevronDown, ChevronUp, X } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronUp,
+  CloudUpload,
+  GitCommitHorizontal,
+  X,
+} from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
@@ -25,10 +31,25 @@ import {
   detectAgentTitleFallbackSignal,
   type AgentFallbackSignal,
 } from "@/lib/agentStatus"
+import {
+  EchoTimer,
+  observeLongTasks,
+  terminalPerfThreshold,
+} from "@/lib/terminalPerf"
+import { markUserTyping } from "@/lib/typingActivity"
+import {
+  subscribeAgentStatus,
+  type PolledAgentStatus,
+} from "@/lib/agentStatusPoll"
 import { agentActivityTitleSignal, formatAutoTitle } from "./terminalName"
 import { onRequestTerminalClipboardPaste } from "./terminalSignals"
-import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
+import {
+  fetchGitQueryData,
+  gitQueryKey,
+  type GitQueryData,
+} from "@/lib/gitStatusQuery"
 import { prepareAgentPaste } from "@/lib/terminalPaste"
+import { writeAgentPrompt } from "@/lib/historySummary"
 import {
   mergeRuntimeAgentName,
   type RuntimeAgentName,
@@ -50,7 +71,7 @@ type Props = {
   sessionId: string
   // Project working directory for this pane. Used to read the shared git-status
   // query (the same data behind the sidebar change counter) so the post-task
-  // "Commit changes" affordance only appears when there are changes.
+  // Git action affordance only appears when there is work to commit or push.
   cwd?: string
   isActive?: boolean
   // Whether this pane is on screen. Inactive projects/tabs stay mounted but
@@ -578,7 +599,6 @@ function openTerminalUrl(
   }
   void window.shellApi.openExternal(expanded)
 }
-const AGENT_STATUS_POLL_MS = 2000
 const AGENT_WORKING_QUIET_MS = 10000
 // While a hook event has been seen within this window, the process-detection
 // poller is treated as advisory only — it can promote running/agentName but
@@ -591,6 +611,23 @@ const SUBAGENT_PENDING_MAX_MS = 30 * 60 * 1000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
+// After a keystroke, PTY output goes straight to xterm instead of waiting on
+// the output rAF, so multi-chunk TUI input-line redraws are parsed and ready
+// for the next frame. A busy agent can take >100ms to redraw its input line,
+// so this has to outlast a slow echo — and it should stay open across
+// continuous typing. Matches INPUT_PRIORITY_WINDOW_MS on the daemon hop.
+const INPUT_ECHO_PRIORITY_MS = 250
+// Cadence of the off-write-path agent-signal scan, and how much recent output
+// it keeps between runs (the detector only reads the last 8KB anyway).
+const AGENT_SIGNAL_SCAN_MS = 120
+const AGENT_SIGNAL_SCAN_BYTES = 8000
+// Flush cadence for panes that aren't on screen. Output still lands in order
+// and in full (capped by LIVE_DATA_BACKLOG_CAP); it just isn't paid for at
+// frame rate while nobody can see it.
+const HIDDEN_PANE_FLUSH_MS = 150
+// Ceiling on undrained PTY output held in the renderer before it is written to
+// xterm. Only reachable if the drain stalls entirely (see onDataChunk).
+const LIVE_DATA_BACKLOG_CAP = 1024 * 1024
 const TERMINAL_RESIZE_SETTLE_MS = 120
 const TERMINAL_PTY_RESIZE_THROTTLE_MS = 120
 // Scrollback line count past which a live (per-frame) column resize is deferred
@@ -610,8 +647,18 @@ const LIVE_FIT_SUPPRESSING_BODY_CLASSES = ["gs-sidebar-resizing"]
 // Temporarily hide the top-right terminal recap box while testing terminal UX.
 // Keep the full code path intact; flip this back to true to restore it.
 const TERMINAL_RECAP_BOX_ENABLED = false
-// Floating commit affordance temporarily disabled; keep the code path intact.
-const FLOATING_COMMIT_AFFORDANCE_ENABLED = false
+const FLOATING_COMMIT_AFFORDANCE_ENABLED = true
+const FLOATING_TERMINAL_BUTTON_CLASS =
+  "rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+
+function hasPendingGitAction(data: GitQueryData | undefined): boolean {
+  return !!(
+    data &&
+    (data.files.length > 0 ||
+      data.ahead > 0 ||
+      (!data.hasUpstream && !!data.currentBranch))
+  )
+}
 // Agents that can report authoritative lifecycle hooks (start/stop via the
 // agent socket). While a hook is active/recent, fallback detection stays
 // advisory for normal working/done transitions. Strong blocked-prompt cues can
@@ -645,9 +692,6 @@ function terminalRecentBufferText(term: Terminal, maxLines = 80): string {
 // Hookless agents fall back to "terminal produced output while running" as a
 // busy signal. All supported agents currently have hooks, so keep this empty.
 const OUTPUT_ACTIVITY_AGENTS = new Set<string>()
-// Delay between writing a prompt and the Enter that submits it, so the agent's
-// input box registers the full text first. Mirrors AppShell's writeAgentPrompt.
-const AGENT_PROMPT_SUBMIT_DELAY_MS = 80
 const COMMIT_STATUS_CHECK_DELAY_MS = 200
 const MIN_TERMINAL_FIT_COLS = 20
 const MIN_TERMINAL_FIT_ROWS = 2
@@ -841,6 +885,9 @@ export function TerminalView({
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const fitTerminalRef = useRef<(() => boolean) | null>(null)
+  // Lets the reveal effect drain the hidden-pane output batch (owned by the
+  // terminal init effect) without waiting for its next timer.
+  const flushLiveDataRef = useRef<(() => void) | null>(null)
   // Mirrors the isVisible prop for the fit path (created once at init). When a
   // fit is skipped because the pane is hidden, it's flagged here and replayed
   // as one authoritative fit on reveal.
@@ -916,6 +963,8 @@ export function TerminalView({
   const anonSubagentSeqRef = useRef(0)
   const recapTimerRef = useRef<number | undefined>(undefined)
   const commitCheckTimerRef = useRef<number | undefined>(undefined)
+  const gitActionSuppressedRef = useRef(false)
+  const lastDetectedAgentRunningRef = useRef<boolean | undefined>(undefined)
   const kittyImageChunksRef = useRef(new Map<string, KittyImagePayload>())
   const lastKittyImageChunkIdRef = useRef<string | null>(null)
   const modifiedEnterSequenceRef = useRef("\x1b\r")
@@ -935,28 +984,25 @@ export function TerminalView({
     message: ChatHistoryMessage | null
     kind: "completed" | "needs_attention"
   } | null>(null)
-  // Floating "Commit changes" affordance shown after an agent turn finishes with
-  // uncommitted changes. Same action as the sidebar's "Commit with AI".
+  // Floating Git affordance shown while the agent is idle and the project has
+  // uncommitted changes or local commits waiting to be pushed.
   // "closing" keeps it mounted long enough to play the exit animation.
   const [commitUi, setCommitUi] = useState<"hidden" | "open" | "closing">(
     "hidden"
   )
-  const commitDismissedRef = useRef(false)
-  // Mirror commitUi into a ref so the terminal's one-time key/input handlers can
-  // read the current value without being re-attached on every state change.
-  const commitUiRef = useRef(commitUi)
   useLayoutEffect(() => {
     themeRef.current = { isDark, theme: themeObj }
   }, [isDark, themeObj])
-  useEffect(() => {
-    commitUiRef.current = commitUi
-  }, [commitUi])
   const queryClient = useQueryClient()
   const { data: gitData } = useQuery({
     queryKey: gitQueryKey(cwd ?? null),
     queryFn: () => fetchGitQueryData(cwd!),
     enabled: FLOATING_COMMIT_AFFORDANCE_ENABLED && !!cwd,
   })
+  const gitDataRef = useRef(gitData)
+  useEffect(() => {
+    gitDataRef.current = gitData
+  }, [gitData])
   const cwdRef = useRef(cwd)
   useEffect(() => {
     cwdRef.current = cwd
@@ -1051,6 +1097,9 @@ export function TerminalView({
       lastSubmitAt: lastAgentSubmitAtRef.current || next.lastSubmitAt,
     }
     const prev = agentStatusRef.current
+    if (!prev.running && merged.running) {
+      gitActionSuppressedRef.current = false
+    }
     if (
       prev.running === merged.running &&
       prev.working === merged.working &&
@@ -1066,6 +1115,19 @@ export function TerminalView({
       return
     }
     agentStatusRef.current = merged
+    if (FLOATING_COMMIT_AFFORDANCE_ENABLED) {
+      const data = gitDataRef.current
+      const shouldShow =
+        !gitActionSuppressedRef.current &&
+        merged.running &&
+        !!merged.agentName &&
+        !merged.working &&
+        !merged.needsAttention &&
+        hasPendingGitAction(data)
+      setCommitUi((current) =>
+        shouldShow ? "open" : current === "open" ? "closing" : current
+      )
+    }
     onAgentStatusChangeRef.current?.(merged)
   }, [])
 
@@ -1123,16 +1185,8 @@ export function TerminalView({
     [sessionId]
   )
 
-  // Animate out, then unmount once the exit animation finishes (onAnimationEnd).
-  const dismissCommit = useCallback(() => {
-    commitDismissedRef.current = true
-    setCommitUi((s) => (s === "open" ? "closing" : s))
-  }, [])
-
-  // After an agent turn finishes, surface the commit affordance only when the
-  // project actually has changes. Reads the same git-status query that backs the
-  // sidebar change counter (shared React Query cache, keyed by cwd) and refetches
-  // so the count reflects whatever the agent just wrote.
+  // After an agent turn finishes, refresh the same Git query that backs the
+  // sidebar and show the matching action for dirty or ahead-only repositories.
   const maybeShowCommit = useCallback(() => {
     if (!FLOATING_COMMIT_AFFORDANCE_ENABLED) return
     const dir = cwdRef.current
@@ -1152,10 +1206,17 @@ export function TerminalView({
         })
         .then((data) => {
           if (cwdRef.current !== dir) return
-          if (data.files.length > 0) {
-            commitDismissedRef.current = false
-            setCommitUi("open")
-          }
+          const status = agentStatusRef.current
+          const shouldShow =
+            !gitActionSuppressedRef.current &&
+            status.running &&
+            !!status.agentName &&
+            !status.working &&
+            !status.needsAttention &&
+            hasPendingGitAction(data)
+          setCommitUi((current) =>
+            shouldShow ? "open" : current === "open" ? "closing" : current
+          )
         })
         .catch(() => {
           // Not a repo / git error — just don't offer the affordance.
@@ -1245,6 +1306,7 @@ export function TerminalView({
         current.needsAttention
       fallbackActiveTurnRef.current = false
       if (hadFallbackTurn) {
+        gitActionSuppressedRef.current = false
         emitAgentStatus({
           ...current,
           working: false,
@@ -1270,36 +1332,39 @@ export function TerminalView({
     [emitAgentStatus, hooksAreAuthoritative, maybeShowCommit, scheduleRecap]
   )
 
-  // Keep the affordance honest while it's open: if the changes disappear (e.g.
-  // the agent committed them), close it. Never auto-opens — the affordance is
-  // only surfaced by maybeShowCommit() after an agent finishes a turn, so it
-  // can't linger when no agent ran.
+  // Keep the affordance synchronized with Git state, including on initial load.
   useEffect(() => {
-    if (!gitData || gitData.files.length !== 0) return
+    if (!gitData) return
+    const status = agentStatusRef.current
+    const shouldShow =
+      !gitActionSuppressedRef.current &&
+      status.running &&
+      !!status.agentName &&
+      !status.working &&
+      !status.needsAttention &&
+      hasPendingGitAction(gitData)
     const id = requestAnimationFrame(() => {
-      setCommitUi((s) => (s === "open" ? "closing" : s))
+      setCommitUi((current) =>
+        shouldShow ? "open" : current === "open" ? "closing" : current
+      )
     })
     return () => cancelAnimationFrame(id)
   }, [gitData])
 
-  const commitChanges = useCallback(() => {
+  const runGitAction = useCallback(() => {
     // Start the exit animation right away so the pill slides out smoothly on
-    // click. The message + Enter are still written on the submit delay in the
-    // background, so the agent receives them just after.
+    // click. The shared prompt helper writes and submits the instruction.
     setCommitUi((s) => (s === "open" ? "closing" : s))
-    window.term.write(sessionId, "commit changes")
-    window.setTimeout(() => {
-      window.term.write(sessionId, "\r")
-    }, AGENT_PROMPT_SUBMIT_DELAY_MS)
+    const hasUncommittedChanges = (gitDataRef.current?.files.length ?? 0) > 0
+    writeAgentPrompt(
+      sessionId,
+      hasUncommittedChanges
+        ? "Review all current changes, create an appropriate commit, and push it to the remote."
+        : "Push the unpushed commits to the remote."
+    )
     const term = termRef.current
     if (term) safeTerminalFocus(term)
   }, [sessionId])
-  // Ref so the one-time terminal key handler can invoke the latest commitChanges.
-  const commitChangesRef = useRef(commitChanges)
-  useEffect(() => {
-    commitChangesRef.current = commitChanges
-  }, [commitChanges])
-
   const clearAgentWorking = useCallback(() => {
     if (agentWorkingTimerRef.current) {
       window.clearTimeout(agentWorkingTimerRef.current)
@@ -1309,6 +1374,8 @@ export function TerminalView({
     fallbackActiveTurnRef.current = false
     lastAgentActivityAtRef.current = 0
     hasSubmittedToAgentRef.current = false
+    gitActionSuppressedRef.current = true
+    setCommitUi((state) => (state === "open" ? "closing" : state))
     const current = agentStatusRef.current
     if (current.working || current.needsAttention) {
       emitAgentStatus({
@@ -1772,20 +1839,6 @@ export function TerminalView({
         return false
       }
 
-      // ⌘⏎ — submit the floating "commit changes" affordance while it's showing.
-      if (
-        meta &&
-        !ctrl &&
-        !alt &&
-        !shift &&
-        key === "enter" &&
-        commitUiRef.current === "open"
-      ) {
-        e.preventDefault()
-        commitChangesRef.current()
-        return false
-      }
-
       // ⇧⏎ / ⌘⇧⏎ — insert newline in TUI prompts (Claude Code, Codex,
       // OpenCode, pi). Terminals send CR (\r) on Enter, so send the active
       // modified-Enter sequence instead of a normal Enter.
@@ -1910,6 +1963,52 @@ export function TerminalView({
     let pendingLiveData = ""
     let liveDataRaf: number | undefined
     let liveDataFallbackTimer: number | undefined
+    let prioritizeLiveDataUntil = 0
+    // Instrumentation only (see lib/terminalPerf); inert unless the devtools
+    // flag is set.
+    const echoTimer = new EchoTimer(sessionId)
+
+    // Agent-signal scanning is deliberately NOT on the write path. The blocked
+    // detector normalizes up to 8KB of text and markAgentWorking re-arms a
+    // timer; doing that per write turned "write output to xterm" — the thing
+    // standing between the user and their echo — into a text-processing job
+    // running at output rate. Nothing here is latency-sensitive (it drives a
+    // spinner and an attention badge), so it runs on its own slow timer over
+    // the text seen since the last scan.
+    let signalScanText = ""
+    let signalScanTimer: number | undefined
+    const runSignalScan = () => {
+      signalScanTimer = undefined
+      const text = signalScanText
+      signalScanText = ""
+      const current = agentStatusRef.current
+      if (!text || !current.running || !current.agentName) return
+      applyFallbackAgentSignal(
+        detectAgentOutputFallbackSignal(current.agentName, text),
+        "output"
+      )
+      if (OUTPUT_ACTIVITY_AGENTS.has(current.agentName)) markAgentWorking()
+    }
+    const queueSignalScan = (chunk: string) => {
+      const current = agentStatusRef.current
+      if (!current.running || !current.agentName) return
+      // The detector only ever looks at the last 8KB, so keeping more than
+      // that between scans is wasted copying under a fast stream.
+      signalScanText = (signalScanText + chunk).slice(-AGENT_SIGNAL_SCAN_BYTES)
+      if (signalScanTimer === undefined) {
+        signalScanTimer = window.setTimeout(
+          runSignalScan,
+          AGENT_SIGNAL_SCAN_MS
+        )
+      }
+    }
+
+    const writeToTerm = (chunk: string) => {
+      echoTimer.markWritten()
+      term.write(chunk, () => echoTimer.markParsed())
+      queueSignalScan(chunk)
+    }
+
     const flushLiveData = () => {
       if (liveDataRaf !== undefined) {
         cancelAnimationFrame(liveDataRaf)
@@ -1922,25 +2021,58 @@ export function TerminalView({
       if (!pendingLiveData) return
       const chunk = pendingLiveData
       pendingLiveData = ""
-      term.write(chunk)
-      const current = agentStatusRef.current
-      applyFallbackAgentSignal(
-        detectAgentOutputFallbackSignal(current.agentName, chunk),
-        "output"
-      )
-      if (
-        current.running &&
-        current.agentName &&
-        OUTPUT_ACTIVITY_AGENTS.has(current.agentName)
-      ) {
-        markAgentWorking()
-      }
+      writeToTerm(chunk)
     }
+    flushLiveDataRef.current = flushLiveData
     const onDataChunk = (chunk: string) => {
+      echoTimer.markArrived()
+      // PTY echo is the user's visual typing feedback. While they are
+      // interacting, hand the bytes to xterm the instant they arrive: xterm's
+      // own write buffer already coalesces and its renderer is frame-throttled,
+      // so this cannot paint more than once per frame — but it does guarantee
+      // the echo is parsed and ready when that frame comes, instead of sitting
+      // in a JS buffer waiting on our rAF. Sustained output with no one typing
+      // stays on the rAF batch, which keeps a long stream cheap.
+      if (performance.now() < prioritizeLiveDataUntil) {
+        if (pendingLiveData) {
+          const queued = pendingLiveData
+          pendingLiveData = ""
+          writeToTerm(queued)
+        }
+        writeToTerm(chunk)
+        return
+      }
       pendingLiveData += chunk
+      // Hard bound on the backlog. With renderer backgrounding disabled the
+      // drain should never stall, but if it ever does (a long pause in another
+      // app under a streaming agent), an unbounded buffer would land as one
+      // multi-megabyte parse on return and freeze typing for seconds. Keep the
+      // tail from a line boundary — the same trade-off the daemon's capped
+      // scrollback snapshot already makes.
+      if (pendingLiveData.length > LIVE_DATA_BACKLOG_CAP) {
+        const tail = pendingLiveData.slice(-LIVE_DATA_BACKLOG_CAP)
+        const lineStart = tail.indexOf("\n")
+        pendingLiveData = lineStart === -1 ? tail : tail.slice(lineStart + 1)
+      }
+      // A hidden pane has no pixels to produce, but every write it makes still
+      // parses escape sequences and mutates the xterm buffer on the one main
+      // thread the *visible* terminal needs to echo keystrokes. With several
+      // agents running in background tabs that is most of the renderer's
+      // budget spent on output nobody is looking at. Batch those far more
+      // coarsely; the pane is authoritatively refit and redrawn on reveal.
+      if (!isVisibleRef.current) {
+        if (liveDataFallbackTimer === undefined) {
+          liveDataFallbackTimer = window.setTimeout(
+            flushLiveData,
+            HIDDEN_PANE_FLUSH_MS
+          )
+        }
+        return
+      }
       if (liveDataRaf === undefined) {
         liveDataRaf = requestAnimationFrame(flushLiveData)
-        // rAF stops while the window is hidden/occluded (macOS), which would
+        // Defense in depth: backgroundThrottling is disabled on the window,
+        // but if rAF ever stops while hidden/occluded (macOS), that would
         // let pendingLiveData grow without bound under a streaming agent and
         // then land as one giant write. The timeout keeps draining regardless.
         liveDataFallbackTimer = window.setTimeout(flushLiveData, 250)
@@ -1985,20 +2117,35 @@ export function TerminalView({
         attachLiveData()
       })
     })
+    // Returning from another app: drain whatever arrived while away on the spot
+    // rather than waiting for the next frame/timer to be un-throttled.
+    const drainOnReveal = () => {
+      if (document.visibilityState === "visible") flushLiveData()
+    }
+    window.addEventListener("focus", drainOnReveal)
+    document.addEventListener("visibilitychange", drainOnReveal)
+
     const offExit = window.term.onExit(sessionId, () => {
       term.write("\r\n\x1b[31m[process exited]\x1b[0m\r\n")
     })
 
     const inputSub = term.onData((d) => {
       if (replayingSnapshot) return
-      // The moment the user types into the terminal, retire the floating commit
-      // affordance — they're driving the session themselves. (commitChanges
-      // writes via window.term.write, which bypasses onData, so triggering the
-      // commit doesn't dismiss itself here.)
-      if (commitUiRef.current === "open") {
-        commitDismissedRef.current = true
-        setCommitUi("closing")
+      // Send first, think later. Everything below is local bookkeeping for UI
+      // affordances; none of it affects the bytes the PTY receives, and all of
+      // it used to run before the keystroke left the renderer.
+      window.term.write(sessionId, d)
+      // Tell the rest of the renderer to keep its non-urgent work (sidebar git
+      // status, file tree) off the main thread until this burst of typing ends.
+      markUserTyping()
+      if (terminalPerfThreshold() !== null) {
+        observeLongTasks()
+        echoTimer.markSent()
       }
+      prioritizeLiveDataUntil = performance.now() + INPUT_ECHO_PRIORITY_MS
+      // Drain anything already waiting on the output rAF now, so this
+      // keystroke's echo isn't queued behind a frame's worth of agent output.
+      flushLiveData()
       const current = agentStatusRef.current
       if (current.running) {
         const now = Date.now()
@@ -2035,7 +2182,6 @@ export function TerminalView({
             now + USER_INPUT_ECHO_SUPPRESS_MS
         }
       }
-      window.term.write(sessionId, d)
     })
     let lastEmittedTitle: string | undefined
     const titleSub = term.onTitleChange((t) => {
@@ -2163,6 +2309,12 @@ export function TerminalView({
       if (liveDataFallbackTimer !== undefined) {
         window.clearTimeout(liveDataFallbackTimer)
       }
+      if (signalScanTimer !== undefined) {
+        window.clearTimeout(signalScanTimer)
+      }
+      flushLiveDataRef.current = null
+      window.removeEventListener("focus", drainOnReveal)
+      document.removeEventListener("visibilitychange", drainOnReveal)
       for (const timer of startupFitTimers) window.clearTimeout(timer)
       if (rafId) cancelAnimationFrame(rafId)
       if (agentWorkingTimerRef.current) {
@@ -2288,16 +2440,57 @@ export function TerminalView({
   useEffect(() => {
     let cancelled = false
 
-    const refreshAgentStatus = async () => {
-      try {
+    const applyAgentStatus = (detected: PolledAgentStatus | null) => {
+      if (cancelled) return
+      if (detected === null) {
+        // Don't clobber hook state on a transient IPC failure either.
+        const current = agentStatusRef.current
+        const hookAuthoritative =
+          activeHookWorkRef.current ||
+          Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
+        if (hookAuthoritative) return
+        // Preserve the persisted/last-known completed + submit markers on a
+        // transient failure instead of wiping them.
+        emitAgentStatus({
+          running: false,
+          working: false,
+          completed: current.completed,
+          completedAt: current.completedAt,
+          needsAttention: current.needsAttention,
+          lastSubmitAt: current.lastSubmitAt,
+          agentName: current.agentName,
+        })
+        return
+      }
+      {
+        const wasDetectedRunning = lastDetectedAgentRunningRef.current
+        lastDetectedAgentRunningRef.current = detected.running
+        if (detected.running && wasDetectedRunning === false) {
+          // The process poll can observe a real close/reopen even while the
+          // hook-backed status remains warm briefly. Treat that transition as
+          // a fresh agent lifecycle so a canceled turn does not suppress the
+          // Git action forever in this terminal.
+          gitActionSuppressedRef.current = false
+          const current = agentStatusRef.current
+          const data = gitDataRef.current
+          if (
+            current.running &&
+            !!current.agentName &&
+            !current.working &&
+            !current.needsAttention &&
+            hasPendingGitAction(data)
+          ) {
+            setCommitUi("open")
+          }
+        }
         const statusBeforePoll = agentStatusRef.current
         const hookIsAuthoritative =
           activeHookWorkRef.current ||
           Date.now() - lastHookEventAtRef.current < HOOK_AUTHORITATIVE_WINDOW_MS
         // Hook-backed agents already push lifecycle changes to the renderer.
-        // Avoid scanning the entire OS process table every two seconds while
-        // that stronger signal is active; the fallback poll resumes after the
-        // authority window in case a stop event was lost.
+        // Ignore process detection while that stronger signal is active; the
+        // fallback resumes after the authority window in case a stop event was
+        // lost.
         if (
           hookIsAuthoritative &&
           statusBeforePoll.running &&
@@ -2306,8 +2499,6 @@ export function TerminalView({
         ) {
           return
         }
-        const detected = await window.term.agentStatus(sessionId)
-        if (cancelled) return
         const current = agentStatusRef.current
         if (!current.running && detected.running) {
           hasSubmittedToAgentRef.current = false
@@ -2375,40 +2566,17 @@ export function TerminalView({
           needsAttention: detected.running ? current.needsAttention : false,
           lastSubmitAt: current.lastSubmitAt,
         })
-      } catch {
-        if (!cancelled) {
-          // Don't clobber hook state on a transient IPC failure either.
-          const current = agentStatusRef.current
-          const hookAuthoritative =
-            activeHookWorkRef.current ||
-            Date.now() - lastHookEventAtRef.current <
-              HOOK_AUTHORITATIVE_WINDOW_MS
-          if (!hookAuthoritative) {
-            // Preserve the persisted/last-known completed + submit markers on a
-            // transient failure instead of wiping them.
-            emitAgentStatus({
-              running: false,
-              working: false,
-              completed: current.completed,
-              completedAt: current.completedAt,
-              needsAttention: current.needsAttention,
-              lastSubmitAt: current.lastSubmitAt,
-              agentName: current.agentName,
-            })
-          }
-        }
       }
     }
 
-    void refreshAgentStatus()
-    const interval = window.setInterval(
-      () => void refreshAgentStatus(),
-      AGENT_STATUS_POLL_MS
-    )
+    // One shared timer polls every mounted pane in a single IPC round trip —
+    // see lib/agentStatusPoll. Panes for inactive projects stay mounted, so a
+    // per-pane interval made this cost grow with every open project.
+    const unsubscribe = subscribeAgentStatus(sessionId, applyAgentStatus)
 
     return () => {
       cancelled = true
-      window.clearInterval(interval)
+      unsubscribe()
     }
   }, [sessionId, emitAgentStatus])
 
@@ -2447,6 +2615,7 @@ export function TerminalView({
         // (UserPromptSubmit). Treats agent as running even before the
         // process-name poll catches up.
         activeHookWorkRef.current = true
+        gitActionSuppressedRef.current = false
         fallbackActiveTurnRef.current = false
         hasSubmittedToAgentRef.current = true
         const now = Date.now()
@@ -2549,6 +2718,7 @@ export function TerminalView({
         completed: true,
         needsAttention: false,
       })
+      gitActionSuppressedRef.current = false
       // Turn finished — AI titles (Claude/OpenCode) are finalized by now.
       void refreshAgentSessionTitle()
       scheduleRecap("completed")
@@ -2634,6 +2804,10 @@ export function TerminalView({
   // lets the opacity flip land first so the fit reads settled layout.
   useEffect(() => {
     isVisibleRef.current = isVisible
+    // Coming back on screen: write out whatever the coarse hidden-pane batch
+    // is still holding before the pane paints, so the reveal doesn't show a
+    // stale frame and then jump.
+    if (isVisible) flushLiveDataRef.current?.()
     if (!isVisible || !hiddenFitPendingRef.current) return
     hiddenFitPendingRef.current = false
     const id = requestAnimationFrame(() => {
@@ -2724,6 +2898,10 @@ export function TerminalView({
         ? "0/0"
         : ""
       : `${searchResults.resultIndex + 1}/${searchResults.resultCount}`
+  const hasUncommittedChanges = (gitData?.files.length ?? 0) > 0
+  const gitActionLabel = hasUncommittedChanges
+    ? "Commit and Push"
+    : "Push Changes"
 
   return (
     <ContextMenu>
@@ -2757,8 +2935,8 @@ export function TerminalView({
             onContextMenu={(e) => e.stopPropagation()}
             aria-label="Scroll to bottom"
             className={cn(
-              "absolute left-1/2 z-10 -translate-x-1/2 animate-in rounded-full border border-border bg-background text-foreground shadow-md fade-in slide-in-from-bottom-2 hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110",
-              "bottom-4"
+              "absolute bottom-4 left-1/2 z-10 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-2",
+              FLOATING_TERMINAL_BUTTON_CLASS
             )}
           >
             <ChevronDown data-icon="inline-start" />
@@ -2766,12 +2944,11 @@ export function TerminalView({
           </Button>
         )}
         {FLOATING_COMMIT_AFFORDANCE_ENABLED &&
-          commitUi !== "hidden" &&
-          !showScrollToBottom && (
-            // Outer element owns the bottom-left placement; the inner element owns
+          commitUi !== "hidden" && (
+            // Outer element owns the top-center placement; the inner element owns
             // the slide animation so the exit keyframes do not move the anchor.
             <div
-              className="absolute bottom-4 left-4 z-10"
+              className="absolute top-4 left-1/2 z-10 -translate-x-1/2"
               onClick={(e) => e.stopPropagation()}
               onContextMenu={(e) => e.stopPropagation()}
             >
@@ -2787,29 +2964,22 @@ export function TerminalView({
                     ? // fill-mode-forwards holds the final (opacity 0) frame until
                       // unmount; without it the element snaps back to opaque for a
                       // frame at animation end — the exit "flicker".
-                      "animate-out fill-mode-forwards fade-out slide-out-to-bottom-2"
-                    : "animate-in fade-in slide-in-from-bottom-2"
+                      "animate-out fill-mode-forwards fade-out slide-out-to-top-2"
+                    : "animate-in fade-in slide-in-from-top-2"
                 )}
               >
                 <Button
                   type="button"
-                  onClick={commitChanges}
-                  aria-label="Commit changes with AI"
-                  className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
+                  onClick={runGitAction}
+                  aria-label={`${gitActionLabel} with agent`}
+                  className={FLOATING_TERMINAL_BUTTON_CLASS}
                 >
-                  Commit changes
-                  <kbd className="ml-1 rounded border border-current/40 bg-foreground/10 px-1.5 py-0.5 text-[10px] leading-none font-semibold opacity-100">
-                    ⌘⏎
-                  </kbd>
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  onClick={dismissCommit}
-                  aria-label="Dismiss"
-                  className="rounded-full border border-border bg-background text-foreground shadow-md hover:bg-background hover:brightness-95 dark:border-transparent dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary dark:hover:brightness-110"
-                >
-                  <X />
+                  {hasUncommittedChanges ? (
+                    <GitCommitHorizontal data-icon="inline-start" />
+                  ) : (
+                    <CloudUpload data-icon="inline-start" />
+                  )}
+                  {gitActionLabel}
                 </Button>
               </div>
             </div>

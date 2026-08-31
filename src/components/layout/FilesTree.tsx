@@ -26,6 +26,7 @@ import {
 } from "lucide-react"
 import { FileIcon, FolderIcon } from "@/components/icons/FileIcon"
 import { VSCodeIcon } from "@/components/icons/VSCodeIcon"
+import { runWhenNotTyping } from "@/lib/typingActivity"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -695,15 +696,21 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
     let timer: number | null = null
     // Gate on watchId (not a cwd string compare) so path normalization
     // mismatches can't silently drop events — matches the git watcher.
+    // Re-reading and repainting the tree is not urgent, so it waits for a gap
+    // in the user's typing instead of landing between a keystroke and its echo.
+    let cancelIdle: (() => void) | null = null
     const off = window.fsApi.onChanged((ev) => {
       if (!watchId || ev.watchId !== watchId) return
       if (timer !== null) window.clearTimeout(timer)
       timer = window.setTimeout(() => {
-        void queryClient.invalidateQueries({
-          queryKey: fileTreeProjectQueryKey(cwd),
-        })
-        void queryClient.invalidateQueries({
-          queryKey: fileTreeAllFilesQueryKey(cwd),
+        cancelIdle = runWhenNotTyping(() => {
+          cancelIdle = null
+          void queryClient.invalidateQueries({
+            queryKey: fileTreeProjectQueryKey(cwd),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: fileTreeAllFilesQueryKey(cwd),
+          })
         })
       }, 300)
     })
@@ -715,6 +722,7 @@ export function FilesTree({ cwd, activePath, onOpenFile }: Props) {
       active = false
       off()
       if (timer !== null) window.clearTimeout(timer)
+      cancelIdle?.()
       if (watchId) window.fsApi.unwatchProject(watchId)
     }
   }, [cwd, queryClient])

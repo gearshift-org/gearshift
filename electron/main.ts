@@ -8,6 +8,7 @@ import {
   nativeImage,
   screen,
   shell,
+  webContents,
 } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -64,6 +65,18 @@ if (process.env.GEARSHIFT_REMOTE_DEBUG_PORT) {
     process.env.GEARSHIFT_REMOTE_DEBUG_PORT
   )
 }
+// Keep the renderer running at full speed while the user is in another app.
+// webPreferences.backgroundThrottling:false is not enough on its own: Chromium
+// separately *backgrounds the whole renderer process* when its window is
+// hidden or occluded by another window, which throttles timers and stops rAF.
+// PTY output from a working agent then piles up unprocessed for as long as the
+// user is away, and lands as one huge parse on return — which is what made
+// typing feel laggy after switching back from another app. These switches must
+// be set before the app is ready.
+app.commandLine.appendSwitch("disable-renderer-backgrounding")
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows")
+app.commandLine.appendSwitch("disable-background-timer-throttling")
+
 const execFileP = promisify(execFile)
 
 function searchTokens(query: string): string[] {
@@ -264,10 +277,11 @@ const sessionProjects = new Map<string, string | null>()
 function getOwnerWebContents(sessionId: string) {
   const id = sessionOwners.get(sessionId)
   if (id == null) return null
-  return (
-    BrowserWindow.getAllWindows().find((w) => w.webContents.id === id)
-      ?.webContents ?? null
-  )
+  // Direct id lookup, not a scan of every window: this runs once per PTY
+  // output flush per session, i.e. tens of times a second per open agent, on
+  // the same process that relays keystrokes.
+  const wc = webContents.fromId(id)
+  return wc && !wc.isDestroyed() ? wc : null
 }
 
 function sendAgentHookEvent(sessionId: string, event: AgentHookEvent) {
@@ -1403,7 +1417,42 @@ function isAllowlistedDotenv(name: string) {
   return name === ".env" || name.startsWith(".env.")
 }
 
+// Every terminal pane polls its agent status on a timer, and each poll used to
+// spawn its own `ps -axo` and parse the full process table in the main process.
+// With several panes open that is the same work N times per interval, on the
+// exact process that also relays keystrokes to the PTY and PTY output back to
+// the renderer — which showed up as intermittent typing lag. One snapshot is
+// shared by all callers: concurrent calls join the in-flight run, and a run
+// that just finished is reused for PROCESS_SNAPSHOT_TTL_MS.
+const PROCESS_SNAPSHOT_TTL_MS = 1_000
+let processSnapshot: {
+  at: number
+  children: Map<number, Array<{ pid: number; command: string }>>
+} | null = null
+let processSnapshotInFlight: Promise<
+  Map<number, Array<{ pid: number; command: string }>>
+> | null = null
+
 async function listProcessChildren(): Promise<
+  Map<number, Array<{ pid: number; command: string }>>
+> {
+  const cached = processSnapshot
+  if (cached && Date.now() - cached.at < PROCESS_SNAPSHOT_TTL_MS) {
+    return cached.children
+  }
+  if (processSnapshotInFlight) return processSnapshotInFlight
+  processSnapshotInFlight = readProcessChildren()
+    .then((children) => {
+      processSnapshot = { at: Date.now(), children }
+      return children
+    })
+    .finally(() => {
+      processSnapshotInFlight = null
+    })
+  return processSnapshotInFlight
+}
+
+async function readProcessChildren(): Promise<
   Map<number, Array<{ pid: number; command: string }>>
 > {
   const { stdout } = await execFileP("/bin/ps", ["-axo", "pid=,ppid=,command="])
@@ -1552,6 +1601,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       plugins: true,
+      // Keep rAF/timers running while the window is hidden or occluded.
+      // Otherwise streaming agent output piles up unparsed and lands as one
+      // giant xterm write on refocus, stalling the first keystrokes (VS Code
+      // disables throttling for the same reason).
+      backgroundThrottling: false,
     },
   })
   if (VITE_DEV_SERVER_URL && process.platform === "darwin") {
@@ -4057,7 +4111,12 @@ app.whenReady().then(async () => {
       daemonClient?.write(id, data)
       // App-injected writes (e.g. summarize prompts) pass skipCapture to keep
       // them out of the user's chat history.
-      if (!skipCapture) void captureInput(id, data)
+      //
+      // Deferred to the next tick: on Enter, captureInput walks the process
+      // tree (and can spawn `ps`) before it can decide whether to record the
+      // line. That must never share a tick with the keystroke relay above —
+      // Enter is exactly the moment the user is watching for a response.
+      if (!skipCapture) setImmediate(() => void captureInput(id, data))
     }
   )
 
@@ -4098,6 +4157,25 @@ app.whenReady().then(async () => {
     const pid = daemonClient?.getPid(id)
     if (!pid) return { running: false } satisfies RendererAgentStatusInfo
     return toRendererAgentStatus(await detectPtyAgent(pid))
+  })
+
+  // Batched form of the above. Every open pane polls its agent status on the
+  // same 2s cadence, so with many projects open (all of their panes stay
+  // mounted) that was N separate invokes per tick — N promises, N structured
+  // clones, N handler runs — on the process that also relays keystrokes. The
+  // renderer now asks once for every session it cares about; all of them share
+  // the single cached process snapshot below.
+  ipcMain.handle("term:agentStatusMany", async (_e, ids: string[]) => {
+    const result: Record<string, RendererAgentStatusInfo> = {}
+    await Promise.all(
+      ids.map(async (id) => {
+        const pid = daemonClient?.getPid(id)
+        result[id] = pid
+          ? toRendererAgentStatus(await detectPtyAgent(pid))
+          : { running: false }
+      })
+    )
+    return result
   })
 
   ipcMain.handle(
@@ -4251,8 +4329,7 @@ app.on("before-quit", () => {
   cliOpenServer?.close()
   cliOpenServer = null
   // Sessions outlive Electron. Just detach the client; the daemon keeps
-  // PTYs alive until the user kills them, the daemon's own no-clients
-  // grace timer fires, or the 24h per-session idle sweep triggers.
+  // PTYs alive until the user closes them or their processes exit.
   daemonClient?.disconnect()
   sessionOwners.clear()
   sessionProjects.clear()

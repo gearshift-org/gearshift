@@ -795,7 +795,12 @@ function ProjectSidebarRow({
     setColorVersion((v) => v + 1)
   }
 
-  const terminalCount = p.tabs.filter((tab) => tab.kind === "terminal").length
+  const visibleTabs = p.tabs.filter(
+    (tab) => tab.kind !== "terminal" || !tab.previewOnly
+  )
+  const terminalCount = visibleTabs.filter(
+    (tab) => tab.kind === "terminal"
+  ).length
   const lastSubmittedTabId = lastSubmittedTerminalTabId(p.tabs)
   const latestTabChatAt = (tab: WorkspaceTab) =>
     tab.kind === "terminal"
@@ -1102,14 +1107,15 @@ function ProjectSidebarRow({
         </ContextMenuContent>
       </ContextMenu>
       <CollapsibleContent className="flex h-[var(--collapsible-panel-height)] flex-col overflow-hidden transition-[height] duration-150 ease-out data-ending-style:h-0 data-starting-style:h-0 [&[hidden]:not([hidden='until-found'])]:hidden">
-        {p.tabs.length > 0 && (
+        {visibleTabs.length > 0 && (
           <div
             role="navigation"
             aria-label={`${p.name} tabs`}
+            data-terminal-tab-drop-target={isActive ? "true" : undefined}
             className="flex flex-col gap-0.5 pb-1"
           >
             {(() => {
-              const sorted = [...p.tabs].sort((a, b) => {
+              const sorted = [...visibleTabs].sort((a, b) => {
                 if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
                 return latestTabChatAt(b) - latestTabChatAt(a)
               })

@@ -11,6 +11,7 @@ import {
   type RightSidebarTab,
 } from "@/lib/projects"
 import { store } from "@/lib/store"
+import { useStableHandlers } from "@/lib/stableHandlers"
 import { fetchGitQueryData, gitQueryKey } from "@/lib/gitStatusQuery"
 import type {
   DropZone,
@@ -168,16 +169,24 @@ export function WorkspaceSplit({
     return () => window.clearTimeout(id)
   }, [sidebarWidth])
 
+  // Keyed on the project *paths*, not the projects array: that array gets a new
+  // identity on every pane title / agent status change (many times a second
+  // while an agent runs), and this effect would then re-enter the query client
+  // once per open project each time. Only the set of projects matters here.
+  const backgroundPathsKey = projects
+    .filter((p) => p.id !== activeProjectId)
+    .map((p) => p.path)
+    .join("\n")
   useEffect(() => {
-    for (const project of projects) {
-      if (project.id === activeProjectId) continue
+    if (!backgroundPathsKey) return
+    for (const path of backgroundPathsKey.split("\n")) {
       void queryClient.prefetchQuery({
-        queryKey: gitQueryKey(project.path),
-        queryFn: () => fetchGitQueryData(project.path),
+        queryKey: gitQueryKey(path),
+        queryFn: () => fetchGitQueryData(path),
         staleTime: BACKGROUND_GIT_PREFETCH_STALE_MS,
       })
     }
-  }, [activeProjectId, projects, queryClient])
+  }, [backgroundPathsKey, queryClient])
 
   // No fit suppression on toggle: the workspace padding snaps in one layout
   // pass at click time and the single terminal reflow lands under the panel's
@@ -263,6 +272,31 @@ export function WorkspaceSplit({
 
   const activeProjectHasTabs = !!activeProject?.tabs.length
 
+  // Every open project keeps its panes mounted, so without stable handler
+  // identities a re-render here re-renders all of them. With these, only the
+  // projects whose own object actually changed re-render (WorkspacePane is
+  // memoized).
+  const paneHandlers = useStableHandlers({
+    onTitleChange: onTerminalTitleChange,
+    onAgentStatusChange: onTerminalAgentStatusChange,
+    onStartTerminal,
+    onAddTerminal,
+    onSplitTerminal,
+    onClosePane,
+    onCloseTab,
+    onFocusPane,
+    onTerminalFocusChange,
+    onRenamePane,
+    onDropPane,
+    onQuickSplitPane,
+    onTerminalExpandedPaneChange,
+    onLayoutChange: onTerminalLayoutChange,
+    onExtractPaneToTab,
+    onProjectActivity,
+    onOpenFile: onOpenFileTab,
+    onOpenDevPreview: onOpenDevPreviewTab,
+  })
+
   const workspaceSection = (
     <div className="relative flex h-full flex-col">
       {!hideTitleBar && titleBar}
@@ -280,26 +314,14 @@ export function WorkspaceSplit({
               project={p}
               isActive={p.id === activeProjectId}
               activeTabId={p.id === activeProjectId ? activeTabId : undefined}
-              terminalFocusRequest={terminalFocusRequest}
-              onTitleChange={onTerminalTitleChange}
-              onAgentStatusChange={onTerminalAgentStatusChange}
-              onStartTerminal={onStartTerminal}
-              onAddTerminal={onAddTerminal}
-              onSplitTerminal={onSplitTerminal}
-              onClosePane={onClosePane}
-              onCloseTab={onCloseTab}
-              onFocusPane={onFocusPane}
-              onTerminalFocusChange={onTerminalFocusChange}
-              onRenamePane={onRenamePane}
-              onDropPane={onDropPane}
-              onQuickSplitPane={onQuickSplitPane}
-              onTerminalExpandedPaneChange={onTerminalExpandedPaneChange}
-              onLayoutChange={onTerminalLayoutChange}
-              onExtractPaneToTab={onExtractPaneToTab}
-              onProjectActivity={onProjectActivity}
-              onOpenFile={onOpenFileTab}
-              onOpenDevPreview={onOpenDevPreviewTab}
-              fileReveal={fileReveal}
+              // Both of these only ever address the active project; passing
+              // them to hidden panes would re-render every project whenever a
+              // focus or reveal request changes.
+              terminalFocusRequest={
+                p.id === activeProjectId ? terminalFocusRequest : null
+              }
+              fileReveal={p.id === activeProjectId ? fileReveal : null}
+              {...paneHandlers}
             />
           </div>
         ))}

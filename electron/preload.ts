@@ -123,6 +123,16 @@ const termApi = {
       running: boolean
       agentName?: "claude" | "codex" | "opencode" | "pi" | "grok"
     }>,
+  agentStatusMany: (ids: string[]) =>
+    ipcRenderer.invoke("term:agentStatusMany", ids) as Promise<
+      Record<
+        string,
+        {
+          running: boolean
+          agentName?: "claude" | "codex" | "opencode" | "pi" | "grok"
+        }
+      >
+    >,
   agentSessionTitle: (args: {
     agent: "claude" | "codex" | "opencode" | "pi"
     agentSessionId: string

@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -9,7 +10,14 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
-import { Columns2, Eye, FileCode, Rows3, X } from "lucide-react"
+import {
+  Columns2,
+  Eye,
+  FileDiff,
+  FileCode,
+  Rows3,
+  X,
+} from "lucide-react"
 import {
   DndContext,
   DragOverlay,
@@ -52,6 +60,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
+import { FileIcon } from "@/components/icons/FileIcon"
 import { loadDiffViewMode, saveDiffViewMode } from "@/lib/projects"
 import { store } from "@/lib/store"
 import { AGENT_TERMINAL_LABELS } from "@/lib/agentTerminalOptions"
@@ -71,6 +80,7 @@ import type {
   TerminalLayout,
   TerminalPane as TerminalPaneType,
   TerminalTab,
+  WorkspacePreview,
   WorkspaceTab,
 } from "./types"
 
@@ -374,6 +384,130 @@ function QuickSplitOverlay({ onPick }: { onPick: (zone: DropZone) => void }) {
   )
 }
 
+function PreviewTile({
+  preview,
+  cwd,
+  isActive,
+  diffViewMode,
+  mdMode,
+  fileReveal,
+  onOpenFile,
+  onClose,
+}: {
+  preview: WorkspacePreview
+  cwd?: string
+  isActive: boolean
+  diffViewMode: "unified" | "split"
+  mdMode: MdMode
+  fileReveal?: FileReveal | null
+  onOpenFile?: (path: string) => void
+  onClose: () => void
+}) {
+  const focusWithinRef = useRef(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [focused, setFocused] = useState(false)
+  useEffect(() => {
+    const closeFocusedPreview = (event: KeyboardEvent) => {
+      if (
+        !focusWithinRef.current ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.shiftKey ||
+        event.altKey ||
+        event.key.toLowerCase() !== "w"
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      onClose()
+    }
+    window.addEventListener("keydown", closeFocusedPreview, true)
+    return () =>
+      window.removeEventListener("keydown", closeFocusedPreview, true)
+  }, [onClose])
+  if (!cwd) return null
+  return (
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      onFocusCapture={() => {
+        focusWithinRef.current = true
+        setFocused(true)
+      }}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          focusWithinRef.current = false
+          setFocused(false)
+        }
+      }}
+      onPointerDown={() => {
+        if (!rootRef.current?.contains(document.activeElement)) {
+          rootRef.current?.focus({ preventScroll: true })
+        }
+      }}
+      className={cn(
+        "relative flex h-full flex-col overflow-hidden rounded-md border bg-card",
+        isActive && focused ? "border-transparent" : "border-border"
+      )}
+    >
+      <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-border bg-background px-3 text-xs text-foreground">
+        {preview.kind === "diff" ? (
+          <FileDiff className="size-3.5 shrink-0" />
+        ) : (
+          <FileIcon name={preview.name} className="size-3.5 shrink-0" />
+        )}
+        <span className="truncate">{tabDisplayName(preview)}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label={`Close ${tabDisplayName(preview)}`}
+                  className="grid size-5 shrink-0 place-items-center rounded-sm text-foreground transition-colors hover:bg-foreground/15"
+                >
+                  <X className="size-3.5" />
+                </button>
+              }
+            />
+            <TooltipContent>Close preview</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1">
+        {preview.kind === "diff" ? (
+          <SingleFileDiff
+            cwd={cwd}
+            path={preview.path}
+            staged={preview.staged}
+            isActive={isActive}
+            viewMode={diffViewMode}
+            mdMode={mdMode}
+            onOpenFile={onOpenFile}
+          />
+        ) : (
+          <FilePreview
+            cwd={cwd}
+            path={preview.path}
+            isActive={isActive}
+            mdMode={mdMode}
+            revealLine={
+              fileReveal?.path === preview.path ? fileReveal.line : undefined
+            }
+            revealSeq={
+              fileReveal?.path === preview.path ? fileReveal.seq : undefined
+            }
+          />
+        )}
+      </div>
+      {isActive && focused ? (
+        <div className="pointer-events-none absolute inset-0 z-30 box-border rounded-[calc(var(--radius-md)-1px)] border-2 border-ring" />
+      ) : null}
+    </div>
+  )
+}
+
 function TerminalTabContent({
   tab,
   cwd,
@@ -395,6 +529,10 @@ function TerminalTabContent({
   onExtractPaneToTab,
   onProjectActivity,
   onOpenDevPreview,
+  onOpenFile,
+  diffViewMode,
+  mdMode,
+  fileReveal,
 }: {
   tab: TerminalTab
   cwd?: string
@@ -440,6 +578,10 @@ function TerminalTabContent({
   onExtractPaneToTab?: (tabId: string, paneId: string) => void
   onProjectActivity?: (projectId: string) => void
   onOpenDevPreview?: (url: string) => void
+  onOpenFile?: (path: string) => void
+  diffViewMode: "unified" | "split"
+  mdMode: MdMode
+  fileReveal?: FileReveal | null
 }) {
   const multi = tab.panes.length > 1
   // Among splits with a live agent, mark the one the user most recently
@@ -467,9 +609,11 @@ function TerminalTabContent({
   // The terminal body uses the theme's --sidebar token (see TerminalView), so
   // reuse it here directly — it stays in sync with the theme automatically.
   const terminalBg = "var(--sidebar)"
+  const activePreview = tab.previews?.at(-1)
+  const terminalIsActive = isActive && !activePreview
   const layout = ensureLayout(
     tab.layout,
-    tab.panes.map((p) => p.id)
+    tab.panes.map((pane) => pane.id)
   )
   const orderedIds = orderedPaneIds(layout)
 
@@ -584,7 +728,7 @@ function TerminalTabContent({
         tab={tab}
         pane={pane}
         cwd={cwd}
-        isTabActive={isActive}
+        isTabActive={terminalIsActive}
         focusRequest={
           focusRequest?.tabId === tab.id && focusRequest.paneId === pane.id
             ? focusRequest.nonce
@@ -639,7 +783,9 @@ function TerminalTabContent({
     // xterm's own focus — keeps the border up while editing the title or
     // clicking the header, but still drops it when focus leaves the pane.
     const activePane =
-      isActive && tab.activePaneId === paneId && focusedPaneId === paneId
+      terminalIsActive &&
+      tab.activePaneId === paneId &&
+      focusedPaneId === paneId
     // Pulse the pane border instead of a header dot when the agent finished or
     // needs attention. Driven by the same status flags as the sidebar indicators,
     // so it clears the same way (viewing the pane with the app focused).
@@ -758,40 +904,63 @@ function TerminalTabContent({
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={pointerWithin}
-      onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
-      onDragEnd={handleDragEnd}
-      onDragCancel={() => {
-        setDraggingPaneId(null)
-        setTabBarDropRect(null)
-      }}
-    >
-      {/* Drag a pane's header onto any other pane to swap their positions
-          (handled in AppShell.reorderPanes via swapLeaves). */}
-      <div className="flex h-full flex-col">{renderRoot(layout)}</div>
-      {tabBarDropRect ? (
+    <div className="relative h-full">
+      {tab.panes.length > 0 ? (
         <div
-          className="pointer-events-none fixed z-[250] bg-foreground/10 ring-2 ring-foreground/40 ring-inset"
-          style={{
-            top: tabBarDropRect.top,
-            left: tabBarDropRect.left,
-            width: tabBarDropRect.width,
-            height: tabBarDropRect.height,
-          }}
-        />
+          aria-hidden={!!activePreview}
+          className={hiddenLayerClass(!!activePreview)}
+        >
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => {
+              setDraggingPaneId(null)
+              setTabBarDropRect(null)
+            }}
+          >
+            {/* Drag a pane's header onto any other pane to swap their positions
+                (handled in AppShell.reorderPanes via swapLeaves). */}
+            <div className="flex h-full flex-col">{renderRoot(layout)}</div>
+            {tabBarDropRect ? (
+              <div
+                className="pointer-events-none fixed z-[250] bg-foreground/10 ring-2 ring-foreground/40 ring-inset"
+                style={{
+                  top: tabBarDropRect.top,
+                  left: tabBarDropRect.left,
+                  width: tabBarDropRect.width,
+                  height: tabBarDropRect.height,
+                }}
+              />
+            ) : null}
+            <DragOverlay dropAnimation={null}>
+              {draggingPane ? (
+                <PaneHeaderPreview
+                  pane={draggingPane}
+                  index={orderedIds.indexOf(draggingPane.id)}
+                />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
       ) : null}
-      <DragOverlay dropAnimation={null}>
-        {draggingPane ? (
-          <PaneHeaderPreview
-            pane={draggingPane}
-            index={orderedIds.indexOf(draggingPane.id)}
+      {activePreview ? (
+        <div className="absolute inset-0">
+          <PreviewTile
+            preview={activePreview}
+            cwd={cwd}
+            isActive={isActive}
+            diffViewMode={diffViewMode}
+            mdMode={mdMode}
+            fileReveal={fileReveal}
+            onOpenFile={onOpenFile}
+            onClose={() => onClosePane?.(tab.id, activePreview.id)}
           />
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -903,6 +1072,10 @@ function PaneContent({
         onExtractPaneToTab={onExtractPaneToTab}
         onProjectActivity={onProjectActivity}
         onOpenDevPreview={onOpenDevPreview}
+        onOpenFile={onOpenFile}
+        diffViewMode={diffViewMode}
+        mdMode={mdMode}
+        fileReveal={fileReveal}
       />
     )
   }
@@ -944,7 +1117,14 @@ function PaneContent({
   )
 }
 
-export function WorkspacePane({
+// Memoized: every open project keeps a WorkspacePane mounted (hidden, not
+// unmounted), and the projects state above changes many times a second while an
+// agent works. Without this, a title change in one project re-rendered every
+// other project's tabs and terminals too — the cost of that scaled with how
+// many projects the user had open, which is exactly when it hurt most.
+// Handlers from WorkspaceSplit are identity-stable (see useStableHandlers), so
+// this only re-renders when its own project object changes.
+export const WorkspacePane = memo(function WorkspacePane({
   project,
   isActive = true,
   activeTabId: activeTabIdOverride,
@@ -1240,4 +1420,4 @@ export function WorkspacePane({
       </div>
     </div>
   )
-}
+})

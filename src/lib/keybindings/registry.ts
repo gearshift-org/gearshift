@@ -4,6 +4,8 @@ export type ActionId =
   | "palette.open"
   | "terminal.split"
   | "terminal.splitVertical"
+  | "terminal.nextSplit"
+  | "terminal.previousSplit"
   | "terminal.quickSplitHold"
   | "terminal.new"
   | "terminal.close"
@@ -61,6 +63,20 @@ export const ACTIONS: readonly ActionDef[] = [
     id: "terminal.splitVertical",
     label: "Split Terminal Down",
     defaultAccelerator: "CmdOrCtrl+Shift+D",
+    scope: "renderer",
+  },
+  {
+    id: "terminal.nextSplit",
+    label: "Focus Next Terminal Split",
+    description: "Focus the next split in visual order",
+    defaultAccelerator: "CmdOrCtrl+]",
+    scope: "renderer",
+  },
+  {
+    id: "terminal.previousSplit",
+    label: "Focus Previous Terminal Split",
+    description: "Focus the previous split in visual order",
+    defaultAccelerator: "CmdOrCtrl+[",
     scope: "renderer",
   },
   {

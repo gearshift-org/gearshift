@@ -141,6 +141,10 @@ Every open project keeps its whole workspace mounted — hidden via `hiddenLayer
 
 Per-project effects follow the same rule: the background git prefetch in `WorkspaceSplit` keys on the project _paths_ rather than the `projects` array, so it doesn't re-enter the query client once per open project on every title change.
 
+## Terminal split navigation
+
+`Command+]` focuses the next terminal split and `Command+[` focuses the previous split in visual left-to-right, top-to-bottom order. Navigation wraps at either end, updates the tab's active pane, and moves keyboard focus into the selected terminal. Both actions are configurable in Settings → Keybindings and stay inactive when fewer than two splits are available, a file/Git preview covers the terminal, or one split is expanded.
+
 ## Project spaces
 
 Spaces are local project metadata stored with the renderer project snapshot in `gearshift.projects` and `gearshift.spaces`. A fresh install always has the built-in `Personal` space (`space-personal`), and older projects without a `spaceId` hydrate into that space automatically.

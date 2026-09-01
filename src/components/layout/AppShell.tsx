@@ -2629,6 +2629,49 @@ export function AppShell() {
     [activeProjectId, rememberAgentTerminal]
   )
 
+  const cycleActiveTerminalPane = useCallback(
+    (direction: "next" | "previous") => {
+      const project = projectsRef.current.find(
+        (item) => item.id === activeProjectId
+      )
+      const tab = project?.tabs.find((item) => item.id === project.activeTabId)
+      if (
+        tab?.kind !== "terminal" ||
+        tab.previews?.length ||
+        tab.panes.length < 2 ||
+        expandedTerminalPaneByTabRef.current[tab.id]
+      ) {
+        return
+      }
+
+      const paneIds = orderedPaneIds(
+        ensureLayout(
+          tab.layout,
+          tab.panes.map((pane) => pane.id)
+        )
+      )
+      const currentIndex = paneIds.indexOf(tab.activePaneId)
+      const step = direction === "next" ? 1 : -1
+      const targetIndex =
+        currentIndex < 0
+          ? direction === "next"
+            ? 0
+            : paneIds.length - 1
+          : (currentIndex + step + paneIds.length) % paneIds.length
+      const paneId = paneIds[targetIndex]
+      if (!paneId) return
+
+      setActivePane(tab.id, paneId)
+      terminalFocusRequestNonceRef.current += 1
+      setTerminalFocusRequest({
+        tabId: tab.id,
+        paneId,
+        nonce: terminalFocusRequestNonceRef.current,
+      })
+    },
+    [activeProjectId, setActivePane]
+  )
+
   const setTerminalLayout = useCallback(
     (tabId: string, layout: TerminalLayout) => {
       setProjects((prev) =>
@@ -3832,6 +3875,14 @@ export function AppShell() {
           e.preventDefault()
           splitActiveTerminalRef.current("vertical")
           break
+        case "terminal.nextSplit":
+          e.preventDefault()
+          cycleActiveTerminalPane("next")
+          break
+        case "terminal.previousSplit":
+          e.preventDefault()
+          cycleActiveTerminalPane("previous")
+          break
         case "terminal.last":
           e.preventDefault()
           goToLastTerminalRef.current()
@@ -3919,6 +3970,7 @@ export function AppShell() {
     openRightSidebar,
     toggleRightSidebar,
     toggleProjectSidebar,
+    cycleActiveTerminalPane,
     cycleSpace,
     themeFamily,
     setThemeFamily,

@@ -51,6 +51,7 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "light-monokai-pro": { bg: "#faf4f2", fg: "#29242a", accent: "#1c8ca8" },
   "light-claude": { bg: "#faf9f5", fg: "#3d3d3a", accent: "#d97757" },
   "light-coffee": { bg: "#f4f1f0", fg: "#36221d", accent: "#d3694c" },
+  "light-cursor": { bg: "#ffffff", fg: "#1f1f1f", accent: "#2f6fed" },
   dark: { bg: "#191919", fg: "#b2b2b2", accent: "#007acc" },
   "dark-cool": { bg: "#171a1f", fg: "#b1b6bd", accent: "#4c8fd6" },
   "dark-warm": { bg: "#1c1a18", fg: "#b7b1a7", accent: "#c79a5b" },
@@ -66,6 +67,7 @@ const SWATCHES: Record<ThemeId, { bg: string; fg: string; accent: string }> = {
   "dark-monokai-pro": { bg: "#2d2a2e", fg: "#d7d6d5", accent: "#78dce8" },
   "dark-claude": { bg: "#262624", fg: "#a6a49c", accent: "#d97757" },
   "dark-coffee": { bg: "#292423", fg: "#ceb5b0", accent: "#f09177" },
+  "dark-cursor": { bg: "#181818", fg: "#cccccc", accent: "#3b82f6" },
 }
 
 const COMMON_TERMINAL_FONTS = [

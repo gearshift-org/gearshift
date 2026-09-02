@@ -28,6 +28,7 @@ export const THEMES = {
   "light-monokai-pro": { label: "Monokai Pro", appearance: "light" },
   "light-claude": { label: "Claude", appearance: "light" },
   "light-coffee": { label: "Coffee Cream", appearance: "light" },
+  "light-cursor": { label: "Cursor", appearance: "light" },
   dark: { label: "Default", appearance: "dark" },
   "dark-cool": { label: "Cool", appearance: "dark" },
   "dark-warm": { label: "Warm", appearance: "dark" },
@@ -43,6 +44,7 @@ export const THEMES = {
   "dark-monokai-pro": { label: "Monokai Pro", appearance: "dark" },
   "dark-claude": { label: "Claude", appearance: "dark" },
   "dark-coffee": { label: "Coffee", appearance: "dark" },
+  "dark-cursor": { label: "Cursor", appearance: "dark" },
 } as const satisfies Record<string, ThemeDefinition>
 
 export type ThemeId = keyof typeof THEMES
@@ -125,6 +127,12 @@ export const THEME_FAMILIES = [
     label: "Coffee",
     light: "light-coffee",
     dark: "dark-coffee",
+  },
+  {
+    id: "cursor",
+    label: "Cursor",
+    light: "light-cursor",
+    dark: "dark-cursor",
   },
 ] as const satisfies readonly ThemeFamily[]
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import {
   FileDiff,
+  ExternalLink,
   GitBranch,
   GitCommitVertical,
   MonitorPlay,
@@ -148,12 +149,14 @@ export function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
 export function WorkspaceTitleBar({
   title,
   branch,
+  onOpenBranch,
   trailing,
   leading,
   draggable = false,
 }: {
   title: string
   branch?: string | null
+  onOpenBranch?: () => void
   trailing?: ReactNode
   leading?: ReactNode
   draggable?: boolean
@@ -180,6 +183,17 @@ export function WorkspaceTitleBar({
             <GitBranch className="size-3 shrink-0" />
             <span className="truncate">{branch}</span>
           </span>
+        ) : null}
+        {branch && onOpenBranch ? (
+          <button
+            type="button"
+            onClick={onOpenBranch}
+            aria-label={`Open ${branch} on GitHub`}
+            title={`Open ${branch} on GitHub`}
+            className="pointer-events-auto grid size-5 shrink-0 place-items-center rounded-sm text-foreground/60 transition-colors [-webkit-app-region:no-drag] hover:bg-foreground/15 hover:text-foreground dark:text-white/55"
+          >
+            <ExternalLink className="size-3" />
+          </button>
         ) : null}
       </div>
       {trailing && <div className="flex shrink-0 items-center">{trailing}</div>}

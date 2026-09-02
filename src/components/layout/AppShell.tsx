@@ -1396,6 +1396,39 @@ export function AppShell() {
   // running the chosen agent and ask it for a recap. Unlike Commit with AI
   // (which reuses the remembered last agent terminal), this targets the
   // picked agent — spinning up a fresh terminal for it when none is running.
+  // Sidebar "Commit & Push" / "Push": hand the job to the agent in the current
+  // terminal, same prompt the floating terminal button uses.
+  const runAgentGitAction = useCallback(
+    (kind: "commit" | "push") => {
+      const target = getTerminalPasteTarget()
+      if (!target) {
+        toast.error("Open a terminal in this project first")
+        return
+      }
+      focusTerminalPasteTarget(target)
+      window.setTimeout(
+        () =>
+          writeAgentPrompt(
+            target.sessionId,
+            kind === "commit"
+              ? "Review all current changes, create an appropriate commit, and push it to the remote."
+              : "Push the unpushed commits to the remote."
+          ),
+        120
+      )
+    },
+    [getTerminalPasteTarget, focusTerminalPasteTarget]
+  )
+
+  const openActiveBranchOnGitHub = useCallback(() => {
+    const path = activeProject?.path
+    const branch = activeProjectGit?.currentBranch
+    if (!path || !branch) return
+    void window.git.openBranchOnGitHub(path, branch).then((res) => {
+      if (!res.ok) toast.error(res.error ?? "Open GitHub failed")
+    })
+  }, [activeProject?.path, activeProjectGit?.currentBranch])
+
   const summarizeHistory = useCallback(
     (agent: string) => {
       const project = projectsRef.current.find((p) => p.id === activeProjectId)
@@ -4342,6 +4375,7 @@ export function AppShell() {
               onOpenDevPreviewTab={openDevPreviewTab}
               onOpenCommitTab={openCommitTab}
               onSummarizeHistory={summarizeHistory}
+              onAgentGitAction={runAgentGitAction}
               onSummarizeChat={summarizeChat}
               onProjectActivity={markProjectUpdated}
               onFocusSession={focusSession}
@@ -4354,6 +4388,11 @@ export function AppShell() {
                   <WorkspaceTitleBar
                     title={activeProject.name}
                     branch={activeProjectGit?.currentBranch}
+                    onOpenBranch={
+                      activeProjectGit?.ghAvailable
+                        ? openActiveBranchOnGitHub
+                        : undefined
+                    }
                     trailing={topBarTrailing}
                     leading={topBarLeading}
                     draggable={true}

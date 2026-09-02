@@ -88,6 +88,7 @@ type Props = {
     subject: string
   }) => void
   onSummarizeHistory?: (agent: string) => void
+  onAgentGitAction?: (kind: "commit" | "push") => void
   onSummarizeChat?: (range: HistoryRange) => void
   onProjectActivity?: (projectId: string) => void
   onFocusSession?: (sessionId: string) => void
@@ -130,6 +131,7 @@ export function WorkspaceSplit({
   onOpenDevPreviewTab,
   onOpenCommitTab,
   onSummarizeHistory,
+  onAgentGitAction,
   onSummarizeChat,
   onProjectActivity,
   onFocusSession,
@@ -399,6 +401,7 @@ export function WorkspaceSplit({
             onOpenFile={onOpenFileTab}
             onOpenCommit={onOpenCommitTab}
             onSummarizeHistory={onSummarizeHistory}
+            onAgentGitAction={onAgentGitAction}
             onSummarizeChat={onSummarizeChat}
             onFocusSession={onFocusSession}
             topRightActions={sidebarTopActions}

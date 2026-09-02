@@ -19,6 +19,7 @@ import {
   ExternalLink,
   FileCode,
   GitBranch,
+  GitCommitHorizontal,
   GitCommitVertical,
   GitPullRequest,
   Loader2,
@@ -33,7 +34,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { runWhenNotTyping } from "@/lib/typingActivity"
 import {
   Collapsible,
@@ -50,12 +50,6 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@/components/ui/combobox"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { SummarizeMenu } from "./SummarizeMenu"
 import {
   Tooltip,
@@ -183,6 +177,7 @@ type Props = {
     subject: string
   }) => void
   onSummarizeHistory?: (agent: string) => void
+  onAgentGitAction?: (kind: "commit" | "push") => void
   onSummarizeChat?: (range: HistoryRange) => void
   onFocusSession?: (sessionId: string) => void
   topRightActions?: React.ReactNode
@@ -207,6 +202,7 @@ export const RightSidebar = memo(function RightSidebar({
   onOpenFile,
   onOpenCommit,
   onSummarizeHistory,
+  onAgentGitAction,
   onSummarizeChat,
   onFocusSession,
   topRightActions,
@@ -311,7 +307,6 @@ export const RightSidebar = memo(function RightSidebar({
   const [checkingOutPrNumber, setCheckingOutPrNumber] = useState<number | null>(
     null
   )
-  const [githubBranchBusy, setGithubBranchBusy] = useState(false)
   const [stagedListLimit, setStagedListLimit] = useState(CHANGE_LIST_BATCH_SIZE)
   const [unstagedListLimit, setUnstagedListLimit] = useState(
     CHANGE_LIST_BATCH_SIZE
@@ -614,26 +609,6 @@ export const RightSidebar = memo(function RightSidebar({
     [currentGitQueryKey, queryClient]
   )
 
-  const clearOptimisticEntriesForPaths = useCallback((paths: string[]) => {
-    const pathSet = new Set(paths)
-    optimisticMovesRef.current = optimisticMovesRef.current.flatMap((move) => {
-      const remainingPaths = move.paths.filter((path) => !pathSet.has(path))
-      return remainingPaths.length > 0
-        ? [{ ...move, paths: remainingPaths }]
-        : []
-    })
-    optimisticRemovalsRef.current = optimisticRemovalsRef.current.flatMap(
-      (removal) => {
-        const remainingPaths = removal.paths.filter(
-          (path) => !pathSet.has(path)
-        )
-        return remainingPaths.length > 0
-          ? [{ ...removal, paths: remainingPaths }]
-          : []
-      }
-    )
-  }, [])
-
   // Coalesce overlapping refreshes — `git status` can take a beat on big
   // repos and we don't want a stampede when fs events fire in bursts.
   const inFlightRef = useRef(false)
@@ -855,83 +830,6 @@ export const RightSidebar = memo(function RightSidebar({
     })
   }, [cwd, runAction, stagedFiles, updateCachedFiles])
 
-  const commit = useCallback(
-    async (rawMessage: string, opts?: { push?: boolean }) => {
-      if (!cwd || busy) return false
-      const message = rawMessage.trim()
-      if (!message) {
-        setCurrentActionError("Commit message required")
-        return false
-      }
-      if (stagedFiles.length === 0) {
-        setCurrentActionError("Nothing staged to commit")
-        return false
-      }
-      inflightActionsRef.current += 1
-      setBusy(true)
-      setCommitting("commit")
-      setCurrentActionError(null)
-      const committedPaths = stagedFiles.map((f) => f.path)
-      await queryClient.cancelQueries({ queryKey: currentGitQueryKey })
-      const rollback = removeCachedFiles(committedPaths, true)
-      try {
-        const res = await window.git.commit(cwd, message)
-        if (!res.ok) {
-          rollback()
-          setCurrentActionError(res.error ?? "Commit failed")
-          return false
-        }
-        updateCachedGitMeta({
-          ahead: hasUpstream ? ahead + 1 : ahead,
-        })
-        if (opts?.push) {
-          setCommitting("push")
-          const pushRes = await window.git.push(cwd)
-          if (!pushRes.ok) {
-            setCurrentActionError(pushRes.error ?? "Push failed")
-            clearOptimisticEntriesForPaths(committedPaths)
-            queryClient.setQueryData(
-              currentGitQueryKey,
-              await fetchGitQueryData(cwd)
-            )
-            return true
-          }
-          updateCachedGitMeta({ ahead: 0 })
-        }
-        clearOptimisticEntriesForPaths(committedPaths)
-        queryClient.setQueryData(
-          currentGitQueryKey,
-          await fetchGitQueryData(cwd)
-        )
-        void queryClient.invalidateQueries({ queryKey: gitLogQueryKey(cwd) })
-        return true
-      } finally {
-        setBusy(false)
-        setCommitting(null)
-        inflightActionsRef.current = Math.max(0, inflightActionsRef.current - 1)
-        settleUntilRef.current = Math.max(
-          settleUntilRef.current,
-          Date.now() + 700
-        )
-        void runRefresh()
-      }
-    },
-    [
-      cwd,
-      busy,
-      stagedFiles,
-      queryClient,
-      currentGitQueryKey,
-      removeCachedFiles,
-      updateCachedGitMeta,
-      hasUpstream,
-      ahead,
-      clearOptimisticEntriesForPaths,
-      runRefresh,
-      setCurrentActionError,
-    ]
-  )
-
   const switchBranch = useCallback(
     (branch: string) => {
       if (!branch || branch === currentBranch) return
@@ -984,6 +882,19 @@ export const RightSidebar = memo(function RightSidebar({
     },
     [cwd, branches, runAction, updateCachedGitMeta]
   )
+
+  const [githubBranchBusy, setGithubBranchBusy] = useState(false)
+  const openBranchOnGitHub = useCallback(async () => {
+    if (!cwd || !currentBranch || githubBranchBusy) return
+    setGithubBranchBusy(true)
+    setCurrentActionError(null)
+    try {
+      const res = await window.git.openBranchOnGitHub(cwd, currentBranch)
+      if (!res.ok) setCurrentActionError(res.error ?? "Open GitHub failed")
+    } finally {
+      setGithubBranchBusy(false)
+    }
+  }, [cwd, currentBranch, githubBranchBusy, setCurrentActionError])
 
   const openPullRequest = useCallback(() => {
     if (!pullRequest) return
@@ -1043,18 +954,6 @@ export const RightSidebar = memo(function RightSidebar({
     runRefresh,
     setCurrentActionError,
   ])
-
-  const openBranchOnGitHub = useCallback(async () => {
-    if (!cwd || !currentBranch || githubBranchBusy) return
-    setGithubBranchBusy(true)
-    setCurrentActionError(null)
-    try {
-      const res = await window.git.openBranchOnGitHub(cwd, currentBranch)
-      if (!res.ok) setCurrentActionError(res.error ?? "Open GitHub failed")
-    } finally {
-      setGithubBranchBusy(false)
-    }
-  }, [cwd, currentBranch, githubBranchBusy, setCurrentActionError])
 
   const sync = useCallback(async () => {
     if (!cwd || busy) return
@@ -1502,37 +1401,34 @@ export const RightSidebar = memo(function RightSidebar({
                 </div>
               )}
               {cwd && !notRepo && (
-                <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 p-3">
-                  <div className="flex items-center gap-1.5">
-                    <div className="min-w-0 flex-1">
-                      <BranchPicker
-                        current={currentBranch}
-                        branches={branches}
-                        busy={switchingBranch || busy}
-                        onSwitch={switchBranch}
-                        onCreate={createBranch}
-                      />
-                    </div>
-                    {ghAvailable && currentBranch && (
-                      <GitHubBranchAction
-                        branch={currentBranch}
-                        busy={githubBranchBusy}
-                        onOpen={openBranchOnGitHub}
-                      />
-                    )}
-                    {ghAvailable && (pullRequest || canCreatePullRequest) && (
-                      <PullRequestAction
-                        pullRequest={pullRequest}
-                        canCreate={canCreatePullRequest}
-                        busy={pullRequestBusy}
-                        onOpen={openPullRequest}
-                        onCreate={createPullRequest}
-                      />
-                    )}
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-border/60 p-2">
+                  <div className="min-w-0 flex-1">
+                    <BranchPicker
+                      current={currentBranch}
+                      branches={branches}
+                      busy={switchingBranch || busy}
+                      onSwitch={switchBranch}
+                      onCreate={createBranch}
+                    />
                   </div>
+                  {ghAvailable && currentBranch && (
+                    <GitHubBranchAction
+                      branch={currentBranch}
+                      busy={githubBranchBusy}
+                      onOpen={openBranchOnGitHub}
+                    />
+                  )}
+                  {ghAvailable && (pullRequest || canCreatePullRequest) && (
+                    <PullRequestAction
+                      pullRequest={pullRequest}
+                      canCreate={canCreatePullRequest}
+                      busy={pullRequestBusy}
+                      onOpen={openPullRequest}
+                      onCreate={createPullRequest}
+                    />
+                  )}
                   <CommitControls
-                    hasData={hasData}
-                    stagedCount={stagedFiles.length}
+                    hasChanges={files.length > 0}
                     busy={busy}
                     committing={committing}
                     syncing={syncing}
@@ -1540,7 +1436,7 @@ export const RightSidebar = memo(function RightSidebar({
                     showPublishBranch={showPublishBranch}
                     ahead={ahead}
                     behind={behind}
-                    onCommit={commit}
+                    onAgentAction={onAgentGitAction}
                     onSync={sync}
                     onPublish={publishBranch}
                   />
@@ -1772,8 +1668,7 @@ export const RightSidebar = memo(function RightSidebar({
 })
 
 const CommitControls = memo(function CommitControls({
-  hasData,
-  stagedCount,
+  hasChanges,
   busy,
   committing,
   syncing,
@@ -1781,12 +1676,11 @@ const CommitControls = memo(function CommitControls({
   showPublishBranch,
   ahead,
   behind,
-  onCommit,
+  onAgentAction,
   onSync,
   onPublish,
 }: {
-  hasData: boolean
-  stagedCount: number
+  hasChanges: boolean
   busy: boolean
   committing: null | "commit" | "push" | "sync" | "pull" | "publish"
   syncing: boolean
@@ -1794,133 +1688,76 @@ const CommitControls = memo(function CommitControls({
   showPublishBranch: boolean
   ahead: number
   behind: number
-  onCommit: (message: string, opts?: { push?: boolean }) => Promise<boolean>
+  onAgentAction?: (kind: "commit" | "push") => void
   onSync: () => void | Promise<void>
   onPublish: () => void | Promise<void>
 }) {
-  const [message, setMessage] = useState("")
-  const canCommit = hasData && stagedCount > 0 && message.trim().length > 0
-
-  const submitCommit = useCallback(
-    (opts?: { push?: boolean }) => {
-      if (!canCommit) return
-      const submittedMessage = message
-      void onCommit(submittedMessage, opts).then((ok) => {
-        if (ok) {
-          setMessage((current) => (current === submittedMessage ? "" : current))
-        }
-      })
-    },
-    [canCommit, message, onCommit]
-  )
-
+  // Compact single button. With uncommitted changes the agent commits and
+  // pushes; otherwise publish/sync/push the branch directly.
+  if (hasChanges) {
+    return (
+      <Button
+        variant="default"
+        size="sm"
+        disabled={busy || !onAgentAction}
+        onClick={() => onAgentAction?.("commit")}
+        className="h-8 shrink-0"
+      >
+        <GitCommitHorizontal className="size-3.5" />
+        Commit &amp; Push
+      </Button>
+    )
+  }
+  if (!showSync) return null
+  const pushOnly = ahead > 0 && behind === 0
   return (
-    <>
-      <Textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Message (Ctrl+Enter to commit)"
-        rows={2}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canCommit) {
-            e.preventDefault()
-            submitCommit()
-          }
-        }}
-        className="min-h-0 resize-none rounded-md bg-background px-2 py-1.5 text-xs focus-visible:ring-2 focus-visible:ring-ring/40 md:text-xs"
-      />
-      {showSync ? (
-        <Button
-          variant="default"
-          size="sm"
-          disabled={busy}
-          onClick={() => (showPublishBranch ? void onPublish() : void onSync())}
-          className="w-full"
-        >
-          {syncing ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" />
-              {committing === "publish"
-                ? "Publishing…"
-                : committing === "pull"
-                  ? "Pulling…"
-                  : committing === "push"
-                    ? "Pushing…"
-                    : "Syncing…"}
-            </>
-          ) : showPublishBranch ? (
-            <>
-              <CloudUpload className="size-3.5" />
-              <span>Publish Branch</span>
-            </>
-          ) : (
-            <>
-              <RefreshCw className="size-3.5" />
-              <span>Sync Changes</span>
-              {ahead > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  {ahead}
-                  <ArrowUp className="size-3" />
-                </span>
-              )}
-              {behind > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  {behind}
-                  <ArrowDown className="size-3" />
-                </span>
-              )}
-            </>
-          )}
-        </Button>
+    <Button
+      variant="default"
+      size="sm"
+      disabled={busy}
+      onClick={() => (showPublishBranch ? void onPublish() : void onSync())}
+      className="h-8 shrink-0"
+    >
+      {syncing ? (
+        <>
+          <Loader2 className="size-3.5 animate-spin" />
+          {committing === "publish"
+            ? "Publishing…"
+            : committing === "pull"
+              ? "Pulling…"
+              : committing === "push"
+                ? "Pushing…"
+                : "Syncing…"}
+        </>
+      ) : showPublishBranch ? (
+        <>
+          <CloudUpload className="size-3.5" />
+          Publish
+        </>
+      ) : pushOnly ? (
+        <>
+          <ArrowUp className="size-3.5" />
+          Push {ahead}
+        </>
       ) : (
-        <div className="flex items-stretch">
-          <Button
-            variant="default"
-            size="sm"
-            disabled={!canCommit || busy}
-            onClick={() => submitCommit()}
-            className="flex-1 rounded-r-none"
-          >
-            {committing === "commit" ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                Committing…
-              </>
-            ) : committing === "push" ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                Pushing…
-              </>
-            ) : (
-              "Commit"
-            )}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={busy}
-                  aria-label="More commit options"
-                  className="rounded-l-none border-l border-l-primary-foreground/20 px-2"
-                >
-                  <ChevronDown className="size-3.5" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="min-w-[180px]">
-              <DropdownMenuItem
-                disabled={!canCommit || busy}
-                onClick={() => submitCommit({ push: true })}
-              >
-                Commit &amp; Push
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <>
+          <RefreshCw className="size-3.5" />
+          Sync
+          {ahead > 0 && (
+            <span className="inline-flex items-center gap-0.5">
+              {ahead}
+              <ArrowUp className="size-3" />
+            </span>
+          )}
+          {behind > 0 && (
+            <span className="inline-flex items-center gap-0.5">
+              {behind}
+              <ArrowDown className="size-3" />
+            </span>
+          )}
+        </>
       )}
-    </>
+    </Button>
   )
 })
 
@@ -2719,7 +2556,7 @@ function FileGroup({
           )}
         </div>
       </div>
-      <div className="overflow-hidden rounded-lg border border-border/70 bg-card/40">
+      <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
         <ul className="divide-y divide-border/60">{children}</ul>
         {footer}
       </div>

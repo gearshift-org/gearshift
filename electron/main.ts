@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  nativeTheme,
   clipboard,
   dialog,
   ipcMain,
@@ -2546,6 +2547,17 @@ app.whenReady().then(async () => {
       return { ok: false }
     }
     win.setBackgroundColor(color)
+    return { ok: true }
+  })
+
+  // Match Cursor: when the renderer forces light/dark, the native chrome (window
+  // frame, traffic-light area, context menus) follows the app theme rather than
+  // the OS appearance.
+  ipcMain.handle("window:setThemeSource", (_event, source: string) => {
+    if (source !== "light" && source !== "dark" && source !== "system") {
+      return { ok: false }
+    }
+    nativeTheme.themeSource = source
     return { ok: true }
   })
 

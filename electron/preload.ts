@@ -389,6 +389,11 @@ const appWindowApi = {
     ipcRenderer.invoke("dock:bounce", type) as Promise<{ ok: boolean }>,
   // Sync the native window background with the renderer theme so areas exposed
   // during native resizes don't flash a mismatched color.
+  // Drive Electron's nativeTheme so the window frame follows the app theme.
+  setThemeSource: (source: "light" | "dark" | "system") =>
+    ipcRenderer.invoke("window:setThemeSource", source) as Promise<{
+      ok: boolean
+    }>,
   setWindowBackgroundColor: (color: string) =>
     ipcRenderer.invoke("window:setBackgroundColor", color) as Promise<{
       ok: boolean

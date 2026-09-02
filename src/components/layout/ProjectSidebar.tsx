@@ -177,13 +177,13 @@ function SpaceSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Switch space"
-        className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
+        className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-[13px] text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
       >
-        <Layers2 className="size-3.5 shrink-0 text-muted-foreground" />
+        <Layers2 className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">
           {activeSpace?.name ?? DEFAULT_SPACE_NAME}
         </span>
-        <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[220px]">
         <DropdownMenuRadioGroup
@@ -421,7 +421,7 @@ function SidebarGroupHeader({
         collapsible ? "cursor-pointer" : "cursor-default"
       )}
     >
-      <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted-foreground/80 transition-colors group-hover/group-header:text-foreground">
+      <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover/group-header:text-foreground">
         <span className="truncate">{label}</span>
         {collapsible && (
           <ChevronDown
@@ -592,14 +592,14 @@ function ProjectSidebarTab({
         render={
           <div
             className={cn(
-              "group/tab relative h-7 w-full rounded-sm transition-colors",
+              "group/tab relative h-[30px] w-full rounded-sm transition-colors",
               isActive
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/85 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
             )}
           >
             {editing ? (
-              <div className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-xs">
+              <div className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-[13px]">
                 <WorkspaceTabIcon tab={tab} />
                 <input
                   ref={inputRef}
@@ -630,7 +630,7 @@ function ProjectSidebarTab({
                   event.preventDefault()
                   startRename()
                 }}
-                className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                className="flex h-full w-full items-center gap-2 pr-8 pl-9 text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               >
                 <WorkspaceTabIcon tab={tab} />
                 {tab.pinned ? (
@@ -852,7 +852,7 @@ function ProjectSidebarRow({
               style={style}
               onClick={() => onSelect(p.id)}
               className={cn(
-                "group relative flex w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 pr-11 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
+                "group relative flex w-full shrink-0 cursor-pointer h-8 items-center gap-2.5 rounded-sm px-2 pr-11 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
                 showProjectTabs && isActive && "pr-14",
                 animate &&
                   "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
@@ -894,7 +894,7 @@ function ProjectSidebarRow({
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
+              <span className="min-w-0 flex-1 truncate text-[13px] leading-tight">
                 {p.name}
               </span>
             </div>
@@ -1569,12 +1569,12 @@ export function ProjectSidebar({
                   onClick={onOpenSpaceChat}
                   aria-current={chatActive ? "page" : undefined}
                   className={cn(
-                    "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none",
+                    "flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-[13px] text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none",
                     chatActive &&
                       "bg-sidebar-accent text-sidebar-accent-foreground"
                   )}
                 >
-                  <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
+                  <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
                   <span className="truncate">Chat</span>
                 </button>
               )}
@@ -1763,7 +1763,7 @@ export function ProjectSidebar({
               onClick={onExitFocus}
               aria-label="Exit focus mode"
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-left text-sm leading-tight font-medium text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
+                "flex w-full items-center gap-2.5 rounded-sm h-8 px-2 text-left text-[13px] leading-tight text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
                 animateFocus &&
                   "animate-in duration-200 fade-in slide-in-from-left-2"
               )}
@@ -1783,9 +1783,9 @@ export function ProjectSidebar({
                   type="button"
                   onClick={onOpenSettings}
                   aria-label="Open settings"
-                  className="flex h-7 w-fit items-center gap-2 rounded-sm px-2 text-left text-sm leading-tight font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+                  className="flex h-8 w-fit items-center gap-2 rounded-sm px-2 text-left text-[13px] leading-tight text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
                 >
-                  <Settings className="size-3.5 shrink-0" />
+                  <Settings className="size-4 shrink-0" />
                   <span className="truncate">Settings</span>
                 </button>
               }

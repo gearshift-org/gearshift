@@ -215,8 +215,15 @@ function resolveMode(mode: ThemeMode): ResolvedTheme {
   return mode === "system" ? getSystemTheme() : mode
 }
 
-function applyThemeClass(theme: ThemeId, resolvedTheme: ResolvedTheme) {
+function applyThemeClass(
+  theme: ThemeId,
+  resolvedTheme: ResolvedTheme,
+  mode: ThemeMode
+) {
   const root = document.documentElement
+  // Force the native window chrome to the chosen appearance (like Cursor) so a
+  // light theme under a dark OS doesn't get a dark frame; "system" follows OS.
+  window.appWindow?.setThemeSource?.(mode).catch(() => null)
   root.classList.remove("light", "dark")
   root.classList.add(resolvedTheme)
   root.dataset.theme = theme
@@ -368,7 +375,7 @@ export function ThemeProvider({
         ? disableTransitionsTemporarily()
         : null
 
-      applyThemeClass(nextTheme, nextResolvedTheme)
+      applyThemeClass(nextTheme, nextResolvedTheme, nextSettings.mode)
       setResolvedTheme(nextResolvedTheme)
 
       if (restoreTransitions) {

@@ -6,6 +6,7 @@ export type ActionId =
   | "terminal.splitVertical"
   | "terminal.nextSplit"
   | "terminal.previousSplit"
+  | "terminal.toggleExpand"
   | "terminal.quickSplitHold"
   | "terminal.new"
   | "terminal.close"
@@ -77,6 +78,13 @@ export const ACTIONS: readonly ActionDef[] = [
     label: "Focus Previous Terminal Split",
     description: "Focus the previous split in visual order",
     defaultAccelerator: "CmdOrCtrl+[",
+    scope: "renderer",
+  },
+  {
+    id: "terminal.toggleExpand",
+    label: "Maximize/Minimize Active Terminal",
+    description: "Maximize or restore the currently active terminal split",
+    defaultAccelerator: "CmdOrCtrl+Shift+E",
     scope: "renderer",
   },
   {

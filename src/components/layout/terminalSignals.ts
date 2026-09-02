@@ -11,7 +11,24 @@ const HISTORY_POPOVER_EVENT = (sessionId: string) =>
 const CLIPBOARD_PASTE_EVENT = (sessionId: string) =>
   `gearshift:terminalClipboardPaste:${sessionId}`
 
+const TOGGLE_ACTIVE_TERMINAL_EXPAND_EVENT =
+  "gearshift:toggleActiveTerminalExpand"
+
 type ClipboardPasteEventDetail = { handled: boolean; text?: string }
+
+/** Ask the active terminal tab to maximize or restore its active split. */
+export function requestToggleActiveTerminalExpand() {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new Event(TOGGLE_ACTIVE_TERMINAL_EXPAND_EVENT))
+}
+
+/** Subscribe to active-terminal maximize/restore requests. */
+export function onToggleActiveTerminalExpand(cb: () => void): () => void {
+  if (typeof window === "undefined") return () => {}
+  window.addEventListener(TOGGLE_ACTIVE_TERMINAL_EXPAND_EVENT, cb)
+  return () =>
+    window.removeEventListener(TOGGLE_ACTIVE_TERMINAL_EXPAND_EVENT, cb)
+}
 
 /** Ask the header's chat-history popover for this session to open. */
 export function openTerminalHistoryPopover(sessionId: string) {

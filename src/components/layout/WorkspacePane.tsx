@@ -10,14 +10,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
-import {
-  Columns2,
-  Eye,
-  FileDiff,
-  FileCode,
-  Rows3,
-  X,
-} from "lucide-react"
+import { Columns2, Eye, FileDiff, FileCode, Rows3, X } from "lucide-react"
 import {
   DndContext,
   DragOverlay,
@@ -66,6 +59,7 @@ import { store } from "@/lib/store"
 import { AGENT_TERMINAL_LABELS } from "@/lib/agentTerminalOptions"
 import { terminalPaneAgentState } from "@/lib/agentStatus"
 import { tabDisplayName } from "./terminalName"
+import { onToggleActiveTerminalExpand } from "./terminalSignals"
 import {
   ensureLayout,
   nodeKey,
@@ -651,6 +645,15 @@ function TerminalTabContent({
     onTerminalExpandedPaneChange?.(tab.id, expandedPaneId)
     return () => onTerminalExpandedPaneChange?.(tab.id, null)
   }, [expandedPaneId, onTerminalExpandedPaneChange, tab.id])
+
+  useEffect(() => {
+    return onToggleActiveTerminalExpand(() => {
+      if (!terminalIsActive || !multi || !tab.activePaneId) return
+      setExpandedPaneId((current) =>
+        current === tab.activePaneId ? null : tab.activePaneId
+      )
+    })
+  }, [multi, tab.activePaneId, terminalIsActive])
 
   // Quick split: arm clickable split zones while the configured modifier chord
   // (terminal.quickSplitHold, default Cmd+Option) is held. Modifier state is

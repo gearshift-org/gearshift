@@ -39,7 +39,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { paneDisplayName, tabDisplayName } from "./terminalName"
-import { requestTerminalClipboardPaste } from "./terminalSignals"
+import {
+  requestTerminalClipboardPaste,
+  requestToggleActiveTerminalExpand,
+} from "./terminalSignals"
 import {
   ensureLayout,
   insertBeside,
@@ -246,9 +249,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               ...(t.pinned ? { pinned: true } : {}),
               ...(t.previewOnly ? { previewOnly: true } : {}),
               panes,
-              ...(t.previews?.length
-                ? { previews: t.previews.slice(-1) }
-                : {}),
+              ...(t.previews?.length ? { previews: t.previews.slice(-1) } : {}),
               activePaneId,
               ...(t.layout && panes.length > 0
                 ? {
@@ -3882,6 +3883,10 @@ export function AppShell() {
         case "terminal.previousSplit":
           e.preventDefault()
           cycleActiveTerminalPane("previous")
+          break
+        case "terminal.toggleExpand":
+          e.preventDefault()
+          requestToggleActiveTerminalExpand()
           break
         case "terminal.last":
           e.preventDefault()

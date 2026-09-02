@@ -10,7 +10,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  ChevronDown,
   ChevronsDownUp,
   CloudUpload,
   Columns2,
@@ -35,12 +34,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { runWhenNotTyping } from "@/lib/typingActivity"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import { NotesEditor } from "./NotesEditor"
 import {
   Combobox,
   ComboboxContent,
@@ -118,13 +111,6 @@ const POLL_INTERVAL_LARGE_MS = 10000
 const LARGE_CHANGESET_THRESHOLD = 300
 const CHANGE_LIST_BATCH_SIZE = 150
 const COMMIT_PAGE_SIZE = 50
-// Notes panel is drag-resizable by its top edge; height persists across reloads.
-const NOTES_MIN_HEIGHT = 120
-const NOTES_MAX_HEIGHT = 480
-const NOTES_DEFAULT_HEIGHT = 220
-const NOTES_HEIGHT_STORAGE_KEY = "gearshift:notes-height"
-// Collapsed by default; last open/closed state persists across reloads.
-const NOTES_OPEN_STORAGE_KEY = "gearshift:notes-open"
 // Optimistic overlays are confirm-cleared once a refetch reflects the action,
 // so these TTLs are only a safety net for the rare case where reality never
 // catches up (e.g. external git tampering). Keep them generous.
@@ -288,13 +274,6 @@ export const RightSidebar = memo(function RightSidebar({
   const [actionErrorsByCwd, setActionErrorsByCwd] = useState<
     Record<string, string>
   >({})
-  const [notesOpen, setNotesOpen] = useState(
-    () => window.localStorage.getItem(NOTES_OPEN_STORAGE_KEY) === "1"
-  )
-  const handleNotesOpenChange = useCallback((open: boolean) => {
-    setNotesOpen(open)
-    window.localStorage.setItem(NOTES_OPEN_STORAGE_KEY, open ? "1" : "0")
-  }, [])
   const [busy, setBusy] = useState(false)
   const [committing, setCommitting] = useState<
     null | "commit" | "push" | "sync" | "pull" | "publish"
@@ -440,19 +419,6 @@ export const RightSidebar = memo(function RightSidebar({
     () =>
       commitsQuery.data?.pages.flatMap((page) => page.commits) ?? EMPTY_COMMITS,
     [commitsQuery.data]
-  )
-  const notesQuery = useQuery({
-    queryKey: ["projectNotes", projectId],
-    enabled: !!projectId,
-    queryFn: () => window.term.notes.get(projectId!),
-    staleTime: 0,
-    refetchOnMount: "always",
-  })
-  const handleNoteSaved = useCallback(
-    (note: { projectId: string; body: string; updatedAt: number }) => {
-      queryClient.setQueryData(["projectNotes", note.projectId], note)
-    },
-    [queryClient]
   )
   const firstCommitsPage = commitsQuery.data?.pages[0]
   const commitsError = commitsQuery.error
@@ -1655,14 +1621,6 @@ export const RightSidebar = memo(function RightSidebar({
           />
         </TabsContent>
       </Tabs>
-      <SidebarNotesSection
-        projectId={projectId ?? null}
-        initialBody={notesQuery.data?.body ?? ""}
-        loading={notesQuery.isLoading}
-        onSaved={handleNoteSaved}
-        open={notesOpen}
-        onOpenChange={handleNotesOpenChange}
-      />
     </div>
   )
 })
@@ -1758,181 +1716,6 @@ const CommitControls = memo(function CommitControls({
         </>
       )}
     </Button>
-  )
-})
-
-const SidebarNotesSection = memo(function SidebarNotesSection({
-  projectId,
-  initialBody,
-  loading,
-  onSaved,
-  open,
-  onOpenChange,
-}: {
-  projectId: string | null
-  initialBody: string
-  loading: boolean
-  onSaved: (note: {
-    projectId: string
-    body: string
-    updatedAt: number
-  }) => void
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const [copied, setCopied] = useState(false)
-  const copiedTimerRef = useRef<number | null>(null)
-
-  const [height, setHeight] = useState<number>(() => {
-    const saved = Number(window.localStorage.getItem(NOTES_HEIGHT_STORAGE_KEY))
-    return Number.isFinite(saved) && saved >= NOTES_MIN_HEIGHT
-      ? Math.min(saved, NOTES_MAX_HEIGHT)
-      : NOTES_DEFAULT_HEIGHT
-  })
-  const [dragging, setDragging] = useState(false)
-  const heightRef = useRef(height)
-  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
-
-  const onResizeDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    dragRef.current = { startY: e.clientY, startH: heightRef.current }
-    setDragging(true)
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-  const onResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
-    if (!drag) return
-    const next = Math.min(
-      NOTES_MAX_HEIGHT,
-      Math.max(NOTES_MIN_HEIGHT, drag.startH + (drag.startY - e.clientY))
-    )
-    heightRef.current = next
-    setHeight(next)
-  }
-  const onResizeUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) return
-    dragRef.current = null
-    setDragging(false)
-    e.currentTarget.releasePointerCapture(e.pointerId)
-    window.localStorage.setItem(
-      NOTES_HEIGHT_STORAGE_KEY,
-      String(heightRef.current)
-    )
-  }
-
-  const copyNotesLink = async () => {
-    if (!projectId) return
-    const { port } = await window.term.history.serverInfo()
-    if (!port) {
-      toast.error("Notes server is not available")
-      return
-    }
-    const url = `http://127.0.0.1:${port}/notes?projectId=${encodeURIComponent(
-      projectId
-    )}`
-    await navigator.clipboard.writeText(url)
-    setCopied(true)
-    toast.success("Notes link copied")
-    if (copiedTimerRef.current !== null) {
-      window.clearTimeout(copiedTimerRef.current)
-    }
-    copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <Collapsible
-      open={open}
-      onOpenChange={onOpenChange}
-      style={open ? { height } : undefined}
-      className={cn(
-        "relative flex shrink-0 flex-col bg-sidebar",
-        !dragging && "transition-[height] duration-150",
-        !open && "h-9"
-      )}
-    >
-      {open && (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize notes"
-          onPointerDown={onResizeDown}
-          onPointerMove={onResizeMove}
-          onPointerUp={onResizeUp}
-          className="group/notes-resize absolute inset-x-0 -top-[3px] z-20 h-[7px] cursor-row-resize touch-none"
-        >
-          <span
-            className={cn(
-              "pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors",
-              dragging
-                ? "bg-foreground/40"
-                : "bg-transparent group-hover/notes-resize:bg-foreground/30"
-            )}
-          />
-        </div>
-      )}
-      <div className="flex h-9 shrink-0 items-center border-y border-border/70">
-        <CollapsibleTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={open ? "Collapse notes" : "Expand notes"}
-              className="h-full min-w-0 flex-1 justify-start rounded-none px-3 text-left text-xs font-medium hover:bg-sidebar-accent/70 aria-expanded:bg-transparent aria-expanded:text-foreground"
-            >
-              <ChevronDown
-                data-icon="inline-start"
-                className={cn(
-                  "transition-transform duration-150",
-                  !open && "-rotate-90"
-                )}
-              />
-              <span className="truncate">Notes</span>
-            </Button>
-          }
-        />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                disabled={!projectId}
-                aria-label="Copy notes link"
-                onClick={() => void copyNotesLink()}
-                className="mr-2 shrink-0"
-              >
-                {copied ? <Check /> : <Copy />}
-              </Button>
-            }
-          />
-          <TooltipContent>
-            {copied ? "Copied!" : "Copy notes link"}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <CollapsibleContent className="flex min-h-0 flex-1 flex-col">
-        <NotesEditor
-          key={
-            projectId
-              ? `${projectId}:${loading ? "loading" : "ready"}`
-              : "empty"
-          }
-          projectId={projectId}
-          initialMarkdown={projectId ? initialBody : ""}
-          editable={!!projectId && !loading}
-          onSaved={onSaved}
-          placeholder={
-            !projectId
-              ? "Open a project to add notes..."
-              : loading
-                ? "Loading notes..."
-                : "Add notes for this workspace..."
-          }
-        />
-      </CollapsibleContent>
-    </Collapsible>
   )
 })
 

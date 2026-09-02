@@ -165,7 +165,7 @@ User prompts are captured in `electron/inputCapture.ts` and saved through `elect
 
 ### Project notes
 
-Right-sidebar project notes are stored in the same local SQLite database as chat history (`gearshift.db`), in `project_notes` keyed by `project_id`. The renderer reads and saves notes through `window.term.notes`; note edits are debounced for 200 ms before writing to SQLite. The existing loopback-only history server exposes notes to local agents via `GET /notes?projectId=<id>` on the same port as `/history`. The endpoint returns Markdown with the project ID, available project metadata, and the current notes for that project.
+Project notes (no longer surfaced in the right sidebar; the storage and HTTP endpoint remain) are stored in the same local SQLite database as chat history (`gearshift.db`), in `project_notes` keyed by `project_id`. The renderer reads and saves notes through `window.term.notes`; note edits are debounced for 200 ms before writing to SQLite. The existing loopback-only history server exposes notes to local agents via `GET /notes?projectId=<id>` on the same port as `/history`. The endpoint returns Markdown with the project ID, available project metadata, and the current notes for that project.
 
 ### Agent-native session IDs
 

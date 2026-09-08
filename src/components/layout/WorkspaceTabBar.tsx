@@ -148,6 +148,7 @@ export function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
 
 export function WorkspaceTitleBar({
   title,
+  showTitle = true,
   branch,
   onOpenBranch,
   trailing,
@@ -155,6 +156,7 @@ export function WorkspaceTitleBar({
   draggable = false,
 }: {
   title: string
+  showTitle?: boolean
   branch?: string | null
   onOpenBranch?: () => void
   trailing?: ReactNode
@@ -171,15 +173,23 @@ export function WorkspaceTitleBar({
     >
       {leading && <div className="flex shrink-0 items-center">{leading}</div>}
       <div
-        title={branch ? `${title} · ${branch}` : title}
+        title={
+          showTitle
+            ? branch
+              ? `${title} · ${branch}`
+              : title
+            : branch || undefined
+        }
         className="pointer-events-none flex min-w-0 flex-1 items-center justify-start gap-2 px-3 text-xs font-medium"
       >
-        <span className="truncate text-foreground dark:text-white/85">
-          {title}
-        </span>
+        {showTitle ? (
+          <span className="truncate text-foreground dark:text-white/85">
+            {title}
+          </span>
+        ) : null}
         {branch ? (
           <span className="flex min-w-0 items-center gap-1 text-foreground/75 dark:text-white/65">
-            <span aria-hidden="true">·</span>
+            {showTitle ? <span aria-hidden="true">·</span> : null}
             <GitBranch className="size-3 shrink-0" />
             <span className="truncate">{branch}</span>
           </span>

@@ -4387,6 +4387,7 @@ export function AppShell() {
                 projectSidebarTabsEnabled ? (
                   <WorkspaceTitleBar
                     title={activeProject.name}
+                    showTitle={!projectSidebarCollapsed}
                     branch={activeProjectGit?.currentBranch}
                     onOpenBranch={
                       activeProjectGit?.ghAvailable

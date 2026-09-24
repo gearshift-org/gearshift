@@ -29,6 +29,7 @@ import { hiddenLayerClass } from "./hiddenLayer"
 import { useKeybindings } from "@/lib/keybindings/useKeybindings"
 import { matchesModifierChord } from "@/lib/keybindings/registry"
 import { TerminalView } from "./TerminalView"
+import { ClaudeChatView } from "./ClaudeChatView"
 import { SingleFileDiff } from "./SingleFileDiff"
 import { CommitDiff } from "./CommitDiff"
 import {
@@ -1079,6 +1080,19 @@ function PaneContent({
         diffViewMode={diffViewMode}
         mdMode={mdMode}
         fileReveal={fileReveal}
+      />
+    )
+  }
+  if (tab.kind === "claudeChat") {
+    return (
+      <ClaudeChatView
+        chatId={tab.id}
+        cwd={project.path}
+        isActive={isActive}
+        onTitleChange={(title) => onTitleChange?.(tab.id, tab.id, title)}
+        onAgentStatusChange={(status) =>
+          onAgentStatusChange?.(tab.id, tab.id, status)
+        }
       />
     )
   }

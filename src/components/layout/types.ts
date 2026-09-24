@@ -168,12 +168,22 @@ export type DevPreviewTab = {
   pinned?: boolean
 }
 
+export type ClaudeChatTab = {
+  kind: "claudeChat"
+  id: string
+  name: string
+  pinned?: boolean
+  /** Live chat state (working / waiting on you / done); not persisted. */
+  agentStatus?: TerminalAgentStatus
+}
+
 export type WorkspaceTab =
   | TerminalTab
   | DiffTab
   | FileTab
   | CommitTab
   | DevPreviewTab
+  | ClaudeChatTab
 
 /**
  * A request to reveal (scroll to + select) a specific line of a file, e.g. from

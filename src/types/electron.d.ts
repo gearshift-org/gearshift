@@ -2,6 +2,7 @@ import type {
   AppApi,
   AppWindowApi,
   ClipboardApi,
+  ClaudeChatApi,
   DialogApi,
   ElectronUtils,
   FsApi,
@@ -23,6 +24,7 @@ declare global {
     electronUtils: ElectronUtils
     appApi: AppApi
     spaceChat: SpaceChatApi
+    claudeChat: ClaudeChatApi
     appWindow: AppWindowApi
     git: GitApi
     fsApi: FsApi

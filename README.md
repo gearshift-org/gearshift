@@ -14,6 +14,7 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 - File tree with drag-and-drop moves, singleton file/diff/dev preview tabs, Markdown/PDF/media rendering, and syntax-highlighted diffs.
 - Git status, file changes, branch actions, open pull request lists, and pull request shortcuts.
 - Agent activity detection for supported CLI coding agents (Claude, Codex, OpenCode, pi).
+- Claude Chat tabs with a native chat input, streamed replies, and tool approvals, powered by the system Claude Code binary.
 - Grok Build CLI support when started manually: chat-history capture and tab/pane icon (not a tab-bar launch target).
 - Configurable default launch options for supported coding-agent terminals.
 - Space-scoped chat powered by Codex that can answer questions from captured project history.
@@ -41,6 +42,7 @@ GearShift is early-stage software. Expect rough edges, active changes, and macOS
 - Git for project status and diffs.
 - Optional: [GitHub CLI](https://cli.github.com/) for pull request actions.
 - Optional: `direnv` for project-specific GitHub CLI environments.
+- Claude Code installed and authenticated (`claude auth login`) for Claude Chat tabs.
 
 ## Getting Started
 
@@ -105,6 +107,16 @@ src/lib/                  Renderer utilities, stores, project state, and keybind
 - GearShift auto-installs/updates a `gearshift` CLI on macOS in a writable bin directory. Use `gearshift .` or `gearshift /path/to/project` to open a folder in GearShift.
 - The GitHub integration uses the local `gh` CLI. GearShift does not manage GitHub API tokens.
 - If `direnv` is installed, GearShift evaluates the opened project's `.envrc` before running `gh`.
+
+## Claude Chat
+
+Open a project, then choose **Claude Chat** from the new-tab menu. In the nested project sidebar layout, use the project's **+** menu or context menu. Type a message and press Enter to send it; Shift+Enter adds a line break. GearShift runs your existing `claude` binary in the project directory through the Claude Agent SDK and shows replies and tool requests in the chat. Approve or deny tool requests in the chat. When Claude asks a multiple-choice question, pick an option (or several, when allowed), or choose **Other** to type your own answer, then submit or skip. Press Stop or Esc twice to stop the current turn; the chat shows "Stopping…" at once and marks the reply as stopped. While Claude works, each tool call appears as a readable line (click it to see the exact command or file), with a live status underneath showing elapsed time, output tokens, and whether Claude is thinking, writing, running tools, or waiting for your approval.
+
+The model menu is loaded from your installed Claude Code CLI through the Claude Agent SDK. Each entry shows the exact model version and what it's best for, and the button shows the version you've picked, e.g. **Opus 5.5 · 1M**. Choose a model and one of its supported effort levels above the input for the next message. Leaving either at **Default** uses your Claude Code configuration. Your selections are saved with the chat, and new chats start with the model, effort, and mode you picked most recently. The model list is cached, so the menus are ready as soon as a chat opens; it refreshes in the background (at most every 10 minutes) and updates if your installed models change. If model lookup fails with nothing cached, chat remains available with Claude's defaults.
+
+The mode menu controls tool permissions: **Auto** (the default) lets Claude's classifier approve or deny tool use, **Manual** asks before every change, **Accept edits** auto-approves file edits, and **Plan** has Claude propose a plan for you to approve before it makes changes. Press Shift+Tab in the input to cycle modes, or 1–4 while the menu is open. Changing the mode during a running turn applies immediately. Approving a plan switches the chat back to Auto.
+
+The tab title follows the Claude session's title, the same one Claude Code shows in `/resume`: a `/rename` title if set, otherwise Claude's generated title or your first prompt. It updates after each reply. Chat messages and Claude's session ID are saved with the workspace. Reopening the app restores the chat and resumes the same Claude conversation on the next message. Closing the chat tab removes its saved messages. Terminal-based Claude tabs remain available separately.
 
 ## Documentation
 

@@ -6,6 +6,7 @@ import {
   GitCommitVertical,
   MonitorPlay,
   Plus,
+  MessageCircle,
   Settings,
   TerminalSquare,
   X,
@@ -72,6 +73,7 @@ type Props = {
   openingTabId?: string | null
   onSelect: (id: string) => void
   onAdd: (agentName?: TerminalAgentName) => void
+  onAddClaudeChat?: () => void
   onConfigureAgents?: () => void
   onClose?: (id: string) => void
   onCloseAll?: () => void
@@ -121,6 +123,8 @@ type TabItemProps = {
 }
 
 export function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
+  if (tab.kind === "claudeChat")
+    return <MessageCircle className="size-3.5 shrink-0" />
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
   if (tab.kind === "commit")
     return <GitCommitVertical className="size-3.5 shrink-0" />
@@ -240,9 +244,10 @@ function WorkspaceTabItem({
     (t.kind === "diff" || t.kind === "file" || t.kind === "commit") &&
     t.preview === true
   const agentState = terminalTabAgentState(t)
-  const hasWorkingAgent = isTerminal && agentState === "working"
-  const hasAttentionAgent = isTerminal && agentState === "blocked"
-  const hasDoneAgent = isTerminal && agentState === "done"
+  // Terminal and Claude Chat tabs report agent state; others stay "unknown".
+  const hasWorkingAgent = agentState === "working"
+  const hasAttentionAgent = agentState === "blocked"
+  const hasDoneAgent = agentState === "done"
   const {
     attributes,
     listeners,
@@ -396,6 +401,7 @@ export function WorkspaceTabBar({
   openingTabId = null,
   onSelect,
   onAdd,
+  onAddClaudeChat,
   onConfigureAgents,
   onClose,
   onCloseAll,
@@ -538,6 +544,12 @@ export function WorkspaceTabBar({
             <TerminalSquare className="size-3.5" />
             Terminal
           </DropdownMenuItem>
+          {onAddClaudeChat && (
+            <DropdownMenuItem className="gap-2" onClick={onAddClaudeChat}>
+              <MessageCircle className="size-3.5" />
+              Claude Chat
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           {AGENT_TERMINAL_OPTIONS.map((agent) => (
             <DropdownMenuItem

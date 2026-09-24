@@ -210,6 +210,16 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               },
             ]
           }
+          if (t.kind === "claudeChat") {
+            return [
+              {
+                kind: "claudeChat" as const,
+                id: t.id,
+                name: t.name,
+                ...(t.pinned ? { pinned: true } : {}),
+              },
+            ]
+          }
           const storedPanes =
             t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
           const panes = storedPanes.map((sp) => ({
@@ -417,6 +427,11 @@ function devPreviewName(url: string): string {
 }
 
 function killAllPanes(tab: WorkspaceTab) {
+  if (tab.kind === "claudeChat") {
+    void window.claudeChat.stop(tab.id)
+    store.remove(`gearshift.claudeChat.${tab.id}`)
+    return
+  }
   if (tab.kind !== "terminal") return
   for (const pane of tab.panes) {
     if (pane.pendingStart) continue
@@ -488,6 +503,14 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           id: t.id,
           name: t.name,
           url: t.url,
+          ...(t.pinned ? { pinned: true } : {}),
+        }
+      }
+      if (t.kind === "claudeChat") {
+        return {
+          kind: "claudeChat",
+          id: t.id,
+          name: t.name,
           ...(t.pinned ? { pinned: true } : {}),
         }
       }
@@ -2441,6 +2464,26 @@ export function AppShell() {
     return paneId
   }
 
+  const addClaudeChat = (projectId = activeProject?.id) => {
+    if (!projectId) return
+    const tabId = makeId()
+    setProjects((previous) =>
+      previous.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              tabs: [
+                ...project.tabs,
+                { kind: "claudeChat" as const, id: tabId, name: "Claude Chat" },
+              ],
+              activeTabId: tabId,
+            }
+          : project
+      )
+    )
+    navigateToProject(projectId, tabId)
+  }
+
   const expandedTerminalPaneByTabRef = useRef<Record<string, string | null>>({})
   const handleTerminalExpandedPaneChange = useCallback(
     (tabId: string, paneId: string | null) => {
@@ -3318,6 +3361,20 @@ export function AppShell() {
       // arrive at TUI repaint rate, and each state update here re-renders the
       // whole shell and rewrites the persisted snapshot.
       const tab = prev.flatMap((p) => p.tabs).find((t) => t.id === tabId)
+      // Claude Chat tabs follow their Claude session title.
+      if (tab?.kind === "claudeChat") {
+        if (tab.name === title) return prev
+        const next = prev.map((p) => ({
+          ...p,
+          tabs: p.tabs.map((t) =>
+            t.id === tabId && t.kind === "claudeChat"
+              ? { ...t, name: title }
+              : t
+          ),
+        }))
+        saveProjects(serializeProjects(next))
+        return next
+      }
       if (tab?.kind !== "terminal") return prev
       const pane = tab.panes.find((pp) => pp.id === paneId)
       if (!pane || pane.autoTitle === title) return prev
@@ -3348,6 +3405,25 @@ export function AppShell() {
     paneId: string,
     status: TerminalAgentStatus
   ) => {
+    // Claude Chat tabs report one status for the whole tab.
+    const chatTab = projects
+      .flatMap((p) => p.tabs)
+      .find((t) => t.id === tabId && t.kind === "claudeChat")
+    if (chatTab?.kind === "claudeChat") {
+      if (agentStatusesEqual(chatTab.agentStatus, status)) return
+      setProjects((prev) =>
+        prev.map((p) => ({
+          ...p,
+          tabs: p.tabs.map((t) =>
+            t.id === tabId && t.kind === "claudeChat"
+              ? { ...t, agentStatus: status }
+              : t
+          ),
+        }))
+      )
+      return
+    }
+
     const key = `${tabId}:${paneId}`
     const previousStatus = terminalAgentStatusRef.current.get(key)
 
@@ -4121,6 +4197,7 @@ export function AppShell() {
             void closeProjectTabs(projectId, tabIds)
           }
           onAddTerminal={() => void addTerminal()}
+          onAddClaudeChat={addClaudeChat}
           showProjectTabs={projectSidebarTabsEnabled}
           onSelectSpace={selectSpace}
           onOpenSpaceChat={
@@ -4408,6 +4485,7 @@ export function AppShell() {
                     openingTabId={openingTerminalTabId}
                     onSelect={selectTab}
                     onAdd={addTerminal}
+                    onAddClaudeChat={() => addClaudeChat()}
                     onConfigureAgents={() =>
                       void navigate({
                         to: "/settings",

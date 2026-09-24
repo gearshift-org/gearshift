@@ -48,6 +48,15 @@ import {
 } from "./agentHooks"
 import { getAgentSessionTitle } from "./agentSessionTitle"
 import {
+  answerClaudePermission,
+  answerClaudeQuestion,
+  getClaudeChatModels,
+  getClaudeChatTitle,
+  setClaudeChatPermissionMode,
+  startClaudeChat,
+  stopClaudeChat,
+} from "./claudeChat"
+import {
   startHistoryServer,
   closeHistoryServer,
   getHistoryServerPort,
@@ -2454,6 +2463,40 @@ app.whenReady().then(async () => {
       console.warn(`[cli] install skipped: ${result.error}`)
     }
   })
+
+  ipcMain.handle("claudeChat:models", async (_event, cwd: string) =>
+    getClaudeChatModels(cwd, await loginShellPath())
+  )
+  ipcMain.handle("claudeChat:send", async (event, input) =>
+    startClaudeChat(event.sender, input, await loginShellPath())
+  )
+  ipcMain.handle(
+    "claudeChat:answer",
+    (_event, chatId: string, requestId: string, allow: boolean) =>
+      answerClaudePermission(chatId, requestId, allow)
+  )
+  ipcMain.handle(
+    "claudeChat:title",
+    (_event, sessionId: string, cwd: string) =>
+      getClaudeChatTitle(sessionId, cwd)
+  )
+  ipcMain.handle(
+    "claudeChat:setPermissionMode",
+    (_event, chatId: string, mode: unknown) =>
+      setClaudeChatPermissionMode(chatId, mode)
+  )
+  ipcMain.handle(
+    "claudeChat:answerQuestion",
+    (
+      _event,
+      chatId: string,
+      requestId: string,
+      answers: Record<string, string> | null
+    ) => answerClaudeQuestion(chatId, requestId, answers)
+  )
+  ipcMain.handle("claudeChat:stop", (_event, chatId: string) =>
+    stopClaudeChat(chatId)
+  )
 
   ipcMain.handle("app:takeOpenProjects", async (event) => {
     readyWebContents.add(event.sender.id)

@@ -33,6 +33,7 @@ export default defineConfig({
                 "electron-log",
                 "@parcel/watcher",
                 "@libsql/client",
+                "@anthropic-ai/claude-agent-sdk",
               ],
             },
           },

@@ -130,6 +130,7 @@ type Props = {
   onCloseTab: (projectId: string, tabId: string) => void
   onCloseTabs: (projectId: string, tabIds: string[]) => void
   onAddTerminal: () => void
+  onAddClaudeChat: (projectId: string) => void
   showProjectTabs: boolean
   onSelectSpace: (id: string) => void
   onOpenSpaceChat?: () => void
@@ -520,6 +521,7 @@ type RowProps = {
   onCloseTabs: (projectId: string, tabIds: string[]) => void
   latestChatAtBySession: Record<string, number>
   onAddTerminal: () => void
+  onAddClaudeChat: (projectId: string) => void
   showProjectTabs: boolean
   onClose?: (id: string) => void
   onCloseAllTerminals?: (id: string) => void
@@ -715,6 +717,7 @@ function ProjectSidebarRow({
   onCloseTabs,
   latestChatAtBySession,
   onAddTerminal,
+  onAddClaudeChat,
   showProjectTabs,
   onClose,
   onCloseAllTerminals,
@@ -852,7 +855,7 @@ function ProjectSidebarRow({
               style={style}
               onClick={() => onSelect(p.id)}
               className={cn(
-                "group relative flex w-full shrink-0 cursor-pointer h-8 items-center gap-2.5 rounded-sm px-2 pr-11 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
+                "group relative flex h-8 w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2 pr-11 text-left transition-colors outline-none focus:outline-none focus-visible:ring-0",
                 showProjectTabs && isActive && "pr-14",
                 animate &&
                   "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
@@ -939,27 +942,31 @@ function ProjectSidebarRow({
               </Tooltip>
             )}
             {showProjectTabs && isActive && (
-              <Tooltip>
-                <TooltipTrigger
+              <DropdownMenu>
+                <DropdownMenuTrigger
                   render={
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
                       onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onAddTerminal()
-                      }}
-                      aria-label={`New terminal in ${p.name}`}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`New tab in ${p.name}`}
                       className="size-5 rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground dark:hover:bg-foreground/10"
                     >
                       <Plus />
                     </Button>
                   }
                 />
-                <TooltipContent>New terminal</TooltipContent>
-              </Tooltip>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onAddTerminal()}>
+                    Terminal
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onAddClaudeChat(p.id)}>
+                    Claude Chat
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             <Tooltip>
               <TooltipTrigger
@@ -998,6 +1005,10 @@ function ProjectSidebarRow({
           </div>
         </CollapsibleTrigger>
         <ContextMenuContent className="min-w-[200px] whitespace-nowrap">
+          <ContextMenuItem onClick={() => onAddClaudeChat(p.id)}>
+            New Claude Chat
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           {/* Primary per-project actions */}
           <ContextMenuItem onClick={() => onTogglePin(p.path)}>
             {isPinned ? (
@@ -1180,6 +1191,7 @@ export function ProjectSidebar({
   onCloseTab,
   onCloseTabs,
   onAddTerminal,
+  onAddClaudeChat,
   showProjectTabs,
   onSelectSpace,
   onOpenSpaceChat,
@@ -1659,6 +1671,7 @@ export function ProjectSidebar({
                         onCloseTabs={onCloseTabs}
                         latestChatAtBySession={latestChatAtBySession}
                         onAddTerminal={onAddTerminal}
+                        onAddClaudeChat={onAddClaudeChat}
                         showProjectTabs={showProjectTabs}
                         onClose={onClose}
                         onCloseAllTerminals={onCloseAllTerminals}
@@ -1735,6 +1748,7 @@ export function ProjectSidebar({
                       onCloseTabs={onCloseTabs}
                       latestChatAtBySession={latestChatAtBySession}
                       onAddTerminal={onAddTerminal}
+                      onAddClaudeChat={onAddClaudeChat}
                       showProjectTabs={showProjectTabs}
                       onClose={onClose}
                       onCloseAllTerminals={onCloseAllTerminals}
@@ -1763,7 +1777,7 @@ export function ProjectSidebar({
               onClick={onExitFocus}
               aria-label="Exit focus mode"
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-sm h-8 px-2 text-left text-[13px] leading-tight text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
+                "flex h-8 w-full items-center gap-2.5 rounded-sm px-2 text-left text-[13px] leading-tight text-foreground transition-colors outline-none hover:bg-sidebar-accent/70 focus-visible:outline-none",
                 animateFocus &&
                   "animate-in duration-200 fade-in slide-in-from-left-2"
               )}

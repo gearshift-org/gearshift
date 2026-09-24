@@ -109,7 +109,7 @@ export type StoredTab = {
   name: string
   customName?: string
   /** Tab kind. Absent on older snapshots, which only ever stored terminals. */
-  kind?: "terminal" | "file" | "diff" | "commit" | "devPreview"
+  kind?: "terminal" | "file" | "diff" | "commit" | "devPreview" | "claudeChat"
   /** Persisted multi-pane state. Falls back to [{ id: tab.id }] for older snapshots. */
   panes?: StoredPane[]
   previews?: WorkspacePreview[]
@@ -441,7 +441,8 @@ export function loadProjects(): StoredProject[] {
                   t.kind === "file" ||
                   t.kind === "diff" ||
                   t.kind === "commit" ||
-                  t.kind === "devPreview"
+                  t.kind === "devPreview" ||
+                  t.kind === "claudeChat"
                 ) {
                   return {
                     id: t.id,

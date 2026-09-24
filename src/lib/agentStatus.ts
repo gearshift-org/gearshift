@@ -54,6 +54,7 @@ export function terminalPaneAgentState(
 }
 
 export function terminalTabAgentState(tab: WorkspaceTab): TerminalAgentState {
+  if (tab.kind === "claudeChat") return terminalAgentState(tab.agentStatus)
   if (tab.kind !== "terminal") return "unknown"
   return tab.panes.reduce<TerminalAgentState>(
     (state, pane) => higherPriorityState(state, terminalPaneAgentState(pane)),

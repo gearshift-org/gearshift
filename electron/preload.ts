@@ -73,6 +73,68 @@ export type SpaceChatSendResult =
   | { ok: true; message: SpaceChatMessage; historyReads: number }
   | { ok: false; error: string }
 
+import type {
+  ClaudeChatEvent,
+  ClaudeChatModel,
+  ClaudeChatPermissionMode,
+} from "./claudeChat"
+
+const claudeChatApi = {
+  models: (cwd: string) =>
+    ipcRenderer.invoke("claudeChat:models", cwd) as Promise<ClaudeChatModel[]>,
+  send: (input: {
+    chatId: string
+    cwd: string
+    prompt: string
+    sessionId?: string
+    model?: string
+    effort?: "low" | "medium" | "high" | "xhigh" | "max"
+    permissionMode?: ClaudeChatPermissionMode
+  }) =>
+    ipcRenderer.invoke("claudeChat:send", input) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  answer: (chatId: string, requestId: string, allow: boolean) =>
+    ipcRenderer.invoke(
+      "claudeChat:answer",
+      chatId,
+      requestId,
+      allow
+    ) as Promise<boolean>,
+  answerQuestion: (
+    chatId: string,
+    requestId: string,
+    answers: Record<string, string> | null
+  ) =>
+    ipcRenderer.invoke(
+      "claudeChat:answerQuestion",
+      chatId,
+      requestId,
+      answers
+    ) as Promise<boolean>,
+  title: (sessionId: string, cwd: string) =>
+    ipcRenderer.invoke("claudeChat:title", sessionId, cwd) as Promise<
+      string | null
+    >,
+  setPermissionMode: (chatId: string, mode: ClaudeChatPermissionMode) =>
+    ipcRenderer.invoke(
+      "claudeChat:setPermissionMode",
+      chatId,
+      mode
+    ) as Promise<void>,
+  stop: (chatId: string) =>
+    ipcRenderer.invoke("claudeChat:stop", chatId) as Promise<void>,
+  onEvent: (callback: (event: ClaudeChatEvent) => void) => {
+    const listener = (_event: unknown, payload: ClaudeChatEvent) =>
+      callback(payload)
+    ipcRenderer.on("claudeChat:event", listener)
+    return () => {
+      ipcRenderer.removeListener("claudeChat:event", listener)
+    }
+  },
+}
+
 const dialogApi = {
   openProject: () =>
     ipcRenderer.invoke("dialog:openProject") as Promise<string | null>,
@@ -742,6 +804,7 @@ contextBridge.exposeInMainWorld("clipboardApi", clipboardApi)
 contextBridge.exposeInMainWorld("electronUtils", electronUtils)
 contextBridge.exposeInMainWorld("appApi", appApi)
 contextBridge.exposeInMainWorld("spaceChat", spaceChatApi)
+contextBridge.exposeInMainWorld("claudeChat", claudeChatApi)
 contextBridge.exposeInMainWorld("appWindow", appWindowApi)
 contextBridge.exposeInMainWorld("git", gitApi)
 contextBridge.exposeInMainWorld("fsApi", fsApi)
@@ -784,6 +847,7 @@ export type ClipboardApi = typeof clipboardApi
 export type ElectronUtils = typeof electronUtils
 export type AppApi = typeof appApi
 export type SpaceChatApi = typeof spaceChatApi
+export type ClaudeChatApi = typeof claudeChatApi
 export type AppWindowApi = typeof appWindowApi
 export type GitApi = typeof gitApi
 export type FsApi = typeof fsApi

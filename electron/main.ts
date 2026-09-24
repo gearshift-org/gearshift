@@ -52,8 +52,11 @@ import {
   answerClaudeQuestion,
   getClaudeChatCatalog,
   getClaudeChatTitle,
+  listClaudeChatSessions,
+  loadClaudeChatSession,
   setClaudeChatPermissionMode,
   startClaudeChat,
+  steerClaudeChat,
   stopClaudeChat,
 } from "./claudeChat"
 import {
@@ -2466,6 +2469,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("claudeChat:catalog", async (_event, cwd: string) =>
     getClaudeChatCatalog(cwd, await loginShellPath())
+  )
+  ipcMain.handle("claudeChat:sessions", (_event, cwd: string) =>
+    listClaudeChatSessions(cwd)
+  )
+  ipcMain.handle(
+    "claudeChat:loadSession",
+    (_event, sessionId: string, cwd: string) =>
+      loadClaudeChatSession(sessionId, cwd)
+  )
+  ipcMain.handle("claudeChat:steer", (_event, chatId: string, text: string) =>
+    steerClaudeChat(chatId, text)
   )
   ipcMain.handle("claudeChat:send", async (event, input) =>
     startClaudeChat(event.sender, input, await loginShellPath())

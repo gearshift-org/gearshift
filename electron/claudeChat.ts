@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto"
 import { promisify } from "node:util"
 import {
   getSessionInfo,
+  getSessionMessages,
+  listSessions,
   query,
   type Query,
   type SDKUserMessage,
@@ -34,6 +36,12 @@ export type ClaudeChatEvent =
       requestId: string
       name: string
       detail: string
+    }
+  | {
+      chatId: string
+      /** Claude Code's predicted next prompt, sent after a finished turn. */
+      type: "suggestion"
+      text: string
     }
   | {
       chatId: string
@@ -133,7 +141,68 @@ type ActiveChat = {
   permissions: Map<string, PendingPermission>
   stopping?: boolean
   /** Ends the turn and tells the chat; safe to call more than once. */
-  finish?: (error?: string) => void
+  finish?: (error?: string, options?: { keepInput?: boolean }) => void
+  /**
+   * Sends a message into the running turn to steer it. False once the turn is
+   * wrapping up; the chat then sends it as the next turn instead.
+   */
+  steer?: (text: string) => boolean
+}
+
+// A turn's prompt as a stream, so messages sent while Claude works can join
+// the running turn (the way the CLI takes messages typed mid-turn).
+function createInputStream() {
+  const queue: SDKUserMessage[] = []
+  let wake: (() => void) | null = null
+  let ended = false
+  const stream: AsyncIterable<SDKUserMessage> = {
+    async *[Symbol.asyncIterator]() {
+      while (true) {
+        const next = queue.shift()
+        if (next) {
+          yield next
+          continue
+        }
+        if (ended) return
+        await new Promise<void>((resolve) => {
+          wake = resolve
+        })
+        wake = null
+      }
+    },
+  }
+  return {
+    stream,
+    push(text: string, priority?: "next") {
+      queue.push({
+        type: "user",
+        message: { role: "user", content: text },
+        parent_tool_use_id: null,
+        ...(priority ? { priority } : {}),
+      })
+      wake?.()
+    },
+    end() {
+      ended = true
+      wake?.()
+    },
+  }
+}
+
+// After a turn's result, how long to wait for a steering message queued near
+// the end to start a follow-up turn before closing the input.
+const TURN_SETTLE_MS = 800
+// How long a finished turn's process stays up to deliver Claude Code's
+// next-prompt suggestion, which arrives after the result.
+const SUGGESTION_WAIT_MS = 6000
+
+// Finished turns still waiting on a suggestion; a new turn in the same chat
+// ends the old one first so two processes never share the session.
+const lingeringChats = new Map<string, () => void>()
+
+export function steerClaudeChat(chatId: string, text: string): boolean {
+  if (!text.trim()) return false
+  return activeChats.get(chatId)?.steer?.(text) ?? false
 }
 
 const activeChats = new Map<string, ActiveChat>()
@@ -309,6 +378,120 @@ export async function stopClaudeChat(chatId: string): Promise<void> {
   }
 }
 
+export type ClaudeChatSession = {
+  sessionId: string
+  title: string
+  lastModified: number
+  gitBranch?: string
+}
+
+// This project's Claude Code sessions, newest first — what `/resume` lists.
+// Reads the session files directly; no Claude process is started.
+export async function listClaudeChatSessions(
+  cwd: string
+): Promise<ClaudeChatSession[]> {
+  try {
+    const sessions = await listSessions({ dir: cwd, limit: 100 })
+    return sessions
+      .map((session) => ({
+        sessionId: session.sessionId,
+        title: (session.customTitle || session.summary || "Untitled session")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 160),
+        lastModified: session.lastModified,
+        ...(session.gitBranch ? { gitBranch: session.gitBranch } : {}),
+      }))
+      .sort((a, b) => b.lastModified - a.lastModified)
+  } catch {
+    return []
+  }
+}
+
+export type ClaudeChatHistoryMessage = {
+  role: "user" | "assistant"
+  text: string
+  tools?: Array<{ name: string; detail: string; summary: string }>
+}
+
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  return content
+    .filter(
+      (block): block is { type: "text"; text: string } =>
+        !!block &&
+        typeof block === "object" &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string"
+    )
+    .map((block) => block.text)
+    .join("\n\n")
+}
+
+// A user turn as the person typed it. Slash commands are stored wrapped in
+// tags; unwrap those, and drop Claude Code's own injected notices.
+function userPromptText(raw: string): string | null {
+  const command = /<command-name>([^<]*)<\/command-name>/.exec(raw)
+  if (command) {
+    const args = /<command-args>([^<]*)<\/command-args>/.exec(raw)?.[1] ?? ""
+    const name = command[1].trim()
+    return `${name.startsWith("/") ? name : `/${name}`}${args.trim() ? ` ${args.trim()}` : ""}`
+  }
+  const text = raw.trim()
+  if (!text || text.startsWith("<") || text.startsWith("Caveat:")) return null
+  return text
+}
+
+// A past session as chat messages: each typed prompt, then Claude's replies
+// merged into one message with their text and tool calls. Tool results,
+// subagent traffic, and system notices are left out.
+export async function loadClaudeChatSession(
+  sessionId: string,
+  cwd: string
+): Promise<ClaudeChatHistoryMessage[]> {
+  const raw = await getSessionMessages(sessionId, { dir: cwd })
+  const messages: ClaudeChatHistoryMessage[] = []
+  for (const entry of raw) {
+    if (entry.parent_tool_use_id) continue
+    const content = (entry.message as { content?: unknown } | null)?.content
+    if (entry.type === "user") {
+      const text = userPromptText(textOf(content))
+      if (text) messages.push({ role: "user", text })
+      continue
+    }
+    if (entry.type !== "assistant") continue
+    let reply = messages.at(-1)
+    if (!reply || reply.role !== "assistant") {
+      reply = { role: "assistant", text: "" }
+      messages.push(reply)
+    }
+    for (const block of Array.isArray(content) ? content : []) {
+      const b = block as {
+        type?: string
+        text?: string
+        name?: string
+        input?: unknown
+      }
+      if (b.type === "text" && b.text?.trim()) {
+        reply.text = reply.text ? `${reply.text}\n\n${b.text}` : b.text
+      } else if (b.type === "tool_use" && typeof b.name === "string") {
+        const input = (b.input ?? {}) as Record<string, unknown>
+        reply.tools = [
+          ...(reply.tools ?? []),
+          {
+            name: b.name,
+            detail: describeInput(input),
+            summary: summarizeTool(b.name, input),
+          },
+        ]
+      }
+    }
+  }
+  // Drop replies left empty (e.g. only thinking blocks).
+  return messages.filter((message) => message.text || message.tools?.length)
+}
+
 // The same title Claude Code shows for the session: a /rename title, else
 // Claude's generated title, else the first prompt.
 export async function getClaudeChatTitle(
@@ -392,11 +575,41 @@ export async function startClaudeChat(
 
   const active: ActiveChat = { permissions: new Map() }
   activeChats.set(input.chatId, active)
+  lingeringChats.get(input.chatId)?.()
   let sessionId = input.sessionId
   let finished = false
-  active.finish = (error?: string) => {
+  const input$ = createInputStream()
+  input$.push(input.prompt)
+  // Once closing, the input is ending; later messages become the next turn.
+  let closing = false
+  let settleTimer: ReturnType<typeof setTimeout> | undefined
+  let suggestionTimer: ReturnType<typeof setTimeout> | undefined
+  const closeInput = () => {
+    closing = true
+    clearTimeout(settleTimer)
+    clearTimeout(suggestionTimer)
+    if (lingeringChats.get(input.chatId) === closeInput)
+      lingeringChats.delete(input.chatId)
+    input$.end()
+  }
+  // The turn is over for the user: report it now, but keep the process up
+  // briefly for the suggestion instead of making the chat wait for it.
+  const turnDone = () => {
+    closing = true
+    active.finish?.(undefined, { keepInput: true })
+    lingeringChats.set(input.chatId, closeInput)
+    suggestionTimer = setTimeout(closeInput, SUGGESTION_WAIT_MS)
+  }
+  active.steer = (text) => {
+    if (closing || finished || active.stopping) return false
+    clearTimeout(settleTimer)
+    input$.push(text, "next")
+    return true
+  }
+  active.finish = (error?: string, { keepInput = false } = {}) => {
     if (finished) return
     finished = true
+    if (!keepInput) closeInput()
     for (const pending of active.permissions.values()) pending.resolve(false)
     active.permissions.clear()
     if (activeChats.get(input.chatId) === active)
@@ -449,7 +662,7 @@ export async function startClaudeChat(
     emitStatus(true)
     try {
       const conversation = query({
-        prompt: input.prompt,
+        prompt: input$.stream,
         options: {
           cwd: input.cwd,
           pathToClaudeCodeExecutable: binary,
@@ -458,6 +671,7 @@ export async function startClaudeChat(
           ...(input.model ? { model: input.model } : {}),
           ...(input.effort ? { effort: input.effort } : {}),
           includePartialMessages: true,
+          promptSuggestions: true,
           permissionMode: isPermissionMode(input.permissionMode)
             ? input.permissionMode
             : "auto",
@@ -522,6 +736,9 @@ export async function startClaudeChat(
       active.query = conversation
       for await (const message of conversation) {
         if (message.session_id) sessionId = message.session_id
+        // Any new output means a follow-up turn is running; keep the input open.
+        if (message.type === "stream_event" || message.type === "assistant")
+          clearTimeout(settleTimer)
         if (message.type === "stream_event") {
           const event = message.event
           if (event.type === "message_start") {
@@ -575,16 +792,27 @@ export async function startClaudeChat(
             }
           }
           streamedText = false
-        } else if (
-          message.type === "result" &&
-          (message.subtype !== "success" || message.is_error)
-        ) {
-          active.finish?.(
-            "errors" in message
-              ? message.errors.join("\n")
-              : message.result || "Claude could not finish this turn."
-          )
-          return
+        } else if (message.type === "result") {
+          if (message.subtype !== "success" || message.is_error) {
+            active.finish?.(
+              "errors" in message
+                ? message.errors.join("\n")
+                : message.result || "Claude could not finish this turn."
+            )
+            return
+          }
+          // A steering message sent near the end may start one more turn;
+          // if nothing does, the turn is done.
+          clearTimeout(settleTimer)
+          settleTimer = setTimeout(turnDone, TURN_SETTLE_MS)
+        } else if (message.type === "prompt_suggestion") {
+          if (message.suggestion.trim())
+            emit(sender, {
+              chatId: input.chatId,
+              type: "suggestion",
+              text: message.suggestion.trim(),
+            })
+          closeInput()
         }
       }
       active.finish?.()
@@ -594,6 +822,7 @@ export async function startClaudeChat(
       )
     } finally {
       active.finish?.()
+      closeInput()
     }
   })()
   return { ok: true }

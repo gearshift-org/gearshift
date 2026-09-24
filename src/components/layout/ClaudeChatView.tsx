@@ -16,8 +16,10 @@ import {
   ChevronRight,
   Copy,
   Gauge,
+  History,
   Square,
   Sparkles,
+  X,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -37,6 +39,7 @@ import type {
   ClaudeChatPermissionMode,
   ClaudeChatPhase,
   ClaudeChatQuestion,
+  ClaudeChatSession,
 } from "../../../electron/claudeChat"
 import type { TerminalAgentStatus } from "./types"
 
@@ -54,6 +57,8 @@ type ChatMessage = {
   finishedAt?: number
   /** Output tokens Claude produced for this reply. */
   outputTokens?: number
+  /** Sent while a turn was ending; goes out as the next turn. */
+  queued?: boolean
 }
 
 type ChatEffort = "" | "low" | "medium" | "high" | "xhigh" | "max"
@@ -688,6 +693,156 @@ function QuestionCard({
   )
 }
 
+// Index of the last Claude reply (-1 if none).
+function lastReplyIndex(messages: ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1)
+    if (messages[index].role === "assistant") return index
+  return -1
+}
+
+// "5m ago", "3h ago", "Yesterday", or a date.
+function formatRelative(timestamp: number): string {
+  const minutes = Math.floor((Date.now() - timestamp) / 60000)
+  if (minutes < 1) return "Just now"
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  if (hours < 48) return "Yesterday"
+  return new Date(timestamp).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  })
+}
+
+// Empty-chat button that lists this project's Claude Code sessions (what
+// `/resume` shows) and continues the one picked.
+function SessionPicker({
+  cwd,
+  onPick,
+}: {
+  cwd: string
+  onPick: (session: ClaudeChatSession) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [sessions, setSessions] = useState<ClaudeChatSession[] | null>(null)
+  const [filter, setFilter] = useState("")
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const show = () => {
+    setOpen(true)
+    setError(null)
+    void window.claudeChat
+      .sessions(cwd)
+      .then(setSessions)
+      .catch(() => setSessions([]))
+  }
+  const pick = async (session: ClaudeChatSession) => {
+    setLoadingId(session.sessionId)
+    setError(null)
+    try {
+      await onPick(session)
+    } catch {
+      setError("Couldn't load that session.")
+      setLoadingId(null)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={show}
+        className="mt-3 inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-foreground hover:bg-foreground/5"
+      >
+        <History className="size-3.5" />
+        Resume a previous session
+      </button>
+    )
+  }
+
+  const query = filter.trim().toLowerCase()
+  const shown = (sessions ?? []).filter(
+    (session) =>
+      !query ||
+      session.title.toLowerCase().includes(query) ||
+      session.gitBranch?.toLowerCase().includes(query)
+  )
+  return (
+    <div className="mt-3 w-full max-w-md overflow-hidden rounded-lg border border-border bg-background text-left">
+      <div className="flex items-center gap-2 border-b border-border px-2.5">
+        <History className="size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          autoFocus
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault()
+              setOpen(false)
+            } else if (event.key === "Enter" && shown[0]) {
+              event.preventDefault()
+              void pick(shown[0])
+            }
+          }}
+          placeholder="Search sessions…"
+          aria-label="Search previous sessions"
+          className="h-8 min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close"
+          className="grid size-5 place-items-center rounded text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      <div className="max-h-72 overflow-y-auto p-1">
+        {sessions === null ? (
+          <p className="px-2 py-3 text-xs text-muted-foreground">
+            Loading sessions…
+          </p>
+        ) : shown.length === 0 ? (
+          <p className="px-2 py-3 text-xs text-muted-foreground">
+            {sessions.length === 0
+              ? "No Claude Code sessions for this project yet."
+              : "No sessions match."}
+          </p>
+        ) : (
+          shown.map((session) => (
+            <button
+              key={session.sessionId}
+              type="button"
+              disabled={loadingId !== null}
+              onClick={() => void pick(session)}
+              className="flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left hover:bg-foreground/5 disabled:opacity-60"
+            >
+              <span className="truncate text-[13px] text-foreground">
+                {loadingId === session.sessionId ? "Loading…" : session.title}
+              </span>
+              <span className="flex gap-1.5 text-[11px] text-muted-foreground">
+                <span>{formatRelative(session.lastModified)}</span>
+                {session.gitBranch && (
+                  <span className="truncate">· {session.gitBranch}</span>
+                )}
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="border-t border-border px-2.5 py-1.5 text-xs text-destructive"
+        >
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // One Claude reply. Memoized so streaming into the latest reply doesn't
 // re-render (and re-parse the Markdown of) every earlier one.
 const ReplyMessage = memo(function ReplyMessage({
@@ -797,12 +952,18 @@ export function ClaudeChatView({
   const [command, setCommand] = useState<ClaudeChatCommand | null>(null)
   // Up-arrow recall: index into sent messages, or null when not recalling.
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  // Claude Code's predicted next prompt, shown as the placeholder; Tab
+  // accepts it. Cleared as soon as the user types or a turn starts.
+  const [suggestion, setSuggestion] = useState<string | null>(null)
   const savedDraftRef = useRef("")
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [status, setStatus] = useState<ChatStatus | null>(null)
   // Latest token count, read when the turn ends (the event listener is
   // registered once, so it can't read `status` directly).
   const outputTokensRef = useRef(0)
+  // Current Claude session id, readable from the once-registered listener.
+  const sessionIdRef = useRef(snapshot.sessionId)
+  sessionIdRef.current = snapshot.sessionId ?? sessionIdRef.current
   const [stopping, setStopping] = useState(false)
   const [escArmed, setEscArmed] = useState(false)
   const [question, setQuestion] = useState<{
@@ -1024,7 +1185,8 @@ export function ClaudeChatView({
     }
   }, [snapshot.sessionId, busy, cwd])
 
-  const lastMessageId = snapshot.messages.at(-1)?.id
+  // The live status line belongs to the reply being written.
+  const lastMessageId = snapshot.messages[lastReplyIndex(snapshot.messages)]?.id
   // Group each user message with the replies that follow it.
   const sections: Array<{ user?: ChatMessage; replies: ChatMessage[] }> = []
   for (const message of snapshot.messages) {
@@ -1079,6 +1241,10 @@ export function ClaudeChatView({
         setPermission(event)
         return
       }
+      if (event.type === "suggestion") {
+        setSuggestion(event.text)
+        return
+      }
       if (event.type === "question") {
         setQuestion({
           requestId: event.requestId,
@@ -1100,25 +1266,33 @@ export function ClaudeChatView({
         setPermission(null)
         setQuestion(null)
         setStatus(null)
-        setSnapshot((current) => ({
-          ...current,
-          sessionId: event.sessionId ?? current.sessionId,
-          messages: current.messages.map((message, index) =>
-            index === current.messages.length - 1 &&
-            message.role === "assistant"
-              ? {
-                  ...message,
-                  finishedAt: Date.now(),
-                  outputTokens: outputTokensRef.current,
-                  ...(event.stopped
-                    ? { stopped: true }
-                    : event.error
-                      ? { error: event.error }
-                      : {}),
-                }
-              : message
-          ),
-        }))
+        if (event.sessionId) sessionIdRef.current = event.sessionId
+        setSnapshot((current) => {
+          // The reply is the last Claude message; queued messages may follow.
+          const replyIndex = lastReplyIndex(current.messages)
+          return {
+            ...current,
+            sessionId: event.sessionId ?? current.sessionId,
+            messages: current.messages.map((message, index) =>
+              index === replyIndex
+                ? {
+                    ...message,
+                    finishedAt: Date.now(),
+                    outputTokens: outputTokensRef.current,
+                    ...(event.stopped
+                      ? { stopped: true }
+                      : event.error
+                        ? { error: event.error }
+                        : {}),
+                  }
+                : message
+            ),
+          }
+        })
+        // Messages sent while the turn was ending go out as the next turn.
+        const queued = queuedRef.current.splice(0)
+        if (queued.length > 0)
+          void startTurnRef.current(queued.join("\n\n"), false)
         return
       }
       if (event.type === "text") {
@@ -1127,6 +1301,7 @@ export function ClaudeChatView({
         if (!textFrame) textFrame = requestAnimationFrame(flushText)
         return
       }
+      if (event.type !== "tool") return
       flushText()
       setSnapshot((current) => ({
         ...current,
@@ -1156,14 +1331,10 @@ export function ClaudeChatView({
     }
   }, [chatId])
 
-  const send = async (event?: FormEvent) => {
-    event?.preventDefault()
-    const args = draft.trim()
-    const prompt = command ? `/${command.name}${args ? ` ${args}` : ""}` : args
-    if (!prompt || busy) return
-    setDraft("")
-    setCommand(null)
-    setHistoryIndex(null)
+  // Start a turn. With `withUserMessage` false the user's message is already
+  // in the transcript (it was queued while the previous turn ended).
+  const startTurn = async (prompt: string, withUserMessage = true) => {
+    setSuggestion(null)
     followRef.current = true
     setFollowing(true)
     setBusy(true)
@@ -1174,13 +1345,19 @@ export function ClaudeChatView({
     setSnapshot((current) => ({
       ...current,
       messages: [
-        ...current.messages,
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          text: prompt,
-          createdAt: Date.now(),
-        },
+        ...current.messages.map((message) =>
+          message.queued ? { ...message, queued: false } : message
+        ),
+        ...(withUserMessage
+          ? [
+              {
+                id: crypto.randomUUID(),
+                role: "user" as const,
+                text: prompt,
+                createdAt: Date.now(),
+              },
+            ]
+          : []),
         {
           id: crypto.randomUUID(),
           role: "assistant",
@@ -1194,7 +1371,7 @@ export function ClaudeChatView({
         chatId,
         cwd,
         prompt,
-        sessionId: snapshot.sessionId,
+        sessionId: sessionIdRef.current,
         model: modelsError ? undefined : snapshot.model || undefined,
         effort: modelsError ? undefined : snapshot.effort || undefined,
         permissionMode,
@@ -1218,6 +1395,59 @@ export function ClaudeChatView({
         ),
       }))
     }
+  }
+  const startTurnRef = useRef(startTurn)
+  startTurnRef.current = startTurn
+
+  // While Claude works, a sent message steers the running turn (like typing
+  // mid-turn in the CLI). If the turn is already ending, it's queued and sent
+  // as the next turn.
+  const queuedRef = useRef<string[]>([])
+  const steer = async (prompt: string) => {
+    setLastSubmitAt(Date.now())
+    followRef.current = true
+    setFollowing(true)
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: prompt,
+      createdAt: Date.now(),
+    }
+    const steered = await window.claudeChat.steer(chatId, prompt)
+    if (steered) {
+      // Claude's reply continues below the steering message.
+      setSnapshot((current) => ({
+        ...current,
+        messages: [
+          ...current.messages,
+          userMessage,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: "",
+            createdAt: Date.now(),
+          },
+        ],
+      }))
+      return
+    }
+    queuedRef.current.push(prompt)
+    setSnapshot((current) => ({
+      ...current,
+      messages: [...current.messages, { ...userMessage, queued: true }],
+    }))
+  }
+
+  const send = async (event?: FormEvent) => {
+    event?.preventDefault()
+    const args = draft.trim()
+    const prompt = command ? `/${command.name}${args ? ` ${args}` : ""}` : args
+    if (!prompt) return
+    setDraft("")
+    setCommand(null)
+    setHistoryIndex(null)
+    if (busy) await steer(prompt)
+    else await startTurn(prompt)
   }
 
   // "/" menu: open while the first word of the draft is a partial command.
@@ -1248,6 +1478,7 @@ export function ClaudeChatView({
     inputRef.current?.focus()
   }
   const changeDraft = (value: string) => {
+    if (value) setSuggestion(null)
     // Editing a recalled message makes it a new draft.
     setHistoryIndex(null)
     setSlashIndex(0)
@@ -1262,6 +1493,24 @@ export function ClaudeChatView({
       return
     }
     setDraft(value)
+  }
+
+  // Continue a Claude Code session from this project's history: show its past
+  // messages and resume it on the next message.
+  const resumeSession = async (session: ClaudeChatSession) => {
+    const history = await window.claudeChat.loadSession(session.sessionId, cwd)
+    setSnapshot((current) => ({
+      ...current,
+      sessionId: session.sessionId,
+      messages: history.map((message) => ({
+        id: crypto.randomUUID(),
+        ...message,
+      })),
+    }))
+    onTitleChangeRef.current?.(session.title)
+    followRef.current = true
+    setFollowing(true)
+    inputRef.current?.focus()
   }
 
   // Applies to the next message, and to the running turn when there is one.
@@ -1365,6 +1614,7 @@ export function ClaudeChatView({
                   Enter to send · Shift+Enter for a new line · Shift+Tab to
                   switch mode · Esc Esc to stop
                 </p>
+                <SessionPicker cwd={cwd} onPick={resumeSession} />
               </div>
             )}
             {sections.map((section) => (
@@ -1381,6 +1631,11 @@ export function ClaudeChatView({
                     </div>
                     {/* Revealed on hover: when it was sent, and copy. */}
                     <div className="flex h-6 items-center gap-0.5">
+                      {section.user.queued && (
+                        <span className="mr-1 text-[11px] text-muted-foreground">
+                          Queued · sends when Claude finishes
+                        </span>
+                      )}
                       {section.user.createdAt && (
                         <time
                           dateTime={new Date(
@@ -1547,6 +1802,22 @@ export function ClaudeChatView({
               }
               onKeyDown={(event) => {
                 const el = event.currentTarget
+                // Tab or → takes Claude Code's suggested next prompt, as in the CLI.
+                if (
+                  (event.key === "Tab" || event.key === "ArrowRight") &&
+                  !event.shiftKey &&
+                  !event.metaKey &&
+                  !event.altKey &&
+                  suggestion &&
+                  !draft &&
+                  !command &&
+                  !slashMenuOpen
+                ) {
+                  event.preventDefault()
+                  setDraft(suggestion)
+                  setSuggestion(null)
+                  return
+                }
                 // Up/Down step through this chat's sent messages, like the
                 // Claude Code CLI, when the caret is on the first/last line.
                 if (
@@ -1638,7 +1909,9 @@ export function ClaudeChatView({
               placeholder={
                 command
                   ? command.argumentHint || "Add details (optional)"
-                  : "Ask Claude about this project, or type / for commands…"
+                  : suggestion && !busy
+                    ? `${suggestion}  ·  Tab or → to use`
+                    : "Ask Claude about this project, or type / for commands…"
               }
               aria-label="Message Claude"
               rows={1}
@@ -1824,7 +2097,7 @@ export function ClaudeChatView({
                   Press Esc again to stop
                 </span>
               )}
-              {busy ? (
+              {busy && !draft.trim() && !command ? (
                 <button
                   type="button"
                   onClick={stop}
@@ -1845,7 +2118,11 @@ export function ClaudeChatView({
                   type="submit"
                   disabled={!draft.trim() && !command}
                   aria-label="Send message"
-                  title="Send (Enter)"
+                  title={
+                    busy
+                      ? "Send to Claude while it works (Enter)"
+                      : "Send (Enter)"
+                  }
                   className="grid size-6 place-items-center rounded bg-foreground text-background disabled:opacity-30"
                 >
                   <ArrowUp className="size-3.5" />

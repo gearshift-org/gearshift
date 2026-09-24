@@ -76,10 +76,22 @@ export type SpaceChatSendResult =
 import type {
   ClaudeChatEvent,
   ClaudeChatCatalog,
+  ClaudeChatHistoryMessage,
   ClaudeChatPermissionMode,
+  ClaudeChatSession,
 } from "./claudeChat"
 
 const claudeChatApi = {
+  steer: (chatId: string, text: string) =>
+    ipcRenderer.invoke("claudeChat:steer", chatId, text) as Promise<boolean>,
+  sessions: (cwd: string) =>
+    ipcRenderer.invoke("claudeChat:sessions", cwd) as Promise<
+      ClaudeChatSession[]
+    >,
+  loadSession: (sessionId: string, cwd: string) =>
+    ipcRenderer.invoke("claudeChat:loadSession", sessionId, cwd) as Promise<
+      ClaudeChatHistoryMessage[]
+    >,
   catalog: (cwd: string) =>
     ipcRenderer.invoke("claudeChat:catalog", cwd) as Promise<ClaudeChatCatalog>,
   send: (input: {

@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -30,6 +31,8 @@ import {
 import { store } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import type {
+  ClaudeChatCatalog,
+  ClaudeChatCommand,
   ClaudeChatModel,
   ClaudeChatPermissionMode,
   ClaudeChatPhase,
@@ -400,24 +403,48 @@ function readCachedModels(): ClaudeChatModel[] {
   }
 }
 
-// One model lookup shared by every chat tab, reused for ten minutes. Each
-// lookup starts a short-lived Claude Code process, so tabs mounting at once
-// (e.g. after a reload) share it instead of each starting their own.
-let modelsRequest: Promise<ClaudeChatModel[]> | null = null
-let modelsRequestedAt = 0
+function commandsCacheKey(cwd: string) {
+  return `gearshift.claudeChat.commands.${cwd}`
+}
 
-function loadModels(cwd: string): Promise<ClaudeChatModel[]> {
-  if (modelsRequest && Date.now() - modelsRequestedAt < MODELS_REFRESH_MS)
-    return modelsRequest
-  modelsRequestedAt = Date.now()
-  const request = window.claudeChat.models(cwd).then((models) => {
-    store.set(MODELS_CACHE_KEY, JSON.stringify(models))
-    return models
+function readCachedCommands(cwd: string): ClaudeChatCommand[] {
+  try {
+    const parsed = JSON.parse(
+      store.get(commandsCacheKey(cwd)) ?? "[]"
+    ) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (command): command is ClaudeChatCommand =>
+        !!command && typeof command.name === "string"
+    )
+  } catch {
+    return []
+  }
+}
+
+// One lookup per project folder, shared by every chat tab and reused for ten
+// minutes. Each lookup starts a short-lived Claude Code process, so tabs
+// mounting at once (e.g. after a reload) share it instead of each starting
+// their own. Models are cached globally; commands and skills per folder.
+const catalogRequests = new Map<
+  string,
+  { request: Promise<ClaudeChatCatalog>; at: number }
+>()
+
+function loadCatalog(cwd: string): Promise<ClaudeChatCatalog> {
+  const existing = catalogRequests.get(cwd)
+  if (existing && Date.now() - existing.at < MODELS_REFRESH_MS)
+    return existing.request
+  const request = window.claudeChat.catalog(cwd).then((catalog) => {
+    store.set(MODELS_CACHE_KEY, JSON.stringify(catalog.models))
+    store.set(commandsCacheKey(cwd), JSON.stringify(catalog.commands))
+    return catalog
   })
   request.catch(() => {
-    if (modelsRequest === request) modelsRequest = null
+    if (catalogRequests.get(cwd)?.request === request)
+      catalogRequests.delete(cwd)
   })
-  modelsRequest = request
+  catalogRequests.set(cwd, { request, at: Date.now() })
   return request
 }
 
@@ -452,6 +479,19 @@ const primaryButtonClass =
   "h-6 rounded bg-foreground px-2.5 text-xs font-medium text-background disabled:opacity-40"
 const secondaryButtonClass =
   "h-6 rounded border border-border px-2.5 text-xs hover:bg-foreground/5"
+
+// A leading "/command" in a sent message is shown bold, like the input chip.
+function UserMessageText({ text }: { text: string }) {
+  // Command-shaped only, so a leading path like "/Users/me" isn't bolded.
+  const match = /^(\/[\w:.-]+)(\s[\s\S]*)?$/.exec(text)
+  if (!match) return <>{text}</>
+  return (
+    <>
+      <span className="font-semibold">{match[1]}</span>
+      {match[2] ?? ""}
+    </>
+  )
+}
 
 function isEditableTarget(el: Element | null): boolean {
   if (!el) return false
@@ -648,6 +688,87 @@ function QuestionCard({
   )
 }
 
+// One Claude reply. Memoized so streaming into the latest reply doesn't
+// re-render (and re-parse the Markdown of) every earlier one.
+const ReplyMessage = memo(function ReplyMessage({
+  message,
+  activity,
+}: {
+  message: ChatMessage
+  /** Live status line; only the reply being streamed gets one. */
+  activity: ReactNode
+}) {
+  return (
+    <div className="min-w-0 text-[13px] leading-6">
+      {message.tools?.map((tool, index) => (
+        <details
+          key={`${message.id}-${index}`}
+          className="group text-xs leading-6 text-muted-foreground"
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0 truncate">
+              {tool.summary || tool.name}
+            </span>
+            <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
+          </summary>
+          <div className="mt-0.5 mb-1.5 rounded border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] leading-5">
+            <span className="font-semibold text-foreground">{tool.name}</span>
+            {tool.detail && (
+              <span className="ml-2 break-all">{tool.detail}</span>
+            )}
+          </div>
+        </details>
+      ))}
+      {message.text && (
+        <div
+          className={cn("min-w-0 break-words", message.tools?.length && "mt-2")}
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {message.text}
+          </ReactMarkdown>
+        </div>
+      )}
+      {activity}
+      {message.error && (
+        <p role="alert" className="mt-1.5 text-xs text-destructive">
+          {message.error}
+        </p>
+      )}
+      {(message.stopped || message.finishedAt) && (
+        // Claude Code's end-of-turn line: "✻ Worked for 18s".
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-1 text-[11px] text-muted-foreground">
+          <span aria-hidden className="text-[#d97757]">
+            ✻
+          </span>
+          <span>
+            {message.stopped ? "Stopped" : "Worked"}
+            {message.createdAt && message.finishedAt
+              ? ` ${message.stopped ? "after" : "for"} ${formatElapsed(message.finishedAt - message.createdAt)}`
+              : ""}
+          </span>
+          {!!message.outputTokens && (
+            <span>· {formatTokens(message.outputTokens)}</span>
+          )}
+          {message.finishedAt && (
+            <span>
+              ·{" "}
+              <time
+                dateTime={new Date(message.finishedAt).toISOString()}
+                title={formatFullTime(message.finishedAt)}
+              >
+                {formatTime(message.finishedAt)}
+              </time>
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  )
+})
+
 export function ClaudeChatView({
   chatId,
   cwd,
@@ -667,6 +788,10 @@ export function ClaudeChatView({
   const [models, setModels] = useState(readCachedModels)
   const [modelsLoading, setModelsLoading] = useState(() => models.length === 0)
   const [modelsError, setModelsError] = useState(false)
+  const [commands, setCommands] = useState(() => readCachedCommands(cwd))
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  const [command, setCommand] = useState<ClaudeChatCommand | null>(null)
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [status, setStatus] = useState<ChatStatus | null>(null)
   // Latest token count, read when the turn ends (the event listener is
@@ -691,9 +816,28 @@ export function ClaudeChatView({
     () => store.onReady(() => setSnapshot(readSnapshot(chatId))),
     [chatId]
   )
+  // Save the transcript at most every 400ms: streaming changes it many times a
+  // second, and serializing a long chat on each chunk competes with scrolling.
+  // Pending changes are flushed when the chat closes or the window unloads.
+  const pendingSaveRef = useRef<(() => void) | null>(null)
   useEffect(() => {
-    store.set(`gearshift.claudeChat.${chatId}`, JSON.stringify(snapshot))
+    const save = () => {
+      pendingSaveRef.current = null
+      store.set(`gearshift.claudeChat.${chatId}`, JSON.stringify(snapshot))
+    }
+    pendingSaveRef.current = save
+    const timer = setTimeout(save, 400)
+    return () => clearTimeout(timer)
   }, [chatId, snapshot])
+  useEffect(() => {
+    const flush = () => pendingSaveRef.current?.()
+    window.addEventListener("pagehide", flush)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      // Closing the tab deletes the transcript first; don't write it back.
+      if (store.get(`gearshift.claudeChat.${chatId}`) !== null) flush()
+    }
+  }, [chatId])
   // Follow streamed output only while the user is at the bottom, so scrolling
   // up to read earlier messages isn't yanked back on every chunk.
   const followRef = useRef(true)
@@ -775,14 +919,21 @@ export function ClaudeChatView({
       })
     }
     const unsubscribe = store.onReady(() => {
+      const cachedCommands = readCachedCommands(cwd)
+      if (!disposed && cachedCommands.length > 0)
+        setCommands((current) =>
+          current.length > 0 ? current : cachedCommands
+        )
       const cached = readCachedModels()
       if (!disposed && cached.length > 0)
         setModels((current) => (current.length > 0 ? current : cached))
       if (cached.length > 0) setModelsLoading(false)
     })
-    loadModels(cwd)
-      .then((available) => {
-        if (!disposed) apply(available)
+    loadCatalog(cwd)
+      .then((catalog) => {
+        if (disposed) return
+        apply(catalog.models)
+        setCommands(catalog.commands)
       })
       .catch(() => {
         if (disposed) return
@@ -841,6 +992,7 @@ export function ClaudeChatView({
     }
   }, [snapshot.sessionId, busy, cwd])
 
+  const lastMessageId = snapshot.messages.at(-1)?.id
   // Group each user message with the replies that follow it.
   const sections: Array<{ user?: ChatMessage; replies: ChatMessage[] }> = []
   for (const message of snapshot.messages) {
@@ -869,87 +1021,116 @@ export function ClaudeChatView({
       )
   )
 
-  useEffect(
-    () =>
-      window.claudeChat.onEvent((event) => {
-        if (event.chatId !== chatId) return
-        if (event.type === "permission") {
-          setPermission(event)
-          return
-        }
-        if (event.type === "question") {
-          setQuestion({
-            requestId: event.requestId,
-            questions: event.questions,
-          })
-          return
-        }
-        if (event.type === "status") {
-          outputTokensRef.current = event.outputTokens
-          setStatus({ phase: event.phase, outputTokens: event.outputTokens })
-          return
-        }
-        if (event.type === "finished") {
-          // Finished while the user is elsewhere: flag it until they look.
-          if (!isActiveRef.current) setUnseenReply(true)
-          setBusy(false)
-          setStopping(false)
-          setPermission(null)
-          setQuestion(null)
-          setStatus(null)
-          setSnapshot((current) => ({
-            ...current,
-            sessionId: event.sessionId ?? current.sessionId,
-            messages: current.messages.map((message, index) =>
-              index === current.messages.length - 1 &&
-              message.role === "assistant"
-                ? {
-                    ...message,
-                    finishedAt: Date.now(),
-                    outputTokens: outputTokensRef.current,
-                    ...(event.stopped
-                      ? { stopped: true }
-                      : event.error
-                        ? { error: event.error }
-                        : {}),
-                  }
-                : message
-            ),
-          }))
-          return
-        }
+  useEffect(() => {
+    // Streamed text waiting for the next frame; flushed before any other
+    // update to the reply so order is kept.
+    let pendingText = ""
+    let textFrame = 0
+    const flushText = () => {
+      if (textFrame) cancelAnimationFrame(textFrame)
+      textFrame = 0
+      if (!pendingText) return
+      const text = pendingText
+      pendingText = ""
+      setSnapshot((current) => ({
+        ...current,
+        messages: current.messages.map((message, index) =>
+          index === current.messages.length - 1 && message.role === "assistant"
+            ? { ...message, text: message.text + text }
+            : message
+        ),
+      }))
+    }
+    const unsubscribe = window.claudeChat.onEvent((event) => {
+      if (event.chatId !== chatId) return
+      if (event.type === "permission") {
+        setPermission(event)
+        return
+      }
+      if (event.type === "question") {
+        setQuestion({
+          requestId: event.requestId,
+          questions: event.questions,
+        })
+        return
+      }
+      if (event.type === "status") {
+        outputTokensRef.current = event.outputTokens
+        setStatus({ phase: event.phase, outputTokens: event.outputTokens })
+        return
+      }
+      if (event.type === "finished") {
+        flushText()
+        // Finished while the user is elsewhere: flag it until they look.
+        if (!isActiveRef.current) setUnseenReply(true)
+        setBusy(false)
+        setStopping(false)
+        setPermission(null)
+        setQuestion(null)
+        setStatus(null)
         setSnapshot((current) => ({
           ...current,
-          messages: current.messages.map((message, index) => {
-            if (
-              index !== current.messages.length - 1 ||
-              message.role !== "assistant"
-            )
-              return message
-            if (event.type === "text")
-              return { ...message, text: message.text + event.text }
-            return {
-              ...message,
-              tools: [
-                ...(message.tools ?? []),
-                {
-                  name: event.name,
-                  detail: event.detail,
-                  summary: event.summary,
-                },
-              ],
-            }
-          }),
+          sessionId: event.sessionId ?? current.sessionId,
+          messages: current.messages.map((message, index) =>
+            index === current.messages.length - 1 &&
+            message.role === "assistant"
+              ? {
+                  ...message,
+                  finishedAt: Date.now(),
+                  outputTokens: outputTokensRef.current,
+                  ...(event.stopped
+                    ? { stopped: true }
+                    : event.error
+                      ? { error: event.error }
+                      : {}),
+                }
+              : message
+          ),
         }))
-      }),
-    [chatId]
-  )
+        return
+      }
+      if (event.type === "text") {
+        // Text chunks can outpace the screen; apply them once per frame.
+        pendingText += event.text
+        if (!textFrame) textFrame = requestAnimationFrame(flushText)
+        return
+      }
+      flushText()
+      setSnapshot((current) => ({
+        ...current,
+        messages: current.messages.map((message, index) => {
+          if (
+            index !== current.messages.length - 1 ||
+            message.role !== "assistant"
+          )
+            return message
+          return {
+            ...message,
+            tools: [
+              ...(message.tools ?? []),
+              {
+                name: event.name,
+                detail: event.detail,
+                summary: event.summary,
+              },
+            ],
+          }
+        }),
+      }))
+    })
+    return () => {
+      unsubscribe()
+      flushText()
+    }
+  }, [chatId])
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault()
-    const prompt = draft.trim()
+    const args = draft.trim()
+    const prompt = command ? `/${command.name}${args ? ` ${args}` : ""}` : args
     if (!prompt || busy) return
     setDraft("")
+    setCommand(null)
     followRef.current = true
     setFollowing(true)
     setBusy(true)
@@ -1004,6 +1185,48 @@ export function ClaudeChatView({
         ),
       }))
     }
+  }
+
+  // "/" menu: open while the first word of the draft is a partial command.
+  // Prefix matches come first, then names or descriptions containing it.
+  const slashQuery = /^\/(\S*)$/.exec(draft)?.[1]?.toLowerCase()
+  const slashMatches =
+    slashQuery === undefined
+      ? []
+      : [
+          ...commands.filter((command) =>
+            command.name.toLowerCase().startsWith(slashQuery)
+          ),
+          ...commands.filter(
+            (command) =>
+              !command.name.toLowerCase().startsWith(slashQuery) &&
+              (command.name.toLowerCase().includes(slashQuery) ||
+                command.description.toLowerCase().includes(slashQuery))
+          ),
+        ]
+  const slashMenuOpen = !command && !slashDismissed && slashMatches.length > 0
+  // A picked command becomes a chip before the input; the draft holds only
+  // its arguments. It's sent as "/name args".
+  const pickCommand = (picked: ClaudeChatCommand | undefined) => {
+    if (!picked) return
+    setCommand(picked)
+    setDraft("")
+    setSlashIndex(0)
+    inputRef.current?.focus()
+  }
+  const changeDraft = (value: string) => {
+    setSlashIndex(0)
+    setSlashDismissed(false)
+    // Typing a known command in full, then a space, turns it into a chip.
+    const typed = !command && /^\/(\S+)\s([\s\S]*)$/.exec(value)
+    const known =
+      typed && commands.find((candidate) => candidate.name === typed[1])
+    if (typed && known) {
+      setCommand(known)
+      setDraft(typed[2])
+      return
+    }
+    setDraft(value)
   }
 
   // Applies to the next message, and to the running turn when there is one.
@@ -1078,6 +1301,15 @@ export function ClaudeChatView({
         <div
           ref={scrollerRef}
           onScroll={handleScroll}
+          onWheel={(event) => {
+            // Scrolling up means reading back: stop following at once rather
+            // than waiting to leave the bottom zone, or the next streamed
+            // chunk snaps the view back down mid-gesture.
+            if (event.deltaY < 0 && followRef.current) {
+              followRef.current = false
+              setFollowing(false)
+            }
+          }}
           className="min-h-0 flex-1 overflow-y-auto px-4"
         >
           {/* Vertical padding lives inside the scroller so sticky user
@@ -1105,7 +1337,7 @@ export function ClaudeChatView({
                 {section.user && (
                   <div className="group/user sticky top-0 z-10 -mx-1 flex flex-col items-end bg-card px-1 pt-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-gradient-to-b after:from-card after:to-transparent">
                     <div className="max-h-32 max-w-[85%] overflow-y-auto rounded-lg border border-border/60 bg-foreground/[0.06] px-3 py-1.5 text-[13px] leading-5 whitespace-pre-wrap">
-                      {section.user.text}
+                      <UserMessageText text={section.user.text} />
                     </div>
                     {/* Revealed on hover: when it was sent, and copy. */}
                     <div className="flex h-6 items-center gap-0.5">
@@ -1129,96 +1361,19 @@ export function ClaudeChatView({
                   </div>
                 )}
                 {section.replies.map((message) => (
-                  <div
+                  <ReplyMessage
                     key={message.id}
-                    className="min-w-0 text-[13px] leading-6"
-                  >
-                    {message.tools?.map((tool, index) => (
-                      <details
-                        key={`${message.id}-${index}`}
-                        className="group text-xs leading-6 text-muted-foreground"
-                      >
-                        <summary className="flex cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
-                          <span className="min-w-0 truncate">
-                            {tool.summary || tool.name}
-                          </span>
-                          <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
-                        </summary>
-                        <div className="mt-0.5 mb-1.5 rounded border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] leading-5">
-                          <span className="font-semibold text-foreground">
-                            {tool.name}
-                          </span>
-                          {tool.detail && (
-                            <span className="ml-2 break-all">
-                              {tool.detail}
-                            </span>
-                          )}
-                        </div>
-                      </details>
-                    ))}
-                    {message.text && (
-                      <div
-                        className={cn(
-                          "min-w-0 break-words",
-                          message.tools?.length && "mt-2"
-                        )}
-                      >
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={markdownComponents}
-                        >
-                          {message.text}
-                        </ReactMarkdown>
-                      </div>
-                    )}
-                    {busy &&
-                      status &&
-                      message.id === snapshot.messages.at(-1)?.id && (
+                    message={message}
+                    activity={
+                      busy && status && message.id === lastMessageId ? (
                         <ActivityStatus
                           startedAt={turnStartedAt}
                           status={status}
                           stopping={stopping}
                         />
-                      )}
-                    {message.error && (
-                      <p
-                        role="alert"
-                        className="mt-1.5 text-xs text-destructive"
-                      >
-                        {message.error}
-                      </p>
-                    )}
-                    {(message.stopped || message.finishedAt) && (
-                      // Claude Code's end-of-turn line: "✻ Worked for 18s".
-                      <p className="mt-1.5 flex flex-wrap items-center gap-x-1 text-[11px] text-muted-foreground">
-                        <span aria-hidden className="text-[#d97757]">
-                          ✻
-                        </span>
-                        <span>
-                          {message.stopped ? "Stopped" : "Worked"}
-                          {message.createdAt && message.finishedAt
-                            ? ` ${message.stopped ? "after" : "for"} ${formatElapsed(message.finishedAt - message.createdAt)}`
-                            : ""}
-                        </span>
-                        {!!message.outputTokens && (
-                          <span>· {formatTokens(message.outputTokens)}</span>
-                        )}
-                        {message.finishedAt && (
-                          <span>
-                            ·{" "}
-                            <time
-                              dateTime={new Date(
-                                message.finishedAt
-                              ).toISOString()}
-                              title={formatFullTime(message.finishedAt)}
-                            >
-                              {formatTime(message.finishedAt)}
-                            </time>
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
+                      ) : null
+                    }
+                  />
                 ))}
               </section>
             ))}
@@ -1292,31 +1447,132 @@ export function ClaudeChatView({
         )}
       </div>
       <form onSubmit={(event) => void send(event)} className="px-3 pt-1 pb-3">
-        <div className="mx-auto max-w-3xl rounded-lg border border-border bg-background focus-within:border-ring">
-          <textarea
-            ref={inputRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              // Shift+Tab cycles permission modes, like the Claude Code CLI.
-              if (event.key === "Tab" && event.shiftKey) {
-                event.preventDefault()
-                const index = permissionModes.indexOf(currentMode)
-                changePermissionMode(
-                  permissionModes[(index + 1) % permissionModes.length].value
-                )
-                return
+        <div className="relative mx-auto max-w-3xl rounded-lg border border-border bg-background focus-within:border-ring">
+          {slashMenuOpen && (
+            <div
+              id={`claude-commands-${chatId}`}
+              role="listbox"
+              aria-label="Commands and skills"
+              className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-64 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            >
+              {slashMatches.map((command, index) => (
+                <button
+                  key={command.name}
+                  ref={(el) => {
+                    if (index === slashIndex)
+                      el?.scrollIntoView({ block: "nearest" })
+                  }}
+                  type="button"
+                  role="option"
+                  aria-selected={index === slashIndex}
+                  // Keep focus in the input while picking with the mouse.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setSlashIndex(index)}
+                  onClick={() => pickCommand(command)}
+                  className={cn(
+                    "flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-[13px]",
+                    index === slashIndex && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  <span className="shrink-0 font-medium">/{command.name}</span>
+                  {command.argumentHint && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {command.argumentHint}
+                    </span>
+                  )}
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    {command.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-start">
+            {command && (
+              <span
+                title={command.description}
+                className="mt-2 ml-2 shrink-0 rounded bg-foreground/10 px-1.5 text-[13px] leading-6 font-semibold"
+              >
+                /{command.name}
+              </span>
+            )}
+            <textarea
+              ref={inputRef}
+              value={draft}
+              onChange={(event) => changeDraft(event.target.value)}
+              role="combobox"
+              aria-expanded={slashMenuOpen}
+              aria-controls={
+                slashMenuOpen ? `claude-commands-${chatId}` : undefined
               }
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault()
-                void send()
+              onKeyDown={(event) => {
+                // Backspace at the very start turns the chip back into text.
+                const el = event.currentTarget
+                if (
+                  command &&
+                  event.key === "Backspace" &&
+                  el.selectionStart === 0 &&
+                  el.selectionEnd === 0
+                ) {
+                  event.preventDefault()
+                  setCommand(null)
+                  setDraft(`/${command.name}${draft ? ` ${draft}` : ""}`)
+                  requestAnimationFrame(() => {
+                    const end = command.name.length + 1
+                    el.setSelectionRange(end, end)
+                  })
+                  return
+                }
+                if (slashMenuOpen) {
+                  const count = slashMatches.length
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault()
+                    const step = event.key === "ArrowDown" ? 1 : -1
+                    setSlashIndex((index) => (index + step + count) % count)
+                    return
+                  }
+                  if (
+                    (event.key === "Enter" && !event.shiftKey) ||
+                    (event.key === "Tab" && !event.shiftKey)
+                  ) {
+                    event.preventDefault()
+                    pickCommand(slashMatches[slashIndex] ?? slashMatches[0])
+                    return
+                  }
+                  if (event.key === "Escape") {
+                    // Also keeps this Esc from counting toward Esc Esc stop.
+                    event.preventDefault()
+                    setSlashDismissed(true)
+                    return
+                  }
+                }
+                // Shift+Tab cycles permission modes, like the Claude Code CLI.
+                if (event.key === "Tab" && event.shiftKey) {
+                  event.preventDefault()
+                  const index = permissionModes.indexOf(currentMode)
+                  changePermissionMode(
+                    permissionModes[(index + 1) % permissionModes.length].value
+                  )
+                  return
+                }
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  void send()
+                }
+              }}
+              placeholder={
+                command
+                  ? command.argumentHint || "Add details (optional)"
+                  : "Ask Claude about this project, or type / for commands…"
               }
-            }}
-            placeholder="Ask Claude about this project…"
-            aria-label="Message Claude"
-            rows={1}
-            className="block [field-sizing:content] max-h-48 min-h-9 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[13px] leading-5 outline-none placeholder:text-muted-foreground"
-          />
+              aria-label="Message Claude"
+              rows={1}
+              className={cn(
+                "block [field-sizing:content] max-h-48 min-h-9 w-full min-w-0 flex-1 resize-none bg-transparent pt-2.5 pb-1 text-[13px] leading-5 outline-none placeholder:text-muted-foreground",
+                command ? "pr-3 pl-1.5" : "px-3"
+              )}
+            />
+          </div>
           <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
             <DropdownMenu open={modeMenuOpen} onOpenChange={setModeMenuOpen}>
               <DropdownMenuTrigger
@@ -1512,7 +1768,7 @@ export function ClaudeChatView({
               ) : (
                 <button
                   type="submit"
-                  disabled={!draft.trim()}
+                  disabled={!draft.trim() && !command}
                   aria-label="Send message"
                   title="Send (Enter)"
                   className="grid size-6 place-items-center rounded bg-foreground text-background disabled:opacity-30"

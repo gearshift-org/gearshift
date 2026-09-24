@@ -75,13 +75,13 @@ export type SpaceChatSendResult =
 
 import type {
   ClaudeChatEvent,
-  ClaudeChatModel,
+  ClaudeChatCatalog,
   ClaudeChatPermissionMode,
 } from "./claudeChat"
 
 const claudeChatApi = {
-  models: (cwd: string) =>
-    ipcRenderer.invoke("claudeChat:models", cwd) as Promise<ClaudeChatModel[]>,
+  catalog: (cwd: string) =>
+    ipcRenderer.invoke("claudeChat:catalog", cwd) as Promise<ClaudeChatCatalog>,
   send: (input: {
     chatId: string
     cwd: string

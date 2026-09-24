@@ -209,10 +209,24 @@ export async function findSystemClaude(pathEnv: string): Promise<string> {
   return binary
 }
 
-export async function getClaudeChatModels(
+export type ClaudeChatCommand = {
+  /** Without the leading slash. */
+  name: string
+  description: string
+  argumentHint: string
+}
+
+export type ClaudeChatCatalog = {
+  models: ClaudeChatModel[]
+  commands: ClaudeChatCommand[]
+}
+
+// Models and slash commands (built-ins, custom commands, and skills for this
+// project) from one short-lived Claude Code process, without sending a prompt.
+export async function getClaudeChatCatalog(
   cwd: string,
   pathEnv: string
-): Promise<ClaudeChatModel[]> {
+): Promise<ClaudeChatCatalog> {
   const binary = await findSystemClaude(pathEnv)
   let releaseInput: (() => void) | undefined
   const idleInput: AsyncIterable<SDKUserMessage> = {
@@ -238,8 +252,11 @@ export async function getClaudeChatModels(
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const models = await Promise.race([
-      probe.supportedModels(),
+    const [models, commands] = await Promise.race([
+      Promise.all([
+        probe.supportedModels(),
+        probe.supportedCommands().catch(() => []),
+      ]),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
           () => reject(new Error("Model lookup timed out.")),
@@ -248,12 +265,19 @@ export async function getClaudeChatModels(
       }),
     ])
     if (models.length === 0) throw new Error("Claude returned no models.")
-    return models.map((model) => ({
-      value: model.value,
-      displayName: model.displayName,
-      description: model.description,
-      supportedEffortLevels: model.supportedEffortLevels,
-    }))
+    return {
+      models: models.map((model) => ({
+        value: model.value,
+        displayName: model.displayName,
+        description: model.description,
+        supportedEffortLevels: model.supportedEffortLevels,
+      })),
+      commands: commands.map((command) => ({
+        name: command.name,
+        description: command.description,
+        argumentHint: command.argumentHint,
+      })),
+    }
   } finally {
     if (timer) clearTimeout(timer)
     releaseInput?.()

@@ -6,6 +6,7 @@ import {
   getSessionMessages,
   listSessions,
   query,
+  type PermissionUpdate,
   type Query,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
@@ -22,6 +23,8 @@ export type ClaudeChatEvent =
       detail: string
       /** Human-readable line, e.g. "Listing PRs created today in this repo". */
       summary: string
+      /** File changes, for Edit, MultiEdit, and Write. */
+      diff?: ClaudeChatDiff
     }
   | {
       chatId: string
@@ -36,6 +39,12 @@ export type ClaudeChatEvent =
       requestId: string
       name: string
       detail: string
+      diff?: ClaudeChatDiff
+      /**
+       * Rules Claude Code suggests so it stops asking, e.g. "Bash(git log:*)".
+       * Present when "Allow for this session" is offered.
+       */
+      sessionRules?: string[]
     }
   | {
       chatId: string
@@ -148,8 +157,30 @@ export type ClaudeChatModel = {
 }
 
 type PendingPermission = {
-  /** `answers` carries the user's choices for an AskUserQuestion prompt. */
-  resolve: (allow: boolean, answers?: Record<string, string>) => void
+  /**
+   * `answers` carries the user's choices for an AskUserQuestion prompt;
+   * `forSession` also allows matching calls for the rest of the session.
+   */
+  resolve: (
+    allow: boolean,
+    answers?: Record<string, string>,
+    forSession?: boolean
+  ) => void
+  /** What the chat was shown, so a reloaded chat can show it again. */
+  event: ClaudeChatPromptEvent
+}
+
+type ClaudeChatPromptEvent = Extract<
+  ClaudeChatEvent,
+  { type: "permission" } | { type: "question" }
+>
+
+/** A running turn, for a chat that reloaded while it ran. */
+export type ClaudeChatLiveState = {
+  startedAt: number
+  phase: ClaudeChatPhase
+  outputTokens: number
+  prompts: ClaudeChatPromptEvent[]
 }
 type ActiveChat = {
   query?: Query
@@ -157,6 +188,8 @@ type ActiveChat = {
   stopping?: boolean
   /** The turn started in Full access, so it may switch back into it. */
   fullAccess?: boolean
+  startedAt: number
+  status: { phase: ClaudeChatPhase; outputTokens: number }
   /** Ends the turn and tells the chat; safe to call more than once. */
   finish?: (error?: string, options?: { keepInput?: boolean }) => void
   /**
@@ -292,6 +325,66 @@ function describeInput(
   const value =
     input.command ?? input.file_path ?? input.path ?? input.description
   return typeof value === "string" ? value.slice(0, 500) : ""
+}
+
+export type ClaudeChatDiff = {
+  path: string
+  /** One entry per replaced region; a new or rewritten file has one with empty `before`. */
+  edits: Array<{ before: string; after: string }>
+}
+
+// Keep diffs to a readable size in the chat and the saved transcript.
+const MAX_DIFF_CHARS = 12_000
+const clip = (value: unknown) =>
+  typeof value === "string" ? value.slice(0, MAX_DIFF_CHARS) : ""
+
+// The file change an edit tool makes, from its input.
+function toolDiff(
+  name: string,
+  input: Record<string, unknown>
+): ClaudeChatDiff | null {
+  const path = typeof input.file_path === "string" ? input.file_path : ""
+  if (!path) return null
+  if (name === "Edit")
+    return {
+      path,
+      edits: [
+        { before: clip(input.old_string), after: clip(input.new_string) },
+      ],
+    }
+  if (name === "MultiEdit" && Array.isArray(input.edits))
+    return {
+      path,
+      edits: input.edits.slice(0, 50).map((edit) => {
+        const e = (edit ?? {}) as Record<string, unknown>
+        return { before: clip(e.old_string), after: clip(e.new_string) }
+      }),
+    }
+  if (name === "Write")
+    return { path, edits: [{ before: "", after: clip(input.content) }] }
+  return null
+}
+
+function optionalDiff(name: string, input: Record<string, unknown>) {
+  const diff = toolDiff(name, input)
+  return diff ? { diff } : {}
+}
+
+// "Bash(git log:*)"-style labels for suggested permission rules.
+function describeRules(updates: PermissionUpdate[]): string[] {
+  return updates.flatMap((update) =>
+    update.type === "addRules" || update.type === "replaceRules"
+      ? update.rules.map((rule) =>
+          rule.ruleContent
+            ? `${rule.toolName}(${rule.ruleContent})`
+            : rule.toolName
+        )
+      : update.type === "addDirectories"
+        ? update.directories.map((directory) => `Access to ${directory}`)
+        : update.type === "setMode"
+          ? [`Switch to ${update.mode} mode`]
+          : []
+  )
 }
 
 function basename(value: unknown): string {
@@ -483,7 +576,17 @@ export async function listClaudeChatSessions(
 export type ClaudeChatHistoryMessage = {
   role: "user" | "assistant"
   text: string
-  tools?: Array<{ name: string; detail: string; summary: string }>
+  /** Claude's text and tool calls in order (replies only). */
+  parts?: Array<
+    | { type: "text"; text: string }
+    | {
+        type: "tool"
+        name: string
+        detail: string
+        summary: string
+        diff?: ClaudeChatDiff
+      }
+  >
 }
 
 function textOf(content: unknown): string {
@@ -535,9 +638,10 @@ export async function loadClaudeChatSession(
     if (entry.type !== "assistant") continue
     let reply = messages.at(-1)
     if (!reply || reply.role !== "assistant") {
-      reply = { role: "assistant", text: "" }
+      reply = { role: "assistant", text: "", parts: [] }
       messages.push(reply)
     }
+    const parts = (reply.parts ??= [])
     for (const block of Array.isArray(content) ? content : []) {
       const b = block as {
         type?: string
@@ -546,22 +650,23 @@ export async function loadClaudeChatSession(
         input?: unknown
       }
       if (b.type === "text" && b.text?.trim()) {
-        reply.text = reply.text ? `${reply.text}\n\n${b.text}` : b.text
+        const last = parts.at(-1)
+        if (last?.type === "text") last.text += `\n\n${b.text}`
+        else parts.push({ type: "text", text: b.text })
       } else if (b.type === "tool_use" && typeof b.name === "string") {
         const input = (b.input ?? {}) as Record<string, unknown>
-        reply.tools = [
-          ...(reply.tools ?? []),
-          {
-            name: b.name,
-            detail: describeInput(input),
-            summary: summarizeTool(b.name, input),
-          },
-        ]
+        parts.push({
+          type: "tool",
+          name: b.name,
+          detail: describeInput(input),
+          summary: summarizeTool(b.name, input),
+          ...optionalDiff(b.name, input),
+        })
       }
     }
   }
   // Drop replies left empty (e.g. only thinking blocks).
-  return messages.filter((message) => message.text || message.tools?.length)
+  return messages.filter((message) => message.text || message.parts?.length)
 }
 
 // The same title Claude Code shows for the session: a /rename title, else
@@ -596,13 +701,27 @@ export async function setClaudeChatPermissionMode(
 export function answerClaudePermission(
   chatId: string,
   requestId: string,
-  allow: boolean
+  decision: boolean | "session"
 ): boolean {
   const pending = activeChats.get(chatId)?.permissions.get(requestId)
   if (!pending) return false
   activeChats.get(chatId)?.permissions.delete(requestId)
-  pending.resolve(allow)
+  pending.resolve(decision !== false, undefined, decision === "session")
   return true
+}
+
+// The live turn for a chat, if one is running: lets a chat that reloaded
+// mid-turn pick it back up (events keep flowing to the reloaded page).
+export function getClaudeChatLiveState(
+  chatId: string
+): ClaudeChatLiveState | null {
+  const active = activeChats.get(chatId)
+  if (!active) return null
+  return {
+    startedAt: active.startedAt,
+    ...active.status,
+    prompts: [...active.permissions.values()].map((pending) => pending.event),
+  }
 }
 
 // `answers` maps each question's text to the chosen label(s), comma-separated
@@ -654,6 +773,8 @@ export async function startClaudeChat(
   const active: ActiveChat = {
     permissions: new Map(),
     fullAccess: input.permissionMode === "bypassPermissions",
+    startedAt: Date.now(),
+    status: { phase: "thinking", outputTokens: 0 },
   }
   activeChats.set(input.chatId, active)
   lingeringChats.get(input.chatId)?.()
@@ -745,12 +866,8 @@ export async function startClaudeChat(
       const now = Date.now()
       if (!force && now - lastStatusAt < 200) return
       lastStatusAt = now
-      emit(sender, {
-        chatId: input.chatId,
-        type: "status",
-        phase,
-        outputTokens: finishedTokens + messageTokens,
-      })
+      active.status = { phase, outputTokens: finishedTokens + messageTokens }
+      emit(sender, { chatId: input.chatId, type: "status", ...active.status })
     }
     const setPhase = (next: ClaudeChatPhase) => {
       if (phase === next) return
@@ -783,9 +900,15 @@ export async function startClaudeChat(
               const isQuestion = name === "AskUserQuestion"
               const requestId = randomUUID()
               const onAbort = () => settle(false)
+              // Claude Code's own "don't ask again" rules, kept to this
+              // session so nothing is written to settings files.
+              const sessionUpdates = (options.suggestions ?? []).map(
+                (update) => ({ ...update, destination: "session" as const })
+              )
               const settle = (
                 allow: boolean,
-                answers?: Record<string, string>
+                answers?: Record<string, string>,
+                forSession?: boolean
               ) => {
                 options.signal.removeEventListener("abort", onAbort)
                 active.permissions.delete(requestId)
@@ -797,6 +920,9 @@ export async function startClaudeChat(
                         updatedInput: isQuestion
                           ? { ...toolInput, answers: answers ?? {} }
                           : toolInput,
+                        ...(forSession && sessionUpdates.length
+                          ? { updatedPermissions: sessionUpdates }
+                          : {}),
                       }
                     : {
                         behavior: "deny",
@@ -806,31 +932,43 @@ export async function startClaudeChat(
                       }
                 )
               }
+              const event: ClaudeChatPromptEvent = isQuestion
+                ? {
+                    chatId: input.chatId,
+                    type: "question",
+                    requestId,
+                    questions: readQuestions(toolInput),
+                  }
+                : {
+                    chatId: input.chatId,
+                    type: "permission",
+                    requestId,
+                    name,
+                    detail: describeInput(toolInput, { full: true }),
+                    ...optionalDiff(name, toolInput),
+                    ...(sessionUpdates.length
+                      ? { sessionRules: describeRules(sessionUpdates) }
+                      : {}),
+                  }
               active.permissions.set(requestId, {
-                resolve: (allow, answers) => {
-                  setPhase("tools")
-                  settle(allow, answers)
+                event,
+                resolve: (allow, answers, forSession) => {
+                  settle(allow, answers, forSession)
+                  // Parallel tool calls can each be waiting; stay "waiting"
+                  // until the last one is answered.
+                  const waiting = [...active.permissions.values()]
+                  setPhase(
+                    waiting.length === 0
+                      ? "tools"
+                      : waiting.some((p) => p.event.type === "permission")
+                        ? "approval"
+                        : "question"
+                  )
                 },
               })
               setPhase(isQuestion ? "question" : "approval")
               options.signal.addEventListener("abort", onAbort, { once: true })
-              emit(
-                sender,
-                isQuestion
-                  ? {
-                      chatId: input.chatId,
-                      type: "question",
-                      requestId,
-                      questions: readQuestions(toolInput),
-                    }
-                  : {
-                      chatId: input.chatId,
-                      type: "permission",
-                      requestId,
-                      name,
-                      detail: describeInput(toolInput, { full: true }),
-                    }
-              )
+              emit(sender, event)
               if (options.signal.aborted) settle(false)
             }),
         },
@@ -894,6 +1032,7 @@ export async function startClaudeChat(
                 name: block.name,
                 detail: describeInput(toolInput),
                 summary: summarizeTool(block.name, toolInput),
+                ...optionalDiff(block.name, toolInput),
               })
             } else if (block.type === "text" && !streamedText) {
               emitText(block.text, true)

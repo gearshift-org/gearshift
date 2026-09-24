@@ -78,6 +78,7 @@ import type {
   ClaudeChatCatalog,
   ClaudeChatHistoryMessage,
   ClaudeChatImage,
+  ClaudeChatLiveState,
   ClaudeChatPermissionMode,
   ClaudeChatSession,
 } from "./claudeChat"
@@ -90,6 +91,11 @@ const claudeChatApi = {
       text,
       images
     ) as Promise<boolean>,
+  liveState: (chatId: string) =>
+    ipcRenderer.invoke(
+      "claudeChat:liveState",
+      chatId
+    ) as Promise<ClaudeChatLiveState | null>,
   sessions: (cwd: string) =>
     ipcRenderer.invoke("claudeChat:sessions", cwd) as Promise<
       ClaudeChatSession[]
@@ -114,7 +120,7 @@ const claudeChatApi = {
       ok: boolean
       error?: string
     }>,
-  answer: (chatId: string, requestId: string, allow: boolean) =>
+  answer: (chatId: string, requestId: string, allow: boolean | "session") =>
     ipcRenderer.invoke(
       "claudeChat:answer",
       chatId,

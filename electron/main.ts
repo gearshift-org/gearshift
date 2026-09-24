@@ -51,6 +51,7 @@ import {
   answerClaudePermission,
   answerClaudeQuestion,
   getClaudeChatCatalog,
+  getClaudeChatLiveState,
   getClaudeChatTitle,
   listClaudeChatSessions,
   loadClaudeChatSession,
@@ -2470,6 +2471,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("claudeChat:catalog", async (_event, cwd: string) =>
     getClaudeChatCatalog(cwd, await loginShellPath())
   )
+  ipcMain.handle("claudeChat:liveState", (_event, chatId: string) =>
+    getClaudeChatLiveState(chatId)
+  )
   ipcMain.handle("claudeChat:sessions", (_event, cwd: string) =>
     listClaudeChatSessions(cwd)
   )
@@ -2488,8 +2492,12 @@ app.whenReady().then(async () => {
   )
   ipcMain.handle(
     "claudeChat:answer",
-    (_event, chatId: string, requestId: string, allow: boolean) =>
-      answerClaudePermission(chatId, requestId, allow)
+    (
+      _event,
+      chatId: string,
+      requestId: string,
+      decision: boolean | "session"
+    ) => answerClaudePermission(chatId, requestId, decision)
   )
   ipcMain.handle("claudeChat:title", (_event, sessionId: string, cwd: string) =>
     getClaudeChatTitle(sessionId, cwd)

@@ -1,11 +1,13 @@
 import {
   memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from "react"
+import Fuse from "fuse.js"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
@@ -30,11 +32,13 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { FileIcon } from "@/components/icons/FileIcon"
 import { store } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import type {
   ClaudeChatCatalog,
   ClaudeChatCommand,
+  ClaudeChatDiff,
   ClaudeChatImage,
   ClaudeChatModel,
   ClaudeChatPermissionMode,
@@ -48,7 +52,10 @@ type ChatMessage = {
   id: string
   role: "user" | "assistant"
   text: string
+  /** Older replies: all tool calls, shown above `text`. */
   tools?: Array<{ name: string; detail: string; summary?: string }>
+  /** Replies' text and tool calls in order. When present, `text`/`tools` are unused. */
+  parts?: ChatPart[]
   error?: string
   /** The user stopped this reply. */
   stopped?: boolean
@@ -63,6 +70,16 @@ type ChatMessage = {
   /** Thumbnails (data URLs) of images sent with the message. */
   images?: string[]
 }
+
+type ChatPart =
+  | { type: "text"; text: string }
+  | {
+      type: "tool"
+      name: string
+      detail: string
+      summary?: string
+      diff?: ClaudeChatDiff
+    }
 
 type ChatEffort = "" | "low" | "medium" | "high" | "xhigh" | "max"
 type ChatStatus = { phase: ClaudeChatPhase; outputTokens: number }
@@ -791,6 +808,44 @@ function toClaudeImage({ mediaType, data }: Attachment): ClaudeChatImage {
   return { mediaType, data }
 }
 
+// Add streamed text to a reply: onto its last text part (a new one after a
+// tool call), or onto `text` for replies saved before parts.
+function appendText(message: ChatMessage, text: string): ChatMessage {
+  if (!message.parts) return { ...message, text: message.text + text }
+  const last = message.parts.at(-1)
+  return {
+    ...message,
+    parts:
+      last?.type === "text"
+        ? [
+            ...message.parts.slice(0, -1),
+            { type: "text", text: last.text + text },
+          ]
+        : [...message.parts, { type: "text", text }],
+  }
+}
+
+// Project files for "@" mentions (git-tracked and untracked, not ignored),
+// shared across chats in a project and refreshed at most every 30 seconds.
+const projectFiles = new Map<string, { at: number; files: Promise<string[]> }>()
+function loadProjectFiles(cwd: string): Promise<string[]> {
+  const cached = projectFiles.get(cwd)
+  if (cached && Date.now() - cached.at < 30_000) return cached.files
+  const files = window.fsApi
+    .listAllFiles(cwd)
+    .then((result) => (result.ok ? result.files : []))
+    .catch(() => [])
+  projectFiles.set(cwd, { at: Date.now(), files })
+  return files
+}
+
+// The "@partial" being typed at the caret, if any.
+function mentionAt(draft: string, caret: number) {
+  const match = /(^|\s)@([^\s@]*)$/.exec(draft.slice(0, caret))
+  if (!match) return null
+  return { start: caret - match[2].length - 1, query: match[2] }
+}
+
 // Index of the last Claude reply (-1 if none).
 function lastReplyIndex(messages: ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1)
@@ -941,6 +996,190 @@ function SessionPicker({
   )
 }
 
+type PendingPermission = {
+  requestId: string
+  name: string
+  detail: string
+  diff?: ClaudeChatDiff
+  sessionRules?: string[]
+}
+
+function toPendingPermission({
+  requestId,
+  name,
+  detail,
+  diff,
+  sessionRules,
+}: PendingPermission): PendingPermission {
+  return { requestId, name, detail, diff, sessionRules }
+}
+
+type DiffRow = { kind: "same" | "add" | "del"; text: string }
+
+// Line diff of one edit. LCS for normal sizes; very large edits fall back to
+// "all removed, then all added" so rendering stays fast.
+function diffLines(before: string, after: string): DiffRow[] {
+  const a = before ? before.split("\n") : []
+  const b = after ? after.split("\n") : []
+  if (a.length * b.length > 250_000)
+    return [
+      ...a.map((text) => ({ kind: "del" as const, text })),
+      ...b.map((text) => ({ kind: "add" as const, text })),
+    ]
+  const lcs = Array.from({ length: a.length + 1 }, () =>
+    new Array<number>(b.length + 1).fill(0)
+  )
+  for (let i = a.length - 1; i >= 0; i -= 1)
+    for (let j = b.length - 1; j >= 0; j -= 1)
+      lcs[i][j] =
+        a[i] === b[j]
+          ? lcs[i + 1][j + 1] + 1
+          : Math.max(lcs[i + 1][j], lcs[i][j + 1])
+  const rows: DiffRow[] = []
+  let i = 0
+  let j = 0
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      rows.push({ kind: "same", text: a[i] })
+      i += 1
+      j += 1
+    } else if (
+      i < a.length &&
+      (j === b.length || lcs[i + 1][j] >= lcs[i][j + 1])
+    ) {
+      // Removals before additions, as in a normal diff.
+      rows.push({ kind: "del", text: a[i] })
+      i += 1
+    } else {
+      rows.push({ kind: "add", text: b[j] })
+      j += 1
+    }
+  }
+  return rows
+}
+
+function diffStats(diff: ClaudeChatDiff) {
+  let added = 0
+  let removed = 0
+  for (const edit of diff.edits)
+    for (const row of diffLines(edit.before, edit.after)) {
+      if (row.kind === "add") added += 1
+      else if (row.kind === "del") removed += 1
+    }
+  return { added, removed }
+}
+
+function DiffCounts({ diff }: { diff: ClaudeChatDiff }) {
+  const { added, removed } = diffStats(diff)
+  return (
+    <span className="shrink-0 font-mono text-[11px] tabular-nums">
+      <span className="text-emerald-600 dark:text-emerald-400">+{added}</span>{" "}
+      <span className="text-red-600 dark:text-red-400">−{removed}</span>
+    </span>
+  )
+}
+
+// A file change as removed/added lines, one block per edit.
+function DiffView({
+  diff,
+  className,
+}: {
+  diff: ClaudeChatDiff
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded border border-border bg-background font-mono text-[11px] leading-5",
+        className
+      )}
+    >
+      <div className="truncate border-b border-border px-2.5 py-1 text-muted-foreground">
+        {diff.path}
+      </div>
+      <div className="max-h-80 overflow-auto">
+        {diff.edits.map((edit, index) => (
+          <div
+            key={index}
+            className={cn(index > 0 && "border-t border-dashed border-border")}
+          >
+            {diffLines(edit.before, edit.after).map((row, rowIndex) => (
+              <div
+                key={rowIndex}
+                className={cn(
+                  "flex min-w-fit",
+                  row.kind === "add" &&
+                    "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+                  row.kind === "del" &&
+                    "bg-red-500/10 text-red-800 dark:text-red-300"
+                )}
+              >
+                <span
+                  aria-hidden
+                  className="w-5 shrink-0 text-center opacity-60 select-none"
+                >
+                  {row.kind === "add" ? "+" : row.kind === "del" ? "−" : ""}
+                </span>
+                <span className="pr-3 whitespace-pre">{row.text || " "}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+type ChatTool = {
+  name: string
+  detail: string
+  summary?: string
+  diff?: ClaudeChatDiff
+}
+
+// A tool call as one readable line that expands to the exact call.
+function ToolLine({ tool, className }: { tool: ChatTool; className?: string }) {
+  return (
+    <details
+      className={cn("group text-xs leading-6 text-muted-foreground", className)}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 truncate">{tool.summary || tool.name}</span>
+        {tool.diff && <DiffCounts diff={tool.diff} />}
+        <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
+      </summary>
+      {tool.diff ? (
+        <DiffView diff={tool.diff} className="mt-0.5 mb-1.5" />
+      ) : (
+        <div className="mt-0.5 mb-1.5 rounded border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] leading-5">
+          <span className="font-semibold text-foreground">{tool.name}</span>
+          {tool.detail && <span className="ml-2 break-all">{tool.detail}</span>}
+        </div>
+      )}
+    </details>
+  )
+}
+
+function MarkdownText({
+  text,
+  className,
+}: {
+  text: string
+  className?: string
+}) {
+  if (!text.trim()) return null
+  return (
+    <div className={cn("min-w-0 break-words", className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 // One Claude reply. Memoized so streaming into the latest reply doesn't
 // re-render (and re-parse the Markdown of) every earlier one.
 const ReplyMessage = memo(function ReplyMessage({
@@ -953,36 +1192,35 @@ const ReplyMessage = memo(function ReplyMessage({
 }) {
   return (
     <div className="min-w-0 text-[13px] leading-6">
-      {message.tools?.map((tool, index) => (
-        <details
-          key={`${message.id}-${index}`}
-          className="group text-xs leading-6 text-muted-foreground"
-        >
-          <summary className="flex cursor-pointer list-none items-center gap-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
-            <span className="min-w-0 truncate">
-              {tool.summary || tool.name}
-            </span>
-            <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
-          </summary>
-          <div className="mt-0.5 mb-1.5 rounded border border-border bg-background px-2.5 py-1.5 font-mono text-[11px] leading-5">
-            <span className="font-semibold text-foreground">{tool.name}</span>
-            {tool.detail && (
-              <span className="ml-2 break-all">{tool.detail}</span>
-            )}
-          </div>
-        </details>
-      ))}
-      {message.text && (
-        <div
-          className={cn("min-w-0 break-words", message.tools?.length && "mt-2")}
-        >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={markdownComponents}
-          >
-            {message.text}
-          </ReactMarkdown>
-        </div>
+      {message.parts ? (
+        // In the order Claude produced them: text, tool calls, more text.
+        message.parts.map((part, index) => {
+          const previous = message.parts?.[index - 1]
+          // Space where the reply switches between text and tool calls.
+          const gap = !!previous && previous.type !== part.type && "mt-2"
+          return part.type === "tool" ? (
+            <ToolLine key={index} tool={part} className={gap || undefined} />
+          ) : (
+            <MarkdownText
+              key={index}
+              text={part.text}
+              className={gap || undefined}
+            />
+          )
+        })
+      ) : (
+        // Replies saved before parts: all tool calls, then the text.
+        <>
+          {message.tools?.map((tool, index) => (
+            <ToolLine key={index} tool={tool} />
+          ))}
+          {message.text && (
+            <MarkdownText
+              text={message.text}
+              className={message.tools?.length ? "mt-2" : undefined}
+            />
+          )}
+        </>
       )}
       {activity}
       {message.error && (
@@ -1048,6 +1286,11 @@ export function ClaudeChatView({
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [command, setCommand] = useState<ClaudeChatCommand | null>(null)
+  // "@" file mentions: caret position, the project's files, and the menu.
+  const [caret, setCaret] = useState(0)
+  const [files, setFiles] = useState<string[] | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionDismissed, setMentionDismissed] = useState(false)
   // Up-arrow recall: index into sent messages, or null when not recalling.
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
   // Images pasted or dropped into the composer, sent with the next message.
@@ -1079,16 +1322,13 @@ export function ClaudeChatView({
   sessionIdRef.current = snapshot.sessionId ?? sessionIdRef.current
   const [stopping, setStopping] = useState(false)
   const [escArmed, setEscArmed] = useState(false)
-  const [question, setQuestion] = useState<{
-    requestId: string
-    questions: ClaudeChatQuestion[]
-  } | null>(null)
+  // Claude can wait on several prompts at once (parallel tool calls); each
+  // gets its own card and is answered independently.
+  const [questions, setQuestions] = useState<
+    Array<{ requestId: string; questions: ClaudeChatQuestion[] }>
+  >([])
   const [turnStartedAt, setTurnStartedAt] = useState(0)
-  const [permission, setPermission] = useState<{
-    requestId: string
-    name: string
-    detail: string
-  } | null>(null)
+  const [permissions, setPermissions] = useState<PendingPermission[]>([])
   const scrollerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -1185,7 +1425,7 @@ export function ClaudeChatView({
       if (followRef.current) el?.scrollTo({ top: el.scrollHeight })
     })
     return () => cancelAnimationFrame(frame)
-  }, [snapshot.messages, permission, isVisible])
+  }, [snapshot.messages, permissions, questions, isVisible])
   useEffect(() => {
     if (isActive) inputRef.current?.focus()
   }, [isActive])
@@ -1281,6 +1521,35 @@ export function ClaudeChatView({
     }
   }, [cwd])
 
+  // A reload (Cmd+R) resets this view but not the turn running in the main
+  // process, whose events keep arriving. Pick that turn back up: busy state,
+  // timer, status, and any prompts still waiting for an answer.
+  useEffect(() => {
+    let disposed = false
+    void window.claudeChat.liveState(chatId).then((live) => {
+      if (disposed || !live) return
+      setBusy(true)
+      setTurnStartedAt(live.startedAt)
+      outputTokensRef.current = live.outputTokens
+      setStatus({ phase: live.phase, outputTokens: live.outputTokens })
+      setPermissions(
+        live.prompts.flatMap((prompt) =>
+          prompt.type === "permission" ? [toPendingPermission(prompt)] : []
+        )
+      )
+      setQuestions(
+        live.prompts.flatMap((prompt) =>
+          prompt.type === "question"
+            ? [{ requestId: prompt.requestId, questions: prompt.questions }]
+            : []
+        )
+      )
+    })
+    return () => {
+      disposed = true
+    }
+  }, [chatId])
+
   // Report working / waiting-on-you / done so the sidebar and tab bar show
   // the same indicators as agent terminals.
   // When a reply finished while this chat wasn't in view; null once seen.
@@ -1292,7 +1561,7 @@ export function ClaudeChatView({
   useEffect(() => {
     if (isActive) setUnseenReply(null)
   }, [isActive])
-  const waitingOnUser = busy && (!!permission || !!question)
+  const waitingOnUser = busy && (permissions.length > 0 || questions.length > 0)
   const [lastSubmitAt, setLastSubmitAt] = useState<number>()
   useEffect(() => {
     onAgentStatusChangeRef.current?.({
@@ -1375,7 +1644,7 @@ export function ClaudeChatView({
         ...current,
         messages: current.messages.map((message, index) =>
           index === current.messages.length - 1 && message.role === "assistant"
-            ? { ...message, text: message.text + text }
+            ? appendText(message, text)
             : message
         ),
       }))
@@ -1383,7 +1652,12 @@ export function ClaudeChatView({
     const unsubscribe = window.claudeChat.onEvent((event) => {
       if (event.chatId !== chatId) return
       if (event.type === "permission") {
-        setPermission(event)
+        const permission = toPendingPermission(event)
+        setPermissions((current) =>
+          current.some((item) => item.requestId === permission.requestId)
+            ? current
+            : [...current, permission]
+        )
         return
       }
       if (event.type === "session") {
@@ -1404,10 +1678,12 @@ export function ClaudeChatView({
         return
       }
       if (event.type === "question") {
-        setQuestion({
-          requestId: event.requestId,
-          questions: event.questions,
-        })
+        const { requestId, questions } = event
+        setQuestions((current) =>
+          current.some((item) => item.requestId === requestId)
+            ? current
+            : [...current, { requestId, questions }]
+        )
         return
       }
       if (event.type === "status") {
@@ -1421,8 +1697,8 @@ export function ClaudeChatView({
         if (!isActiveRef.current) setUnseenReply(Date.now())
         setBusy(false)
         setStopping(false)
-        setPermission(null)
-        setQuestion(null)
+        setPermissions([])
+        setQuestions([])
         setStatus(null)
         if (event.sessionId) sessionIdRef.current = event.sessionId
         setSnapshot((current) => {
@@ -1478,17 +1754,18 @@ export function ClaudeChatView({
             message.role !== "assistant"
           )
             return message
-          return {
-            ...message,
-            tools: [
-              ...(message.tools ?? []),
-              {
-                name: event.name,
-                detail: event.detail,
-                summary: event.summary,
-              },
-            ],
+          const tool = {
+            name: event.name,
+            detail: event.detail,
+            summary: event.summary,
+            ...(event.diff ? { diff: event.diff } : {}),
           }
+          return message.parts
+            ? {
+                ...message,
+                parts: [...message.parts, { type: "tool", ...tool }],
+              }
+            : { ...message, tools: [...(message.tools ?? []), tool] }
         }),
       }))
     })
@@ -1538,6 +1815,7 @@ export function ClaudeChatView({
           id: crypto.randomUUID(),
           role: "assistant",
           text: "",
+          parts: [],
           createdAt: Date.now(),
         },
       ],
@@ -1607,6 +1885,7 @@ export function ClaudeChatView({
             id: crypto.randomUUID(),
             role: "assistant",
             text: "",
+            parts: [],
             createdAt: Date.now(),
           },
         ],
@@ -1661,7 +1940,63 @@ export function ClaudeChatView({
     setSlashIndex(0)
     inputRef.current?.focus()
   }
+  const mention = mentionAt(draft, caret)
+  const mentionActive = mention !== null
+  useEffect(() => {
+    if (!mentionActive) return
+    let disposed = false
+    void loadProjectFiles(cwd).then((list) => {
+      if (!disposed) setFiles(list)
+    })
+    return () => {
+      disposed = true
+    }
+  }, [mentionActive, cwd])
+  const fileFuse = useMemo(
+    () =>
+      new Fuse(
+        (files ?? []).map((path) => ({
+          path,
+          name: path.split("/").pop() ?? path,
+        })),
+        {
+          keys: [
+            { name: "name", weight: 0.65 },
+            { name: "path", weight: 0.35 },
+          ],
+          ignoreLocation: true,
+          threshold: 0.4,
+        }
+      ),
+    [files]
+  )
+  const mentionMatches = !mention
+    ? []
+    : mention.query
+      ? fileFuse
+          .search(mention.query, { limit: 30 })
+          .map((hit) => hit.item.path)
+      : (files ?? []).slice(0, 30)
+  const mentionMenuOpen =
+    !mentionDismissed && mention !== null && mentionMatches.length > 0
+  const pickMention = (path: string | undefined) => {
+    if (!path || !mention) return
+    // "@path " replaces the partial; Claude Code expands it into the file.
+    const inserted = `@${path} `
+    const next = draft.slice(0, mention.start) + inserted + draft.slice(caret)
+    const end = mention.start + inserted.length
+    setDraft(next)
+    setCaret(end)
+    setMentionIndex(0)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(end, end)
+    })
+  }
+
   const changeDraft = (value: string) => {
+    setMentionIndex(0)
+    setMentionDismissed(false)
     if (value) setSuggestion(null)
     // Editing a recalled message makes it a new draft.
     setHistoryIndex(null)
@@ -1713,8 +2048,8 @@ export function ClaudeChatView({
     if (!busy || stopping) return
     setStopping(true)
     setEscArmed(false)
-    setPermission(null)
-    setQuestion(null)
+    setPermissions([])
+    setQuestions([])
     void window.claudeChat.stop(chatId)
   }
   const stopRef = useRef(stop)
@@ -1749,19 +2084,27 @@ export function ClaudeChatView({
     }
   }, [isActive, busy])
 
-  const answerQuestion = async (answers: Record<string, string> | null) => {
-    if (!question) return
-    await window.claudeChat.answerQuestion(chatId, question.requestId, answers)
-    setQuestion(null)
+  const answerQuestion = async (
+    requestId: string,
+    answers: Record<string, string> | null
+  ) => {
+    setQuestions((current) =>
+      current.filter((item) => item.requestId !== requestId)
+    )
+    await window.claudeChat.answerQuestion(chatId, requestId, answers)
   }
 
-  const answer = async (allow: boolean) => {
-    if (!permission) return
+  const answer = async (
+    permission: PendingPermission,
+    allow: boolean | "session"
+  ) => {
     // Approving a plan leaves plan mode so Claude can carry it out.
-    if (allow && permission.name === "ExitPlanMode")
+    if (allow !== false && permission.name === "ExitPlanMode")
       changePermissionMode(DEFAULT_PERMISSION_MODE, { remember: false })
+    setPermissions((current) =>
+      current.filter((item) => item.requestId !== permission.requestId)
+    )
     await window.claudeChat.answer(chatId, permission.requestId, allow)
-    setPermission(null)
   }
 
   return (
@@ -1903,16 +2246,21 @@ export function ClaudeChatView({
                 ))}
               </section>
             ))}
-            {question && (
+            {questions.map((question) => (
               <QuestionCard
                 key={question.requestId}
                 questions={question.questions}
-                onSubmit={(answers) => void answerQuestion(answers)}
-                onDismiss={() => void answerQuestion(null)}
+                onSubmit={(answers) =>
+                  void answerQuestion(question.requestId, answers)
+                }
+                onDismiss={() => void answerQuestion(question.requestId, null)}
               />
-            )}
-            {permission && (
-              <div className="rounded-lg border border-border bg-background p-3 text-[13px] leading-5">
+            ))}
+            {permissions.map((permission) => (
+              <div
+                key={permission.requestId}
+                className="rounded-lg border border-border bg-background p-3 text-[13px] leading-5"
+              >
                 {permission.name === "ExitPlanMode" ? (
                   <>
                     <p className="font-medium">Ready to carry out this plan?</p>
@@ -1932,17 +2280,21 @@ export function ClaudeChatView({
                     <p className="font-medium">
                       Allow Claude to use {permission.name}?
                     </p>
-                    {permission.detail && (
-                      <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
-                        {permission.detail}
-                      </p>
+                    {permission.diff ? (
+                      <DiffView diff={permission.diff} className="mt-2" />
+                    ) : (
+                      permission.detail && (
+                        <p className="mt-1 font-mono text-[11px] break-all text-muted-foreground">
+                          {permission.detail}
+                        </p>
+                      )
                     )}
                   </>
                 )}
                 <div className="mt-3 flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => void answer(true)}
+                    onClick={() => void answer(permission, true)}
                     className={primaryButtonClass}
                   >
                     {permission.name === "ExitPlanMode"
@@ -1951,14 +2303,24 @@ export function ClaudeChatView({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void answer(false)}
+                    onClick={() => void answer(permission, false)}
                     className={secondaryButtonClass}
                   >
                     Deny
                   </button>
+                  {permission.sessionRules?.length ? (
+                    <button
+                      type="button"
+                      onClick={() => void answer(permission, "session")}
+                      title={`Won't ask again this session for: ${permission.sessionRules.join(", ")}`}
+                      className={secondaryButtonClass}
+                    >
+                      Allow for this session
+                    </button>
+                  ) : null}
                 </div>
               </div>
-            )}
+            ))}
           </div>
         </div>
         {!following && snapshot.messages.length > 0 && (
@@ -2002,6 +2364,49 @@ export function ClaudeChatView({
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+          {mentionMenuOpen && (
+            <div
+              id={`claude-files-${chatId}`}
+              role="listbox"
+              aria-label="Project files"
+              className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-64 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            >
+              {mentionMatches.map((path, index) => {
+                const slash = path.lastIndexOf("/")
+                return (
+                  <button
+                    key={path}
+                    ref={(el) => {
+                      if (index === mentionIndex)
+                        el?.scrollIntoView({ block: "nearest" })
+                    }}
+                    type="button"
+                    role="option"
+                    aria-selected={index === mentionIndex}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setMentionIndex(index)}
+                    onClick={() => pickMention(path)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-[13px]",
+                      index === mentionIndex &&
+                        "bg-accent text-accent-foreground"
+                    )}
+                  >
+                    <FileIcon
+                      name={path.slice(slash + 1)}
+                      className="size-3.5 shrink-0"
+                    />
+                    <span className="shrink-0">{path.slice(slash + 1)}</span>
+                    {slash > 0 && (
+                      <span className="min-w-0 truncate text-xs text-muted-foreground">
+                        {path.slice(0, slash)}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
           {slashMenuOpen && (
@@ -2055,7 +2460,11 @@ export function ClaudeChatView({
             <textarea
               ref={inputRef}
               value={draft}
-              onChange={(event) => changeDraft(event.target.value)}
+              onChange={(event) => {
+                setCaret(event.target.selectionStart)
+                changeDraft(event.target.value)
+              }}
+              onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
               onPaste={(event) => {
                 // Pasted images attach to the message; text pastes as usual.
                 const images = imageFiles(event.clipboardData)
@@ -2091,6 +2500,7 @@ export function ClaudeChatView({
                 if (
                   (event.key === "ArrowUp" || event.key === "ArrowDown") &&
                   !slashMenuOpen &&
+                  !mentionMenuOpen &&
                   !command &&
                   !event.shiftKey &&
                   !event.altKey &&
@@ -2136,6 +2546,30 @@ export function ClaudeChatView({
                     el.setSelectionRange(end, end)
                   })
                   return
+                }
+                if (mentionMenuOpen) {
+                  const count = mentionMatches.length
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault()
+                    const step = event.key === "ArrowDown" ? 1 : -1
+                    setMentionIndex((index) => (index + step + count) % count)
+                    return
+                  }
+                  if (
+                    (event.key === "Enter" && !event.shiftKey) ||
+                    (event.key === "Tab" && !event.shiftKey)
+                  ) {
+                    event.preventDefault()
+                    pickMention(
+                      mentionMatches[mentionIndex] ?? mentionMatches[0]
+                    )
+                    return
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    setMentionDismissed(true)
+                    return
+                  }
                 }
                 if (slashMenuOpen) {
                   const count = slashMatches.length

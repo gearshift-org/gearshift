@@ -174,7 +174,19 @@ const permissionModes: Array<{
     label: "Plan",
     description: "Create a plan before making changes",
   },
+  {
+    value: "bypassPermissions",
+    label: "Full access",
+    description: "Allow commands and edits without prompts",
+  },
 ]
+
+// Full access is never carried into new chats or reached by Shift+Tab, so it
+// is always a deliberate choice.
+const FULL_ACCESS: ClaudeChatPermissionMode = "bypassPermissions"
+const cyclePermissionModes = permissionModes.filter(
+  (mode) => mode.value !== FULL_ACCESS
+)
 
 const efforts: Array<{ value: ChatEffort; label: string }> = [
   { value: "", label: "Default effort" },
@@ -1241,6 +1253,19 @@ export function ClaudeChatView({
         setPermission(event)
         return
       }
+      if (event.type === "session") {
+        sessionIdRef.current = event.sessionId
+        setSnapshot((current) =>
+          current.sessionId === event.sessionId
+            ? current
+            : { ...current, sessionId: event.sessionId }
+        )
+        return
+      }
+      if (event.type === "title") {
+        onTitleChangeRef.current?.(event.title)
+        return
+      }
       if (event.type === "suggestion") {
         setSuggestion(event.text)
         return
@@ -1519,7 +1544,8 @@ export function ClaudeChatView({
     { remember = true } = {}
   ) => {
     setSnapshot((current) => ({ ...current, permissionMode: mode }))
-    if (remember) rememberSettings({ permissionMode: mode })
+    if (remember && mode !== FULL_ACCESS)
+      rememberSettings({ permissionMode: mode })
     if (busy) void window.claudeChat.setPermissionMode(chatId, mode)
   }
 
@@ -1895,9 +1921,11 @@ export function ClaudeChatView({
                 // Shift+Tab cycles permission modes, like the Claude Code CLI.
                 if (event.key === "Tab" && event.shiftKey) {
                   event.preventDefault()
-                  const index = permissionModes.indexOf(currentMode)
+                  const index = cyclePermissionModes.indexOf(currentMode)
                   changePermissionMode(
-                    permissionModes[(index + 1) % permissionModes.length].value
+                    cyclePermissionModes[
+                      (index + 1) % cyclePermissionModes.length
+                    ].value
                   )
                   return
                 }
@@ -1925,8 +1953,16 @@ export function ClaudeChatView({
             <DropdownMenu open={modeMenuOpen} onOpenChange={setModeMenuOpen}>
               <DropdownMenuTrigger
                 aria-label="Permission mode"
-                title="Permission mode (Shift+Tab to cycle)"
-                className={chipClass}
+                title={
+                  permissionMode === FULL_ACCESS
+                    ? "Full access: commands and edits run without prompts"
+                    : "Permission mode (Shift+Tab to cycle)"
+                }
+                className={cn(
+                  chipClass,
+                  permissionMode === FULL_ACCESS &&
+                    "text-destructive hover:text-destructive"
+                )}
               >
                 {currentMode.label}
                 <ChevronDown className="size-3" />
@@ -1958,7 +1994,12 @@ export function ClaudeChatView({
                         className="items-start py-1.5 pr-12 [&>[data-slot=dropdown-menu-radio-item-indicator]]:top-2 [&>[data-slot=dropdown-menu-radio-item-indicator]]:right-7"
                       >
                         <span className="flex min-w-0 flex-col">
-                          <span className="flex items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "flex items-center gap-1.5",
+                              mode.value === FULL_ACCESS && "text-destructive"
+                            )}
+                          >
                             {mode.label}
                             {mode.value === DEFAULT_PERMISSION_MODE && (
                               <span className="rounded bg-foreground/10 px-1.5 text-[10px] leading-4 text-muted-foreground">

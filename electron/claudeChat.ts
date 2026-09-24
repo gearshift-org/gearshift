@@ -39,6 +39,18 @@ export type ClaudeChatEvent =
     }
   | {
       chatId: string
+      /** The Claude session id, as soon as Claude Code reports it. */
+      type: "session"
+      sessionId: string
+    }
+  | {
+      chatId: string
+      /** The session's title changed (first prompt, then Claude's title). */
+      type: "title"
+      title: string
+    }
+  | {
+      chatId: string
       /** Claude Code's predicted next prompt, sent after a finished turn. */
       type: "suggestion"
       text: string
@@ -112,12 +124,15 @@ export type ClaudeChatPermissionMode =
   | "default"
   | "acceptEdits"
   | "plan"
+  /** "Full access": no permission prompts at all. */
+  | "bypassPermissions"
 
 const PERMISSION_MODES: ClaudeChatPermissionMode[] = [
   "auto",
   "default",
   "acceptEdits",
   "plan",
+  "bypassPermissions",
 ]
 
 function isPermissionMode(value: unknown): value is ClaudeChatPermissionMode {
@@ -140,6 +155,8 @@ type ActiveChat = {
   query?: Query
   permissions: Map<string, PendingPermission>
   stopping?: boolean
+  /** The turn started in Full access, so it may switch back into it. */
+  fullAccess?: boolean
   /** Ends the turn and tells the chat; safe to call more than once. */
   finish?: (error?: string, options?: { keepInput?: boolean }) => void
   /**
@@ -514,7 +531,11 @@ export async function setClaudeChatPermissionMode(
   mode: unknown
 ): Promise<void> {
   if (!isPermissionMode(mode)) return
-  await activeChats.get(chatId)?.query?.setPermissionMode(mode)
+  const active = activeChats.get(chatId)
+  // Full access needs Claude Code's bypass flag, which is set only on turns
+  // that start in Full access; a turn that didn't picks it up next time.
+  if (mode === "bypassPermissions" && !active?.fullAccess) return
+  await active?.query?.setPermissionMode(mode)
 }
 
 export function answerClaudePermission(
@@ -573,7 +594,10 @@ export async function startClaudeChat(
     }
   }
 
-  const active: ActiveChat = { permissions: new Map() }
+  const active: ActiveChat = {
+    permissions: new Map(),
+    fullAccess: input.permissionMode === "bypassPermissions",
+  }
   activeChats.set(input.chatId, active)
   lingeringChats.get(input.chatId)?.()
   let sessionId = input.sessionId
@@ -584,10 +608,26 @@ export async function startClaudeChat(
   let closing = false
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let suggestionTimer: ReturnType<typeof setTimeout> | undefined
+  // Claude writes the session title in the background early in the first
+  // turn; check for it while the turn runs so the tab updates right away.
+  let titleTimer: ReturnType<typeof setInterval> | undefined
+  let lastTitle: string | null = null
+  const watchTitle = (id: string) => {
+    clearInterval(titleTimer)
+    const check = async () => {
+      const title = await getClaudeChatTitle(id, input.cwd)
+      if (!title || title === lastTitle || finished) return
+      lastTitle = title
+      emit(sender, { chatId: input.chatId, type: "title", title })
+    }
+    void check()
+    titleTimer = setInterval(() => void check(), 2500)
+  }
   const closeInput = () => {
     closing = true
     clearTimeout(settleTimer)
     clearTimeout(suggestionTimer)
+    clearInterval(titleTimer)
     if (lingeringChats.get(input.chatId) === closeInput)
       lingeringChats.delete(input.chatId)
     input$.end()
@@ -609,6 +649,7 @@ export async function startClaudeChat(
   active.finish = (error?: string, { keepInput = false } = {}) => {
     if (finished) return
     finished = true
+    clearInterval(titleTimer)
     if (!keepInput) closeInput()
     for (const pending of active.permissions.values()) pending.resolve(false)
     active.permissions.clear()
@@ -675,6 +716,10 @@ export async function startClaudeChat(
           permissionMode: isPermissionMode(input.permissionMode)
             ? input.permissionMode
             : "auto",
+          // Only for turns the user started in Full access.
+          ...(active.fullAccess
+            ? { allowDangerouslySkipPermissions: true }
+            : {}),
           settingSources: ["user", "project", "local"],
           canUseTool: (name, toolInput, options) =>
             new Promise((resolve) => {
@@ -735,7 +780,13 @@ export async function startClaudeChat(
       })
       active.query = conversation
       for await (const message of conversation) {
-        if (message.session_id) sessionId = message.session_id
+        if (message.session_id && message.session_id !== sessionId) {
+          sessionId = message.session_id
+          emit(sender, { chatId: input.chatId, type: "session", sessionId })
+          watchTitle(sessionId)
+        } else if (message.session_id && !titleTimer && !finished) {
+          watchTitle(message.session_id)
+        }
         // Any new output means a follow-up turn is running; keep the input open.
         if (message.type === "stream_event" || message.type === "assistant")
           clearTimeout(settleTimer)

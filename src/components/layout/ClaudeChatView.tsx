@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils"
 import type {
   ClaudeChatCatalog,
   ClaudeChatCommand,
+  ClaudeChatImage,
   ClaudeChatModel,
   ClaudeChatPermissionMode,
   ClaudeChatPhase,
@@ -59,6 +60,8 @@ type ChatMessage = {
   outputTokens?: number
   /** Sent while a turn was ending; goes out as the next turn. */
   queued?: boolean
+  /** Thumbnails (data URLs) of images sent with the message. */
+  images?: string[]
 }
 
 type ChatEffort = "" | "low" | "medium" | "high" | "xhigh" | "max"
@@ -705,6 +708,89 @@ function QuestionCard({
   )
 }
 
+// An image attached in the composer: what Claude receives, plus a small
+// thumbnail kept in the transcript (the full image isn't stored).
+type Attachment = ClaudeChatImage & { id: string; thumb: string }
+
+const MAX_ATTACHMENTS = 20
+// Anthropic's recommended maximum edge; larger images are scaled down first.
+const MAX_IMAGE_EDGE = 1568
+// Keep base64 under the API's 5 MB per-image limit.
+const MAX_IMAGE_BASE64 = 6_500_000
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+
+function imageFiles(data: DataTransfer | null): File[] {
+  return Array.from(data?.files ?? []).filter((file) =>
+    IMAGE_TYPES.includes(file.type)
+  )
+}
+
+function fileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+// Read an image file for sending: kept as-is when small enough, otherwise
+// redrawn at most MAX_IMAGE_EDGE on its long side. Null if unreadable.
+async function readImage(file: File): Promise<Attachment | null> {
+  if (!IMAGE_TYPES.includes(file.type)) return null
+  const url = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = url
+    await image.decode()
+    const draw = (maxEdge: number, type: string, quality?: number) => {
+      const scale = Math.min(
+        1,
+        maxEdge / Math.max(image.naturalWidth, image.naturalHeight)
+      )
+      const canvas = document.createElement("canvas")
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+      const context = canvas.getContext("2d")
+      if (!context) throw new Error("Canvas unavailable")
+      if (type === "image/jpeg") {
+        // JPEG has no transparency; flatten onto white.
+        context.fillStyle = "#fff"
+        context.fillRect(0, 0, canvas.width, canvas.height)
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+      return canvas.toDataURL(type, quality)
+    }
+    const oversized =
+      Math.max(image.naturalWidth, image.naturalHeight) > MAX_IMAGE_EDGE
+    let dataUrl = oversized ? "" : await fileAsDataUrl(file)
+    let mediaType = file.type as ClaudeChatImage["mediaType"]
+    if (oversized || dataUrl.length > MAX_IMAGE_BASE64) {
+      // PNG keeps screenshots crisp; fall back to JPEG if it's still too big.
+      mediaType = file.type === "image/png" ? "image/png" : "image/jpeg"
+      dataUrl = draw(MAX_IMAGE_EDGE, mediaType, 0.9)
+      if (dataUrl.length > MAX_IMAGE_BASE64) {
+        mediaType = "image/jpeg"
+        dataUrl = draw(MAX_IMAGE_EDGE, mediaType, 0.85)
+      }
+    }
+    return {
+      id: crypto.randomUUID(),
+      mediaType,
+      data: dataUrl.slice(dataUrl.indexOf(",") + 1),
+      thumb: draw(160, "image/jpeg", 0.8),
+    }
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+function toClaudeImage({ mediaType, data }: Attachment): ClaudeChatImage {
+  return { mediaType, data }
+}
+
 // Index of the last Claude reply (-1 if none).
 function lastReplyIndex(messages: ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1)
@@ -964,6 +1050,21 @@ export function ClaudeChatView({
   const [command, setCommand] = useState<ClaudeChatCommand | null>(null)
   // Up-arrow recall: index into sent messages, or null when not recalling.
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  // Images pasted or dropped into the composer, sent with the next message.
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [dropActive, setDropActive] = useState(false)
+  const addImages = async (files: File[]) => {
+    const images = (await Promise.all(files.map(readImage))).filter(
+      (image): image is Attachment => image !== null
+    )
+    if (images.length === 0) return
+    setAttachments((current) =>
+      [...current, ...images].slice(0, MAX_ATTACHMENTS)
+    )
+    inputRef.current?.focus()
+  }
+  const addImagesRef = useRef(addImages)
+  addImagesRef.current = addImages
   // Claude Code's predicted next prompt, shown as the placeholder; Tab
   // accepts it. Cleared as soon as the user types or a turn starts.
   const [suggestion, setSuggestion] = useState<string | null>(null)
@@ -1107,6 +1208,12 @@ export function ClaudeChatView({
       const textarea = inputRef.current
       if (!textarea || isEditableTarget(document.activeElement)) return
       if (overlayOpen()) return
+      const images = imageFiles(event.clipboardData)
+      if (images.length > 0) {
+        event.preventDefault()
+        void addImagesRef.current(images)
+        return
+      }
       const text = event.clipboardData?.getData("text") ?? ""
       if (!text) return
       event.preventDefault()
@@ -1343,7 +1450,16 @@ export function ClaudeChatView({
         // Messages sent while the turn was ending go out as the next turn.
         const queued = queuedRef.current.splice(0)
         if (queued.length > 0)
-          void startTurnRef.current(queued.join("\n\n"), false)
+          void startTurnRef.current(
+            queued
+              .map((item) => item.text)
+              .filter(Boolean)
+              .join("\n\n"),
+            {
+              withUserMessage: false,
+              images: queued.flatMap((item) => item.images),
+            }
+          )
         return
       }
       if (event.type === "text") {
@@ -1384,7 +1500,13 @@ export function ClaudeChatView({
 
   // Start a turn. With `withUserMessage` false the user's message is already
   // in the transcript (it was queued while the previous turn ended).
-  const startTurn = async (prompt: string, withUserMessage = true) => {
+  const startTurn = async (
+    prompt: string,
+    {
+      withUserMessage = true,
+      images = [],
+    }: { withUserMessage?: boolean; images?: Attachment[] } = {}
+  ) => {
     setSuggestion(null)
     followRef.current = true
     setFollowing(true)
@@ -1406,6 +1528,9 @@ export function ClaudeChatView({
                 role: "user" as const,
                 text: prompt,
                 createdAt: Date.now(),
+                ...(images.length
+                  ? { images: images.map((image) => image.thumb) }
+                  : {}),
               },
             ]
           : []),
@@ -1426,6 +1551,7 @@ export function ClaudeChatView({
         model: modelsError ? undefined : snapshot.model || undefined,
         effort: modelsError ? undefined : snapshot.effort || undefined,
         permissionMode,
+        images: images.map(toClaudeImage),
       })
       if (!result.ok) throw new Error(result.error ?? "Could not start Claude.")
     } catch (error) {
@@ -1453,8 +1579,8 @@ export function ClaudeChatView({
   // While Claude works, a sent message steers the running turn (like typing
   // mid-turn in the CLI). If the turn is already ending, it's queued and sent
   // as the next turn.
-  const queuedRef = useRef<string[]>([])
-  const steer = async (prompt: string) => {
+  const queuedRef = useRef<Array<{ text: string; images: Attachment[] }>>([])
+  const steer = async (prompt: string, images: Attachment[]) => {
     setLastSubmitAt(Date.now())
     followRef.current = true
     setFollowing(true)
@@ -1463,8 +1589,13 @@ export function ClaudeChatView({
       role: "user",
       text: prompt,
       createdAt: Date.now(),
+      ...(images.length ? { images: images.map((image) => image.thumb) } : {}),
     }
-    const steered = await window.claudeChat.steer(chatId, prompt)
+    const steered = await window.claudeChat.steer(
+      chatId,
+      prompt,
+      images.map(toClaudeImage)
+    )
     if (steered) {
       // Claude's reply continues below the steering message.
       setSnapshot((current) => ({
@@ -1482,7 +1613,7 @@ export function ClaudeChatView({
       }))
       return
     }
-    queuedRef.current.push(prompt)
+    queuedRef.current.push({ text: prompt, images })
     setSnapshot((current) => ({
       ...current,
       messages: [...current.messages, { ...userMessage, queued: true }],
@@ -1493,12 +1624,14 @@ export function ClaudeChatView({
     event?.preventDefault()
     const args = draft.trim()
     const prompt = command ? `/${command.name}${args ? ` ${args}` : ""}` : args
-    if (!prompt) return
+    const images = attachments
+    if (!prompt && images.length === 0) return
     setDraft("")
     setCommand(null)
     setHistoryIndex(null)
-    if (busy) await steer(prompt)
-    else await startTurn(prompt)
+    setAttachments([])
+    if (busy) await steer(prompt, images)
+    else await startTurn(prompt, { images })
   }
 
   // "/" menu: open while the first word of the draft is a partial command.
@@ -1634,7 +1767,33 @@ export function ClaudeChatView({
   return (
     // --chat-bg lets a host (the split-pane frame) set the chat's background;
     // the sticky message headers use it too so they stay opaque.
-    <div className="flex h-full min-h-0 flex-col bg-[var(--chat-bg,var(--card))]">
+    <div
+      // Images can be dropped anywhere on the chat.
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "copy"
+        setDropActive(true)
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node))
+          setDropActive(false)
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return
+        event.preventDefault()
+        event.stopPropagation()
+        setDropActive(false)
+        const images = imageFiles(event.dataTransfer)
+        if (images.length > 0) void addImages(images)
+      }}
+      className="relative flex h-full min-h-0 flex-col bg-[var(--chat-bg,var(--card))]"
+    >
+      {dropActive && (
+        <div className="pointer-events-none absolute inset-2 z-40 grid place-items-center rounded-lg border-2 border-dashed border-ring bg-background/80 text-[13px] text-muted-foreground">
+          Drop images to attach
+        </div>
+      )}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={scrollerRef}
@@ -1682,6 +1841,23 @@ export function ClaudeChatView({
                 {section.user && (
                   <div className="group/user sticky top-0 z-10 -mx-1 flex flex-col items-end bg-[var(--chat-bg,var(--card))] px-1 pt-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-gradient-to-b after:from-[var(--chat-bg,var(--card))] after:to-transparent">
                     <div className="max-h-32 max-w-[85%] overflow-y-auto rounded-lg border border-border/60 bg-foreground/[0.06] px-3 py-1.5 text-[13px] leading-5 whitespace-pre-wrap">
+                      {section.user.images?.length ? (
+                        <span
+                          className={cn(
+                            "flex flex-wrap justify-end gap-1.5",
+                            section.user.text && "mb-1.5"
+                          )}
+                        >
+                          {section.user.images.map((src, index) => (
+                            <img
+                              key={index}
+                              src={src}
+                              alt={`Attached image ${index + 1}`}
+                              className="size-16 rounded border border-border/60 object-cover"
+                            />
+                          ))}
+                        </span>
+                      ) : null}
                       <UserMessageText text={section.user.text} />
                     </div>
                     {/* Revealed on hover: when it was sent, and copy. */}
@@ -1797,7 +1973,37 @@ export function ClaudeChatView({
         )}
       </div>
       <form onSubmit={(event) => void send(event)} className="px-3 pt-1 pb-3">
-        <div className="relative mx-auto max-w-3xl rounded-lg border border-border bg-background focus-within:border-ring">
+        <div
+          className={cn(
+            "relative mx-auto max-w-3xl rounded-lg border border-border bg-background focus-within:border-ring",
+            dropActive && "border-ring bg-foreground/5"
+          )}
+        >
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-2 pt-2">
+              {attachments.map((attachment) => (
+                <div key={attachment.id} className="group/thumb relative">
+                  <img
+                    src={attachment.thumb}
+                    alt="Attached image"
+                    className="size-12 rounded border border-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAttachments((current) =>
+                        current.filter((item) => item.id !== attachment.id)
+                      )
+                    }
+                    aria-label="Remove image"
+                    className="absolute -top-1.5 -right-1.5 grid size-4 place-items-center rounded-full border border-border bg-background text-muted-foreground opacity-0 group-hover/thumb:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {slashMenuOpen && (
             <div
               id={`claude-commands-${chatId}`}
@@ -1850,6 +2056,13 @@ export function ClaudeChatView({
               ref={inputRef}
               value={draft}
               onChange={(event) => changeDraft(event.target.value)}
+              onPaste={(event) => {
+                // Pasted images attach to the message; text pastes as usual.
+                const images = imageFiles(event.clipboardData)
+                if (images.length === 0) return
+                event.preventDefault()
+                void addImages(images)
+              }}
               role="combobox"
               aria-expanded={slashMenuOpen}
               aria-controls={
@@ -2167,7 +2380,7 @@ export function ClaudeChatView({
                   Press Esc again to stop
                 </span>
               )}
-              {busy && !draft.trim() && !command ? (
+              {busy && !draft.trim() && !command && attachments.length === 0 ? (
                 <button
                   type="button"
                   onClick={stop}
@@ -2186,7 +2399,9 @@ export function ClaudeChatView({
               ) : (
                 <button
                   type="submit"
-                  disabled={!draft.trim() && !command}
+                  disabled={
+                    !draft.trim() && !command && attachments.length === 0
+                  }
                   aria-label="Send message"
                   title={
                     busy

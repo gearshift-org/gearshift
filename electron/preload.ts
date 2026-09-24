@@ -77,13 +77,19 @@ import type {
   ClaudeChatEvent,
   ClaudeChatCatalog,
   ClaudeChatHistoryMessage,
+  ClaudeChatImage,
   ClaudeChatPermissionMode,
   ClaudeChatSession,
 } from "./claudeChat"
 
 const claudeChatApi = {
-  steer: (chatId: string, text: string) =>
-    ipcRenderer.invoke("claudeChat:steer", chatId, text) as Promise<boolean>,
+  steer: (chatId: string, text: string, images?: ClaudeChatImage[]) =>
+    ipcRenderer.invoke(
+      "claudeChat:steer",
+      chatId,
+      text,
+      images
+    ) as Promise<boolean>,
   sessions: (cwd: string) =>
     ipcRenderer.invoke("claudeChat:sessions", cwd) as Promise<
       ClaudeChatSession[]
@@ -102,6 +108,7 @@ const claudeChatApi = {
     model?: string
     effort?: "low" | "medium" | "high" | "xhigh" | "max"
     permissionMode?: ClaudeChatPermissionMode
+    images?: ClaudeChatImage[]
   }) =>
     ipcRenderer.invoke("claudeChat:send", input) as Promise<{
       ok: boolean

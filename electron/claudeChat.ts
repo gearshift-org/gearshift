@@ -163,7 +163,57 @@ type ActiveChat = {
    * Sends a message into the running turn to steer it. False once the turn is
    * wrapping up; the chat then sends it as the next turn instead.
    */
-  steer?: (text: string) => boolean
+  steer?: (text: string, images: ClaudeChatImage[]) => boolean
+}
+
+export type ClaudeChatImage = {
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+  /** Base64, without a data: prefix. */
+  data: string
+}
+
+const IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+])
+// The API's per-image limit is 5 MB; base64 inflates by a third.
+const MAX_IMAGE_BASE64 = 6_600_000
+const MAX_IMAGES = 20
+
+// Images from the renderer, keeping only well-formed ones within limits.
+function validImages(value: unknown): ClaudeChatImage[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter(
+      (image): image is ClaudeChatImage =>
+        !!image &&
+        IMAGE_TYPES.has(image.mediaType) &&
+        typeof image.data === "string" &&
+        image.data.length > 0 &&
+        image.data.length <= MAX_IMAGE_BASE64
+    )
+    .slice(0, MAX_IMAGES)
+}
+
+// Plain text, or image blocks followed by the text when images are attached.
+function messageContent(
+  text: string,
+  images: ClaudeChatImage[]
+): SDKUserMessage["message"]["content"] {
+  if (images.length === 0) return text
+  return [
+    ...images.map((image) => ({
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: image.mediaType,
+        data: image.data,
+      },
+    })),
+    ...(text.trim() ? [{ type: "text" as const, text }] : []),
+  ]
 }
 
 // A turn's prompt as a stream, so messages sent while Claude works can join
@@ -190,10 +240,10 @@ function createInputStream() {
   }
   return {
     stream,
-    push(text: string, priority?: "next") {
+    push(text: string, priority?: "next", images: ClaudeChatImage[] = []) {
       queue.push({
         type: "user",
-        message: { role: "user", content: text },
+        message: { role: "user", content: messageContent(text, images) },
         parent_tool_use_id: null,
         ...(priority ? { priority } : {}),
       })
@@ -217,9 +267,14 @@ const SUGGESTION_WAIT_MS = 6000
 // ends the old one first so two processes never share the session.
 const lingeringChats = new Map<string, () => void>()
 
-export function steerClaudeChat(chatId: string, text: string): boolean {
-  if (!text.trim()) return false
-  return activeChats.get(chatId)?.steer?.(text) ?? false
+export function steerClaudeChat(
+  chatId: string,
+  text: string,
+  images?: unknown
+): boolean {
+  const valid = validImages(images)
+  if (!text.trim() && valid.length === 0) return false
+  return activeChats.get(chatId)?.steer?.(text, valid) ?? false
 }
 
 const activeChats = new Map<string, ActiveChat>()
@@ -574,10 +629,12 @@ export async function startClaudeChat(
     model?: string
     effort?: "low" | "medium" | "high" | "xhigh" | "max"
     permissionMode?: ClaudeChatPermissionMode
+    images?: ClaudeChatImage[]
   },
   pathEnv: string
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!input.chatId || !input.cwd || !input.prompt.trim()) {
+  const images = validImages(input.images)
+  if (!input.chatId || !input.cwd || (!input.prompt.trim() && !images.length)) {
     return { ok: false, error: "A project and message are required." }
   }
   if (activeChats.has(input.chatId)) {
@@ -603,7 +660,7 @@ export async function startClaudeChat(
   let sessionId = input.sessionId
   let finished = false
   const input$ = createInputStream()
-  input$.push(input.prompt)
+  input$.push(input.prompt, undefined, images)
   // Once closing, the input is ending; later messages become the next turn.
   let closing = false
   let settleTimer: ReturnType<typeof setTimeout> | undefined
@@ -640,10 +697,10 @@ export async function startClaudeChat(
     lingeringChats.set(input.chatId, closeInput)
     suggestionTimer = setTimeout(closeInput, SUGGESTION_WAIT_MS)
   }
-  active.steer = (text) => {
+  active.steer = (text, images) => {
     if (closing || finished || active.stopping) return false
     clearTimeout(settleTimer)
-    input$.push(text, "next")
+    input$.push(text, "next", images)
     return true
   }
   active.finish = (error?: string, { keepInput = false } = {}) => {

@@ -2478,8 +2478,10 @@ app.whenReady().then(async () => {
     (_event, sessionId: string, cwd: string) =>
       loadClaudeChatSession(sessionId, cwd)
   )
-  ipcMain.handle("claudeChat:steer", (_event, chatId: string, text: string) =>
-    steerClaudeChat(chatId, text)
+  ipcMain.handle(
+    "claudeChat:steer",
+    (_event, chatId: string, text: string, images: unknown) =>
+      steerClaudeChat(chatId, text, images)
   )
   ipcMain.handle("claudeChat:send", async (event, input) =>
     startClaudeChat(event.sender, input, await loginShellPath())

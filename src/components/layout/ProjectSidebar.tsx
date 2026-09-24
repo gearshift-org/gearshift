@@ -861,7 +861,14 @@ function ProjectSidebarRow({
                 showProjectTabs && isActive && "pr-14",
                 animate &&
                   "animate-in duration-200 fill-mode-both fade-in slide-in-from-left-2",
-                "text-foreground hover:bg-sidebar-accent/70",
+                // Collapsed, the active tab's row is hidden, so the project
+                // row takes its highlight to show where you are.
+                showProjectTabs &&
+                  isActive &&
+                  !isExpanded &&
+                  p.tabs.some((tab) => tab.id === p.activeTabId)
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-foreground hover:bg-sidebar-accent/70",
                 isDragging && "opacity-80 shadow-lg"
               )}
               {...attributes}

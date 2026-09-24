@@ -31,6 +31,13 @@ export type TerminalPane = {
   agentSessionTitle?: string
   /** True for restored panes whose PTY has not been spawned (or adopted) yet. */
   pendingStart?: boolean
+  /**
+   * "chat" for a Claude Chat pane (no PTY; its id is the chat id). Absent for
+   * terminals. Chat panes split, resize, and close like terminal panes.
+   */
+  kind?: "chat"
+  /** Chat panes: when the user last sent a message; drives recent ordering. */
+  lastMessageAt?: number
 }
 
 export type TerminalAgentName = "claude" | "codex" | "opencode" | "pi"
@@ -168,24 +175,12 @@ export type DevPreviewTab = {
   pinned?: boolean
 }
 
-export type ClaudeChatTab = {
-  kind: "claudeChat"
-  id: string
-  name: string
-  pinned?: boolean
-  /** Live chat state (working / waiting on you / done); not persisted. */
-  agentStatus?: TerminalAgentStatus
-  /** When the user last sent a message; orders tabs and projects by recency. */
-  lastMessageAt?: number
-}
-
 export type WorkspaceTab =
   | TerminalTab
   | DiffTab
   | FileTab
   | CommitTab
   | DevPreviewTab
-  | ClaudeChatTab
 
 /**
  * A request to reveal (scroll to + select) a specific line of a file, e.g. from

@@ -36,6 +36,10 @@ export type StoredPane = {
   agentSessionTitle?: string
   /** Persisted agent-status subset (completed/last-submit markers). */
   agentStatus?: StoredAgentStatus
+  /** "chat" for a Claude Chat pane; absent for terminals. */
+  kind?: "chat"
+  /** Chat panes: when the user last sent a message. */
+  lastMessageAt?: number
 }
 
 // Build the persistable subset of a runtime agent status (drops live fields and
@@ -498,6 +502,12 @@ export function loadProjects(): StoredProject[] {
                             ? { agentSessionTitle: pp.agentSessionTitle }
                             : {}),
                           ...(agentStatus ? { agentStatus } : {}),
+                          ...(pp.kind === "chat"
+                            ? { kind: "chat" as const }
+                            : {}),
+                          ...(typeof pp.lastMessageAt === "number"
+                            ? { lastMessageAt: pp.lastMessageAt }
+                            : {}),
                         }
                       })
                   : [{ id: t.id }]

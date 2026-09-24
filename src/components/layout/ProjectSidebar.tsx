@@ -811,15 +811,16 @@ function ProjectSidebarRow({
           (latest, pane) =>
             Math.max(
               latest,
-              latestChatAtBySession[
-                pane.sessionId ?? pane.pendingSessionId ?? ""
-              ] ?? 0
+              // Chat panes aren't in chat history; they track their own time.
+              pane.kind === "chat"
+                ? (pane.lastMessageAt ?? 0)
+                : (latestChatAtBySession[
+                    pane.sessionId ?? pane.pendingSessionId ?? ""
+                  ] ?? 0)
             ),
           0
         )
-      : tab.kind === "claudeChat"
-        ? (tab.lastMessageAt ?? 0)
-        : 0
+      : 0
 
   return (
     <Collapsible

@@ -160,6 +160,27 @@ function TerminalPaneView({
   onTerminalFocusChange?: (paneId: string, focused: boolean) => void
   onOpenDevPreview?: (url: string) => void
 }) {
+  if (pane.kind === "chat") {
+    return (
+      <div
+        onMouseDown={onFocus}
+        className="h-full"
+        // Match the pane frame and header, like a terminal body does.
+        style={{ "--chat-bg": "var(--xterm-bg)" } as CSSProperties}
+      >
+        <ClaudeChatView
+          chatId={pane.id}
+          cwd={cwd ?? ""}
+          isActive={isTabActive && tab.activePaneId === pane.id}
+          isVisible={isTabActive}
+          onTitleChange={(title) => onTitleChange?.(tab.id, pane.id, title)}
+          onAgentStatusChange={(status) =>
+            onAgentStatusChange?.(tab.id, pane.id, status)
+          }
+        />
+      </div>
+    )
+  }
   if (pane.pendingStart) {
     const agentLabel = pane.agentName
       ? AGENT_TERMINAL_LABELS[pane.agentName]
@@ -1080,19 +1101,6 @@ function PaneContent({
         diffViewMode={diffViewMode}
         mdMode={mdMode}
         fileReveal={fileReveal}
-      />
-    )
-  }
-  if (tab.kind === "claudeChat") {
-    return (
-      <ClaudeChatView
-        chatId={tab.id}
-        cwd={project.path}
-        isActive={isActive}
-        onTitleChange={(title) => onTitleChange?.(tab.id, tab.id, title)}
-        onAgentStatusChange={(status) =>
-          onAgentStatusChange?.(tab.id, tab.id, status)
-        }
       />
     )
   }

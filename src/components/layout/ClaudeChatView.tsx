@@ -773,12 +773,15 @@ export function ClaudeChatView({
   chatId,
   cwd,
   isActive,
+  isVisible = true,
   onTitleChange,
   onAgentStatusChange,
 }: {
   chatId: string
   cwd: string
   isActive: boolean
+  /** False while the chat's tab or project is hidden. */
+  isVisible?: boolean
   onTitleChange?: (title: string) => void
   onAgentStatusChange?: (status: TerminalAgentStatus) => void
 }) {
@@ -792,6 +795,9 @@ export function ClaudeChatView({
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [command, setCommand] = useState<ClaudeChatCommand | null>(null)
+  // Up-arrow recall: index into sent messages, or null when not recalling.
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  const savedDraftRef = useRef("")
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [status, setStatus] = useState<ChatStatus | null>(null)
   // Latest token count, read when the turn ends (the event listener is
@@ -838,6 +844,18 @@ export function ClaudeChatView({
       if (store.get(`gearshift.claudeChat.${chatId}`) !== null) flush()
     }
   }, [chatId])
+  // Becomes true a frame after reveal, once the chat has been laid out again.
+  const visibleRef = useRef(isVisible)
+  useEffect(() => {
+    if (!isVisible) {
+      visibleRef.current = false
+      return
+    }
+    const frame = requestAnimationFrame(() => {
+      visibleRef.current = true
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isVisible])
   // Follow streamed output only while the user is at the bottom, so scrolling
   // up to read earlier messages isn't yanked back on every chunk.
   const followRef = useRef(true)
@@ -849,15 +867,25 @@ export function ClaudeChatView({
   }
   const handleScroll = () => {
     const el = scrollerRef.current
-    if (!el) return
+    // Ignore scroll events while hidden or being revealed: layout is skipped
+    // or stale then, and they'd wrongly turn following off.
+    if (!el || !visibleRef.current) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
     followRef.current = atBottom
     setFollowing(atBottom)
   }
+  // Hidden tabs skip layout (content-visibility), so scrolling while hidden is
+  // a no-op. Scroll once visible — including on reveal, after the first frame
+  // lays the chat out — so a chat you left at the bottom is still there.
   useEffect(() => {
-    if (!followRef.current) return
-    scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight })
-  }, [snapshot.messages, permission])
+    if (!followRef.current || !isVisible) return
+    const el = scrollerRef.current
+    el?.scrollTo({ top: el.scrollHeight })
+    const frame = requestAnimationFrame(() => {
+      if (followRef.current) el?.scrollTo({ top: el.scrollHeight })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [snapshot.messages, permission, isVisible])
   useEffect(() => {
     if (isActive) inputRef.current?.focus()
   }, [isActive])
@@ -949,24 +977,28 @@ export function ClaudeChatView({
 
   // Report working / waiting-on-you / done so the sidebar and tab bar show
   // the same indicators as agent terminals.
-  const [unseenReply, setUnseenReply] = useState(false)
+  // When a reply finished while this chat wasn't in view; null once seen.
+  const [unseenReply, setUnseenReply] = useState<number | null>(null)
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
   const onAgentStatusChangeRef = useRef(onAgentStatusChange)
   onAgentStatusChangeRef.current = onAgentStatusChange
   useEffect(() => {
-    if (isActive) setUnseenReply(false)
+    if (isActive) setUnseenReply(null)
   }, [isActive])
   const waitingOnUser = busy && (!!permission || !!question)
   const [lastSubmitAt, setLastSubmitAt] = useState<number>()
   useEffect(() => {
     onAgentStatusChangeRef.current?.({
-      running: true,
-      agentName: "claude",
+      // No agentName: that marks a pane as an agent terminal to type into.
+      // "running" only while a turn is live, so closing an idle chat doesn't
+      // ask for confirmation.
+      running: busy,
       working: busy && !waitingOnUser,
       needsAttention: waitingOnUser,
-      completed: !busy && unseenReply,
-      ...(busy && turnStartedAt ? { workStartedAt: turnStartedAt } : {}),
+      completed: !busy && unseenReply !== null,
+      ...(turnStartedAt ? { workStartedAt: turnStartedAt } : {}),
+      ...(!busy && unseenReply !== null ? { completedAt: unseenReply } : {}),
       ...(lastSubmitAt ? { lastSubmitAt } : {}),
     })
   }, [busy, waitingOnUser, unseenReply, turnStartedAt, lastSubmitAt])
@@ -1062,7 +1094,7 @@ export function ClaudeChatView({
       if (event.type === "finished") {
         flushText()
         // Finished while the user is elsewhere: flag it until they look.
-        if (!isActiveRef.current) setUnseenReply(true)
+        if (!isActiveRef.current) setUnseenReply(Date.now())
         setBusy(false)
         setStopping(false)
         setPermission(null)
@@ -1131,6 +1163,7 @@ export function ClaudeChatView({
     if (!prompt || busy) return
     setDraft("")
     setCommand(null)
+    setHistoryIndex(null)
     followRef.current = true
     setFollowing(true)
     setBusy(true)
@@ -1215,6 +1248,8 @@ export function ClaudeChatView({
     inputRef.current?.focus()
   }
   const changeDraft = (value: string) => {
+    // Editing a recalled message makes it a new draft.
+    setHistoryIndex(null)
     setSlashIndex(0)
     setSlashDismissed(false)
     // Typing a known command in full, then a space, turns it into a chip.
@@ -1296,7 +1331,9 @@ export function ClaudeChatView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
+    // --chat-bg lets a host (the split-pane frame) set the chat's background;
+    // the sticky message headers use it too so they stay opaque.
+    <div className="flex h-full min-h-0 flex-col bg-[var(--chat-bg,var(--card))]">
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={scrollerRef}
@@ -1305,7 +1342,10 @@ export function ClaudeChatView({
             // Scrolling up means reading back: stop following at once rather
             // than waiting to leave the bottom zone, or the next streamed
             // chunk snaps the view back down mid-gesture.
-            if (event.deltaY < 0 && followRef.current) {
+            // Only when the view can actually move up: with nothing to scroll
+            // (or already at the top) it would just show the jump button.
+            const el = event.currentTarget
+            if (event.deltaY < 0 && followRef.current && el.scrollTop > 0) {
               followRef.current = false
               setFollowing(false)
             }
@@ -1335,7 +1375,7 @@ export function ClaudeChatView({
                 className="flex min-w-0 flex-col gap-3"
               >
                 {section.user && (
-                  <div className="group/user sticky top-0 z-10 -mx-1 flex flex-col items-end bg-card px-1 pt-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-gradient-to-b after:from-card after:to-transparent">
+                  <div className="group/user sticky top-0 z-10 -mx-1 flex flex-col items-end bg-[var(--chat-bg,var(--card))] px-1 pt-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-gradient-to-b after:from-[var(--chat-bg,var(--card))] after:to-transparent">
                     <div className="max-h-32 max-w-[85%] overflow-y-auto rounded-lg border border-border/60 bg-foreground/[0.06] px-3 py-1.5 text-[13px] leading-5 whitespace-pre-wrap">
                       <UserMessageText text={section.user.text} />
                     </div>
@@ -1506,8 +1546,43 @@ export function ClaudeChatView({
                 slashMenuOpen ? `claude-commands-${chatId}` : undefined
               }
               onKeyDown={(event) => {
-                // Backspace at the very start turns the chip back into text.
                 const el = event.currentTarget
+                // Up/Down step through this chat's sent messages, like the
+                // Claude Code CLI, when the caret is on the first/last line.
+                if (
+                  (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                  !slashMenuOpen &&
+                  !command &&
+                  !event.shiftKey &&
+                  !event.altKey &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  el.selectionStart === el.selectionEnd
+                ) {
+                  const before = el.value.slice(0, el.selectionStart)
+                  const after = el.value.slice(el.selectionEnd)
+                  const up = event.key === "ArrowUp"
+                  if (up ? !before.includes("\n") : !after.includes("\n")) {
+                    const sent = snapshot.messages
+                      .filter((message) => message.role === "user")
+                      .map((message) => message.text)
+                    const current = historyIndex ?? sent.length
+                    const next = up ? current - 1 : current + 1
+                    if (up ? next >= 0 : historyIndex !== null) {
+                      event.preventDefault()
+                      if (historyIndex === null) savedDraftRef.current = draft
+                      const value =
+                        next >= sent.length ? savedDraftRef.current : sent[next]
+                      setHistoryIndex(next >= sent.length ? null : next)
+                      setDraft(value)
+                      requestAnimationFrame(() =>
+                        el.setSelectionRange(value.length, value.length)
+                      )
+                      return
+                    }
+                  }
+                }
+                // Backspace at the very start turns the chip back into text.
                 if (
                   command &&
                   event.key === "Backspace" &&

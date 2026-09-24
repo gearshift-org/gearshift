@@ -210,14 +210,26 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
               },
             ]
           }
+          // Older Claude Chat tabs become a split-capable tab with one chat
+          // pane. The pane keeps the tab's id, which is also the chat id, so
+          // the saved transcript carries over.
           if (t.kind === "claudeChat") {
             return [
               {
-                kind: "claudeChat" as const,
+                kind: "terminal" as const,
                 id: t.id,
                 name: t.name,
                 ...(t.pinned ? { pinned: true } : {}),
-                ...(t.lastMessageAt ? { lastMessageAt: t.lastMessageAt } : {}),
+                panes: [
+                  {
+                    id: t.id,
+                    kind: "chat" as const,
+                    ...(t.lastMessageAt
+                      ? { lastMessageAt: t.lastMessageAt }
+                      : {}),
+                  },
+                ],
+                activePaneId: t.id,
               },
             ]
           }
@@ -225,7 +237,15 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
             t.panes && t.panes.length > 0 ? t.panes : [{ id: t.id }]
           const panes = storedPanes.map((sp) => ({
             id: sp.id,
-            pendingStart: true,
+            // Chat panes have no PTY to start; they render straight away.
+            ...(sp.kind === "chat"
+              ? {
+                  kind: "chat" as const,
+                  ...(sp.lastMessageAt
+                    ? { lastMessageAt: sp.lastMessageAt }
+                    : {}),
+                }
+              : { pendingStart: true }),
             ...(sp.sessionId ? { pendingSessionId: sp.sessionId } : {}),
             ...(sp.autoTitle ? { autoTitle: sp.autoTitle } : {}),
             ...(sp.customName ? { customName: sp.customName } : {}),
@@ -427,14 +447,19 @@ function devPreviewName(url: string): string {
   }
 }
 
+// A chat pane has no PTY: stop its running turn and delete its transcript.
+function closeChatPane(paneId: string) {
+  void window.claudeChat.stop(paneId)
+  store.remove(`gearshift.claudeChat.${paneId}`)
+}
+
 function killAllPanes(tab: WorkspaceTab) {
-  if (tab.kind === "claudeChat") {
-    void window.claudeChat.stop(tab.id)
-    store.remove(`gearshift.claudeChat.${tab.id}`)
-    return
-  }
   if (tab.kind !== "terminal") return
   for (const pane of tab.panes) {
+    if (pane.kind === "chat") {
+      closeChatPane(pane.id)
+      continue
+    }
     if (pane.pendingStart) continue
     // Daemon keys sessions by sessionId; pane.id is the stable DOM key and
     // may not match. Using pane.id here would leave the PTY running after its
@@ -507,15 +532,6 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           ...(t.pinned ? { pinned: true } : {}),
         }
       }
-      if (t.kind === "claudeChat") {
-        return {
-          kind: "claudeChat",
-          id: t.id,
-          name: t.name,
-          ...(t.pinned ? { pinned: true } : {}),
-          ...(t.lastMessageAt ? { lastMessageAt: t.lastMessageAt } : {}),
-        }
-      }
       return {
         kind: "terminal",
         id: t.id,
@@ -546,6 +562,8 @@ function serializeProjects(projects: Project[]): StoredProject[] {
               ? { agentSessionTitle: pp.agentSessionTitle }
               : {}),
             ...(agentStatus ? { agentStatus } : {}),
+            ...(pp.kind === "chat" ? { kind: "chat" as const } : {}),
+            ...(pp.lastMessageAt ? { lastMessageAt: pp.lastMessageAt } : {}),
           }
         }),
       }
@@ -2476,7 +2494,14 @@ export function AppShell() {
               ...project,
               tabs: [
                 ...project.tabs,
-                { kind: "claudeChat" as const, id: tabId, name: "Claude Chat" },
+                {
+                  kind: "terminal" as const,
+                  id: tabId,
+                  name: "Claude Chat",
+                  // The pane id doubles as the chat id.
+                  panes: [{ id: tabId, kind: "chat" as const }],
+                  activePaneId: tabId,
+                },
               ],
               activeTabId: tabId,
             }
@@ -2510,6 +2535,12 @@ export function AppShell() {
       // daemon round-trip first makes Cmd+D feel laggy, especially while
       // agents keep the daemon busy.
       const paneId = makeId()
+      // Splitting a chat opens another chat; splitting a terminal, a terminal.
+      const isChat =
+        tab.panes.find((pane) => pane.id === tab.activePaneId)?.kind === "chat"
+      const newPane = isChat
+        ? { id: paneId, kind: "chat" as const }
+        : { id: paneId, sessionId: paneId }
       setProjects((prev) =>
         prev.map((p) =>
           p.id === project.id
@@ -2525,7 +2556,7 @@ export function AppShell() {
                   )
                   return {
                     ...t,
-                    panes: [...t.panes, { id: paneId, sessionId: paneId }],
+                    panes: [...t.panes, newPane],
                     activePaneId: paneId,
                     layout: splitLeaf(base, t.activePaneId, paneId, direction),
                   }
@@ -2534,6 +2565,7 @@ export function AppShell() {
             : p
         )
       )
+      if (isChat) return
       await window.term.create({
         cwd: project.path,
         theme: resolvedTheme,
@@ -2557,6 +2589,11 @@ export function AppShell() {
       if (!project || !tab || tab.kind !== "terminal") return
       // Same as splitTerminalPane: render the pane first, spawn the PTY after.
       const paneId = makeId()
+      const isChat =
+        tab.panes.find((pane) => pane.id === targetPaneId)?.kind === "chat"
+      const newPane = isChat
+        ? { id: paneId, kind: "chat" as const }
+        : { id: paneId, sessionId: paneId }
       setProjects((prev) =>
         prev.map((p) =>
           p.id === project.id
@@ -2570,7 +2607,7 @@ export function AppShell() {
                   )
                   return {
                     ...t,
-                    panes: [...t.panes, { id: paneId, sessionId: paneId }],
+                    panes: [...t.panes, newPane],
                     activePaneId: paneId,
                     layout: insertBeside(
                       base,
@@ -2587,6 +2624,7 @@ export function AppShell() {
             : p
         )
       )
+      if (isChat) return
       await window.term.create({
         cwd: project.path,
         theme: resolvedTheme,
@@ -2640,7 +2678,9 @@ export function AppShell() {
       if (pane.agentStatus?.running && !(await confirmCloseAgentTerminals(1))) {
         return
       }
-      if (!pane.pendingStart) {
+      if (pane.kind === "chat") {
+        closeChatPane(pane.id)
+      } else if (!pane.pendingStart) {
         const sid = pane.sessionId
         try {
           if (sid) window.term.kill(sid)
@@ -3363,23 +3403,12 @@ export function AppShell() {
       // arrive at TUI repaint rate, and each state update here re-renders the
       // whole shell and rewrites the persisted snapshot.
       const tab = prev.flatMap((p) => p.tabs).find((t) => t.id === tabId)
-      // Claude Chat tabs follow their Claude session title.
-      if (tab?.kind === "claudeChat") {
-        if (tab.name === title) return prev
-        const next = prev.map((p) => ({
-          ...p,
-          tabs: p.tabs.map((t) =>
-            t.id === tabId && t.kind === "claudeChat"
-              ? { ...t, name: title }
-              : t
-          ),
-        }))
-        saveProjects(serializeProjects(next))
-        return next
-      }
       if (tab?.kind !== "terminal") return prev
       const pane = tab.panes.find((pp) => pp.id === paneId)
-      if (!pane || pane.autoTitle === title) return prev
+      // A chat pane's title is its Claude session title, which outranks a
+      // terminal's process title in the pane and tab names.
+      const field = pane?.kind === "chat" ? "agentSessionTitle" : "autoTitle"
+      if (!pane || pane[field] === title) return prev
       const next = prev.map((p) =>
         p.tabs.some((t) => t.id === tabId)
           ? {
@@ -3389,7 +3418,7 @@ export function AppShell() {
                   ? {
                       ...t,
                       panes: t.panes.map((pp) =>
-                        pp.id === paneId ? { ...pp, autoTitle: title } : pp
+                        pp.id === paneId ? { ...pp, [field]: title } : pp
                       ),
                     }
                   : t
@@ -3407,39 +3436,6 @@ export function AppShell() {
     paneId: string,
     status: TerminalAgentStatus
   ) => {
-    // Claude Chat tabs report one status for the whole tab.
-    const chatTab = projects
-      .flatMap((p) => p.tabs)
-      .find((t) => t.id === tabId && t.kind === "claudeChat")
-    if (chatTab?.kind === "claudeChat") {
-      // A newly sent message moves the tab and its project to the top of the
-      // "recent" order, like a prompt submitted in an agent terminal.
-      const submittedAt = status.lastSubmitAt ?? 0
-      const newMessage = submittedAt > (chatTab.lastMessageAt ?? 0)
-      if (!newMessage && agentStatusesEqual(chatTab.agentStatus, status)) return
-      setProjects((prev) => {
-        const next = prev.map((p) => {
-          if (!p.tabs.some((t) => t.id === tabId)) return p
-          return {
-            ...p,
-            ...(newMessage ? { updatedAt: submittedAt } : {}),
-            tabs: p.tabs.map((t) =>
-              t.id === tabId && t.kind === "claudeChat"
-                ? {
-                    ...t,
-                    agentStatus: status,
-                    ...(newMessage ? { lastMessageAt: submittedAt } : {}),
-                  }
-                : t
-            ),
-          }
-        })
-        if (newMessage) saveProjects(serializeProjects(next))
-        return next
-      })
-      return
-    }
-
     const key = `${tabId}:${paneId}`
     const previousStatus = terminalAgentStatusRef.current.get(key)
 
@@ -3474,12 +3470,23 @@ export function AppShell() {
     const needsAttentionAway =
       becameNeedsAttention && !!targetProject && !targetTerminalIsActive
 
-    if (isLaunchableAgentName(status.agentName) && targetProject) {
+    // Chat panes aren't agent terminals: "last agent terminal" actions type
+    // into a PTY, which a chat pane doesn't have.
+    const isChatPane = fallbackPane?.kind === "chat"
+    if (
+      !isChatPane &&
+      isLaunchableAgentName(status.agentName) &&
+      targetProject
+    ) {
       rememberAgentTerminal(targetProject.id, tabId, paneId)
     }
+    // A message sent in a chat pane moves its tab and project to the top of
+    // the recent order, as a submitted terminal prompt does via chat history.
+    const chatSubmittedAt = isChatPane ? (status.lastSubmitAt ?? 0) : 0
+    const newChatMessage = chatSubmittedAt > (fallbackPane?.lastMessageAt ?? 0)
 
-    setProjects((prev) =>
-      prev.map((p) => {
+    setProjects((prev) => {
+      const next = prev.map((p) => {
         if (!p.tabs.some((t) => t.id === tabId)) return p
 
         const tabs = p.tabs.map((t) => {
@@ -3500,6 +3507,9 @@ export function AppShell() {
                     agentSessionId: status.agentSessionId ?? pp.agentSessionId,
                     agentSessionTitle:
                       status.agentSessionTitle ?? pp.agentSessionTitle,
+                    ...(newChatMessage
+                      ? { lastMessageAt: chatSubmittedAt }
+                      : {}),
                   }
                 : pp
             ),
@@ -3509,6 +3519,7 @@ export function AppShell() {
         return {
           ...p,
           tabs,
+          ...(newChatMessage ? { updatedAt: chatSubmittedAt } : {}),
           agentDone: status.working
             ? false
             : finishedAwayFromAttention
@@ -3521,7 +3532,9 @@ export function AppShell() {
               : p.agentNeedsAttention,
         }
       })
-    )
+      if (newChatMessage) saveProjects(serializeProjects(next))
+      return next
+    })
 
     if (finishedWork && targetProject && targetTab?.kind === "terminal") {
       void queryClient.refetchQueries({

@@ -54,7 +54,6 @@ export function terminalPaneAgentState(
 }
 
 export function terminalTabAgentState(tab: WorkspaceTab): TerminalAgentState {
-  if (tab.kind === "claudeChat") return terminalAgentState(tab.agentStatus)
   if (tab.kind !== "terminal") return "unknown"
   return tab.panes.reduce<TerminalAgentState>(
     (state, pane) => higherPriorityState(state, terminalPaneAgentState(pane)),
@@ -68,13 +67,6 @@ export function lastSubmittedTerminalTabId(
   let latestTabId: string | null = null
   let latestSubmitAt = 0
   for (const tab of tabs) {
-    if (tab.kind === "claudeChat") {
-      if ((tab.lastMessageAt ?? 0) > latestSubmitAt) {
-        latestSubmitAt = tab.lastMessageAt ?? 0
-        latestTabId = tab.id
-      }
-      continue
-    }
     if (tab.kind !== "terminal") continue
     for (const pane of tab.panes) {
       const submittedAt = pane.agentStatus?.lastSubmitAt ?? 0

@@ -123,8 +123,6 @@ type TabItemProps = {
 }
 
 export function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
-  if (tab.kind === "claudeChat")
-    return <MessageCircle className="size-3.5 shrink-0" />
   if (tab.kind === "diff") return <FileDiff className="size-3.5 shrink-0" />
   if (tab.kind === "commit")
     return <GitCommitVertical className="size-3.5 shrink-0" />
@@ -140,6 +138,8 @@ export function WorkspaceTabIcon({ tab }: { tab: WorkspaceTab }) {
   }
   const activePane =
     tab.panes.find((pane) => pane.id === tab.activePaneId) ?? tab.panes[0]
+  if (activePane?.kind === "chat")
+    return <MessageCircle className="size-3.5 shrink-0" />
   const agentName = terminalAgentIsActive(activePane?.agentStatus)
     ? activePane?.agentStatus?.agentName
     : undefined

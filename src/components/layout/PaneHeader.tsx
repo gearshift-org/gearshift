@@ -3,6 +3,7 @@ import { useDraggable } from "@dnd-kit/core"
 import {
   CornerDownLeft,
   Maximize2,
+  MessageCircle,
   Minimize2,
   SplitSquareHorizontal,
   SplitSquareVertical,
@@ -138,7 +139,9 @@ export function PaneHeader({
         isActive && "text-foreground"
       )}
     >
-      {agentActive ? (
+      {pane.kind === "chat" ? (
+        <MessageCircle className="mr-1 size-3.5 shrink-0" />
+      ) : agentActive ? (
         <AgentIcon
           agent={pane.agentStatus?.agentName}
           className="mr-1 size-3.5"

@@ -100,5 +100,6 @@ export function paneDisplayName(pane: TerminalPane, index: number): string {
   if (auto) return auto
   const agentName = agentDisplayName(pane.agentStatus?.agentName)
   if (agentName) return agentName
+  if (pane.kind === "chat") return "Claude Chat"
   return `Pane ${index + 1}`
 }

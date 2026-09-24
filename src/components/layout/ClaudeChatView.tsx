@@ -1038,15 +1038,41 @@ export function ClaudeChatView({
     setFollowing(true)
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight })
   }
+  const lastScrollTopRef = useRef(0)
   const handleScroll = () => {
     const el = scrollerRef.current
+    if (!el) return
+    const previousTop = lastScrollTopRef.current
+    lastScrollTopRef.current = el.scrollTop
     // Ignore scroll events while hidden or being revealed: layout is skipped
     // or stale then, and they'd wrongly turn following off.
-    if (!el || !visibleRef.current) return
+    if (!visibleRef.current) return
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
-    followRef.current = atBottom
-    setFollowing(atBottom)
+    // Only moving up stops following. Being short of the bottom isn't enough:
+    // the scroll event from our own jump to the bottom can land after the
+    // reply has grown again (fast replies do this), which would wrongly read
+    // as the user having scrolled away.
+    const follow =
+      atBottom || (followRef.current && el.scrollTop >= previousTop)
+    followRef.current = follow
+    setFollowing(follow)
   }
+  // Stay pinned to the bottom whenever the transcript or the view changes
+  // size — status lines, question cards, late markdown layout, or the input
+  // growing — not just when messages change.
+  const contentRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = scrollerRef.current
+    const content = contentRef.current
+    if (!el || !content) return
+    const observer = new ResizeObserver(() => {
+      if (followRef.current && visibleRef.current)
+        el.scrollTo({ top: el.scrollHeight })
+    })
+    observer.observe(el)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
   // Hidden tabs skip layout (content-visibility), so scrolling while hidden is
   // a no-op. Scroll once visible — including on reveal, after the first frame
   // lays the chat out — so a chat you left at the bottom is still there.
@@ -1629,7 +1655,10 @@ export function ClaudeChatView({
         >
           {/* Vertical padding lives inside the scroller so sticky user
             messages pin flush to its top edge. */}
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-4">
+          <div
+            ref={contentRef}
+            className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-4"
+          >
             {snapshot.messages.length === 0 && (
               <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
                 <Sparkles className="size-5" />

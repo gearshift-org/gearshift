@@ -217,6 +217,7 @@ function hydrateProjectSnapshot(spaces = loadSpaces()): {
                 id: t.id,
                 name: t.name,
                 ...(t.pinned ? { pinned: true } : {}),
+                ...(t.lastMessageAt ? { lastMessageAt: t.lastMessageAt } : {}),
               },
             ]
           }
@@ -512,6 +513,7 @@ function serializeProjects(projects: Project[]): StoredProject[] {
           id: t.id,
           name: t.name,
           ...(t.pinned ? { pinned: true } : {}),
+          ...(t.lastMessageAt ? { lastMessageAt: t.lastMessageAt } : {}),
         }
       }
       return {
@@ -3410,17 +3412,31 @@ export function AppShell() {
       .flatMap((p) => p.tabs)
       .find((t) => t.id === tabId && t.kind === "claudeChat")
     if (chatTab?.kind === "claudeChat") {
-      if (agentStatusesEqual(chatTab.agentStatus, status)) return
-      setProjects((prev) =>
-        prev.map((p) => ({
-          ...p,
-          tabs: p.tabs.map((t) =>
-            t.id === tabId && t.kind === "claudeChat"
-              ? { ...t, agentStatus: status }
-              : t
-          ),
-        }))
-      )
+      // A newly sent message moves the tab and its project to the top of the
+      // "recent" order, like a prompt submitted in an agent terminal.
+      const submittedAt = status.lastSubmitAt ?? 0
+      const newMessage = submittedAt > (chatTab.lastMessageAt ?? 0)
+      if (!newMessage && agentStatusesEqual(chatTab.agentStatus, status)) return
+      setProjects((prev) => {
+        const next = prev.map((p) => {
+          if (!p.tabs.some((t) => t.id === tabId)) return p
+          return {
+            ...p,
+            ...(newMessage ? { updatedAt: submittedAt } : {}),
+            tabs: p.tabs.map((t) =>
+              t.id === tabId && t.kind === "claudeChat"
+                ? {
+                    ...t,
+                    agentStatus: status,
+                    ...(newMessage ? { lastMessageAt: submittedAt } : {}),
+                  }
+                : t
+            ),
+          }
+        })
+        if (newMessage) saveProjects(serializeProjects(next))
+        return next
+      })
       return
     }
 

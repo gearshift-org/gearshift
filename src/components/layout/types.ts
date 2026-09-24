@@ -175,6 +175,8 @@ export type ClaudeChatTab = {
   pinned?: boolean
   /** Live chat state (working / waiting on you / done); not persisted. */
   agentStatus?: TerminalAgentStatus
+  /** When the user last sent a message; orders tabs and projects by recency. */
+  lastMessageAt?: number
 }
 
 export type WorkspaceTab =

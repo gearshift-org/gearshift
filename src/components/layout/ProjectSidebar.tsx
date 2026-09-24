@@ -817,7 +817,9 @@ function ProjectSidebarRow({
             ),
           0
         )
-      : 0
+      : tab.kind === "claudeChat"
+        ? (tab.lastMessageAt ?? 0)
+        : 0
 
   return (
     <Collapsible

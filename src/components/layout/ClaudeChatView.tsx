@@ -807,6 +807,7 @@ export function ClaudeChatView({
     if (isActive) setUnseenReply(false)
   }, [isActive])
   const waitingOnUser = busy && (!!permission || !!question)
+  const [lastSubmitAt, setLastSubmitAt] = useState<number>()
   useEffect(() => {
     onAgentStatusChangeRef.current?.({
       running: true,
@@ -815,8 +816,9 @@ export function ClaudeChatView({
       needsAttention: waitingOnUser,
       completed: !busy && unseenReply,
       ...(busy && turnStartedAt ? { workStartedAt: turnStartedAt } : {}),
+      ...(lastSubmitAt ? { lastSubmitAt } : {}),
     })
-  }, [busy, waitingOnUser, unseenReply, turnStartedAt])
+  }, [busy, waitingOnUser, unseenReply, turnStartedAt, lastSubmitAt])
 
   const onTitleChangeRef = useRef(onTitleChange)
   onTitleChangeRef.current = onTitleChange
@@ -952,6 +954,7 @@ export function ClaudeChatView({
     setFollowing(true)
     setBusy(true)
     setTurnStartedAt(Date.now())
+    setLastSubmitAt(Date.now())
     outputTokensRef.current = 0
     setStatus({ phase: "thinking", outputTokens: 0 })
     setSnapshot((current) => ({

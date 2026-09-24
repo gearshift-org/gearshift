@@ -130,6 +130,8 @@ export type StoredTab = {
   preview?: boolean
   /** Keeps this tab above unpinned tabs in project tab lists. */
   pinned?: boolean
+  /** Claude Chat tabs: when the user last sent a message. */
+  lastMessageAt?: number
   /** Local dev-server URL, for dev preview tabs. */
   url?: string
 }
@@ -458,6 +460,9 @@ export function loadProjects(): StoredProject[] {
                       : {}),
                     ...(t.preview ? { preview: true } : {}),
                     ...(typeof t.url === "string" ? { url: t.url } : {}),
+                    ...(typeof t.lastMessageAt === "number"
+                      ? { lastMessageAt: t.lastMessageAt }
+                      : {}),
                   }
                 }
                 const panes: StoredPane[] = Array.isArray(t.panes)

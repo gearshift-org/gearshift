@@ -373,16 +373,21 @@ const markdownComponents: Components = {
   ),
 }
 
-// Claude Code's model descriptions lead with the exact version, e.g.
-// "Opus 5.5 with 1M context · Best for everyday, complex tasks", while the
-// display name is only "Opus". Split it so the menu can show the version.
+// The model's version name and what it's best for. Newer Claude Code puts
+// the version in the display name ("Opus 5.5") and only the tagline in the
+// description ("Most capable for ambitious work"). Older versions used a bare
+// display name ("Opus") and led the description with the version, e.g.
+// "Opus 5.5 with 1M context · Best for everyday, complex tasks". The
+// "default" entry still uses that combined form in its description.
 function modelVersion(model: ClaudeChatModel) {
-  const [name, ...rest] = (model.description ?? "").split(" · ")
-  const version = name?.trim() || model.displayName
+  const description = model.description?.trim() ?? ""
+  const [lead, ...rest] = description.split(" · ")
+  const combined = rest.length > 0 && !!lead?.trim()
+  const version = (combined ? lead : model.displayName).trim()
   return {
     name: version,
-    short: version.replace(/ with 1M context$/, " · 1M"),
-    tagline: rest.join(" · "),
+    short: version.replace(/ (with 1M context|\(1M context\))$/, " · 1M"),
+    tagline: combined ? rest.join(" · ") : description,
   }
 }
 

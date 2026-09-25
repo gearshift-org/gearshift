@@ -13,6 +13,7 @@ export type AgentHookEvent = {
     | "needs_attention"
     | "subagent_start"
     | "subagent_stop"
+    | "background_wait"
   body?: string
   /** The agent's own session id (e.g. Claude's resumable session UUID). */
   agentSessionId?: string
@@ -70,7 +71,9 @@ function parseAgentHookPayload(
           ? "subagent_start"
           : eventRaw === "SubagentStop" || eventRaw === "subagent_stop"
             ? "subagent_stop"
-            : "stop"
+            : eventRaw === "background_wait"
+              ? "background_wait"
+              : "stop"
   const sessionId = sessionIdRaw?.trim()
   if (!sessionId) return null
   const body = bodyParts
@@ -299,6 +302,56 @@ if [ "$agent" != "grok" ] && [[ "$input" == *'"hookEventName"'* ]]; then
   exit 0
 fi
 
+# First string value of a JSON field in the stdin payload. Tolerates
+# whitespace around the colon; escaped quotes inside other string values
+# (e.g. \\"agent_id\\" in last_assistant_message) can't match because the key
+# must be followed directly by a closing quote. Empty when absent.
+json_str_field() {
+  printf '%s' "$input" \\
+    | grep -oE '"'"$1"'"[[:space:]]*:[[:space:]]*"[^"]*"' \\
+    | head -1 | cut -d'"' -f4 || true
+}
+
+# Id of the subagent a Claude/Grok lifecycle payload is about. Newer Claude
+# builds send "subagent_id" (while "agent_id" identifies the agent the hook ran
+# inside, i.e. the parent for nested spawns); older ones only send "agent_id".
+# Grok uses camelCase "agentId".
+subagent_id_from_input() {
+  local id
+  id=$(json_str_field subagent_id)
+  [ -n "$id" ] || id=$(json_str_field agent_id)
+  [ -n "$id" ] || id=$(json_str_field agentId)
+  printf '%s' "$id"
+}
+
+# True when the Claude process running this hook still has live Bash-tool
+# shells. Claude spawns every Bash/Monitor command as a direct child shell that
+# sources ~/.claude/shell-snapshots/…; foreground commands have exited by the
+# time Stop fires, so any survivor is a background task (run_in_background,
+# Monitor) that will re-wake Claude when it finishes. Walks up from the hook's
+# parent to find the claude process (native binary or npm install).
+claude_has_background_shells() {
+  local pid="$PPID" prev="$$" found="" comm args child i
+  for i in 1 2 3 4 5 6; do
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$pid" -gt 1 ] || return 1
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null || true)
+    args=$(ps -o args= -p "$pid" 2>/dev/null || true)
+    if [ "\${comm##*/}" = "claude" ] || [[ "$args" == *"@anthropic-ai/claude-code"* ]]; then
+      found=1
+      break
+    fi
+    prev="$pid"
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+  done
+  [ -n "$found" ] || return 1
+  for child in $(pgrep -P "$pid" -f 'shell-snapshots' 2>/dev/null || true); do
+    # Skip our own ancestor in case the hook itself runs inside such a shell.
+    [ "$child" != "$prev" ] && return 0
+  done
+  return 1
+}
+
 # The agent-native session id (Claude/Codex emit it as "session_id" on stdin;
 # Grok uses camelCase "sessionId" and also exports GROK_SESSION_ID).
 # Best-effort: stays empty for agents/events that don't include it.
@@ -331,18 +384,7 @@ case "$event" in
       *) event="subagent_stop" ;;
     esac
     # Carry the subagent id in the body so the renderer can pair start/stop.
-    # Claude emits snake_case "agent_id"; Grok emits camelCase "agentId".
-    body=""
-    if [ -n "$input" ]; then
-      body=$(printf '%s' "$input" \\
-        | grep -o '"agent_id":"[^"]*"' \\
-        | head -1 | cut -d'"' -f4 || true)
-      if [ -z "$body" ]; then
-        body=$(printf '%s' "$input" \\
-          | grep -o '"agentId":"[^"]*"' \\
-          | head -1 | cut -d'"' -f4 || true)
-      fi
-    fi
+    body="$(subagent_id_from_input)"
     ;;
   *)
     event="stop"
@@ -359,6 +401,19 @@ case "$event" in
       fi
     else
       body="Session completed"
+    fi
+    if [ "$agent" = "claude" ] \\
+      && [ "$(json_str_field hook_event_name)" = "Stop" ]; then
+      if [ -n "$(json_str_field agent_id)" ]; then
+        # A Stop that fired inside a subagent only ends that subagent — not the
+        # main turn. Report it as a subagent stop so it can't mint "done".
+        event="subagent_stop"
+        body="$(subagent_id_from_input)"
+      elif claude_has_background_shells; then
+        # Main turn ended but a background Bash/Monitor task is still running;
+        # Claude resumes when it finishes, so this is not a completion yet.
+        event="background_wait"
+      fi
     fi
     ;;
 esac

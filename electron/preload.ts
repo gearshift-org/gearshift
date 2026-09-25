@@ -237,6 +237,7 @@ const termApi = {
         | "needs_attention"
         | "subagent_start"
         | "subagent_stop"
+        | "background_wait"
       body?: string
       agentSessionId?: string
     }) => void
@@ -252,6 +253,7 @@ const termApi = {
           | "needs_attention"
           | "subagent_start"
           | "subagent_stop"
+          | "background_wait"
         body?: string
       }
     ) => cb(event)

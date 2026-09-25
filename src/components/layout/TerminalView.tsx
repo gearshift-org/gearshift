@@ -608,6 +608,17 @@ const HOOK_AUTHORITATIVE_WINDOW_MS = 30000
 // event was lost — e.g. a dropped socket write or an agent crash) and no
 // longer blocks the completion signal.
 const SUBAGENT_PENDING_MAX_MS = 30 * 60 * 1000
+// A Stop hook is not reported as "done" until this long has passed with no
+// follow-up activity. Another Stop hook (a plugin, a loop hook, a failing
+// check) can block the stop and make Claude keep going; its next PostToolUse
+// "start" lands inside this window and cancels the pending completion.
+const STOP_SETTLE_MS = 2500
+// Claude ended its turn while a background Bash/Monitor task was still running
+// ("background_wait"). Claude re-wakes when the task finishes, so the pane
+// stays working until the next real Stop. Background tasks that never exit
+// (dev servers, watchers) would pin the spinner forever, so fall back to
+// reporting the completion after this long with no further hook activity.
+const BACKGROUND_WAIT_MAX_MS = 10 * 60 * 1000
 const RESIZE_ACTIVITY_SUPPRESS_MS = 1000
 const FOCUS_ACTIVITY_SUPPRESS_MS = 1000
 const USER_INPUT_ECHO_SUPPRESS_MS = 750
@@ -961,6 +972,10 @@ export function TerminalView({
   // non-empty, a Stop hook is treated as a turn boundary, not a completion.
   const pendingSubagentsRef = useRef<Map<string, number>>(new Map())
   const anonSubagentSeqRef = useRef(0)
+  // Deferred completion after a Stop hook (STOP_SETTLE_MS) or a Stop that left
+  // background shells running (BACKGROUND_WAIT_MAX_MS). Any later non-subagent
+  // hook event cancels it.
+  const pendingCompletionTimerRef = useRef<number | undefined>(undefined)
   const recapTimerRef = useRef<number | undefined>(undefined)
   const commitCheckTimerRef = useRef<number | undefined>(undefined)
   const gitActionSuppressedRef = useRef(false)
@@ -1365,11 +1380,19 @@ export function TerminalView({
     const term = termRef.current
     if (term) safeTerminalFocus(term)
   }, [sessionId])
+  const cancelPendingCompletion = useCallback(() => {
+    if (pendingCompletionTimerRef.current) {
+      window.clearTimeout(pendingCompletionTimerRef.current)
+      pendingCompletionTimerRef.current = undefined
+    }
+  }, [])
+
   const clearAgentWorking = useCallback(() => {
     if (agentWorkingTimerRef.current) {
       window.clearTimeout(agentWorkingTimerRef.current)
       agentWorkingTimerRef.current = undefined
     }
+    cancelPendingCompletion()
     activeHookWorkRef.current = false
     fallbackActiveTurnRef.current = false
     lastAgentActivityAtRef.current = 0
@@ -1385,7 +1408,7 @@ export function TerminalView({
         needsAttention: false,
       })
     }
-  }, [emitAgentStatus])
+  }, [emitAgentStatus, cancelPendingCompletion])
 
   const markAgentWorking = useCallback(() => {
     const now = Date.now()
@@ -2581,7 +2604,47 @@ export function TerminalView({
   }, [sessionId, emitAgentStatus])
 
   useEffect(() => {
-    return window.term.onAgentEvent(sessionId, (event) => {
+    // Close the active turn as a real completion. Runs deferred (see
+    // STOP_SETTLE_MS / BACKGROUND_WAIT_MAX_MS), so it reads the latest status
+    // and re-checks subagents that may have started while it was pending.
+    const finishTurn = (agentName: TerminalAgentStatus["agentName"]) => {
+      pendingCompletionTimerRef.current = undefined
+      const pending = pendingSubagentsRef.current
+      const now = Date.now()
+      for (const [id, startedAt] of pending) {
+        if (now - startedAt > SUBAGENT_PENDING_MAX_MS) pending.delete(id)
+      }
+      // Background subagents still running: the Stop only closed the main
+      // agent's turn, not the whole task. Keep the pane working; the real
+      // completion is the Stop that fires after the last subagent finishes.
+      if (pending.size > 0) return
+      activeHookWorkRef.current = false
+      fallbackActiveTurnRef.current = false
+      lastAgentActivityAtRef.current = 0
+      hasSubmittedToAgentRef.current = false
+      const current = agentStatusRef.current
+      emitAgentStatus({
+        running: current.running,
+        working: false,
+        agentName: mergeRuntimeAgentName(
+          current.agentName,
+          agentName,
+          current.running
+        ),
+        workStartedAt: current.workStartedAt,
+        completedAt: Date.now(),
+        completed: true,
+        needsAttention: false,
+      })
+      gitActionSuppressedRef.current = false
+      // Turn finished — AI titles (Claude/OpenCode) are finalized by now.
+      void refreshAgentSessionTitle()
+      scheduleRecap("completed")
+      // Offer to commit if the finished turn left uncommitted changes.
+      maybeShowCommit()
+    }
+
+    const off = window.term.onAgentEvent(sessionId, (event) => {
       if (agentWorkingTimerRef.current) {
         window.clearTimeout(agentWorkingTimerRef.current)
         agentWorkingTimerRef.current = undefined
@@ -2599,16 +2662,26 @@ export function TerminalView({
         if (event.event === "subagent_start") {
           const id = event.body || `anon-${++anonSubagentSeqRef.current}`
           pending.set(id, Date.now())
-        } else if (event.body && pending.has(event.body)) {
+        } else if (event.body) {
+          // Known id: retire it. Unknown id (duplicate stop, or a subagent
+          // whose start we never saw) must not retire some other subagent
+          // that is still running — SUBAGENT_PENDING_MAX_MS handles leaks.
           pending.delete(event.body)
         } else {
-          // Stop payload without a matching id — retire the oldest entry so a
-          // missing agent_id field can't wedge the counter.
-          const oldest = pending.keys().next()
-          if (!oldest.done) pending.delete(oldest.value)
+          // Stop payload without any id — retire the oldest anonymous entry so
+          // a missing id field can't wedge the counter.
+          for (const id of pending.keys()) {
+            if (id.startsWith("anon-")) {
+              pending.delete(id)
+              break
+            }
+          }
         }
         return
       }
+      // Any other hook event means the turn moved on (new tool call, prompt,
+      // attention request, or another stop) — drop a deferred completion.
+      cancelPendingCompletion()
       const current = agentStatusRef.current
       if (event.event === "start") {
         // Authoritative "agent is working" signal from the lifecycle hook
@@ -2675,22 +2748,11 @@ export function TerminalView({
       // completed dot on the project.
       const hadActiveTurn = activeHookWorkRef.current || current.working
       const wasWaitingForInput = current.needsAttention === true
-      if (hadActiveTurn && !wasWaitingForInput) {
-        // Background subagents still running: this Stop only closed the main
-        // agent's turn, not the whole task. Keep the pane working; the real
-        // completion is the Stop that fires after the last subagent finishes.
-        const pending = pendingSubagentsRef.current
-        const now = Date.now()
-        for (const [id, startedAt] of pending) {
-          if (now - startedAt > SUBAGENT_PENDING_MAX_MS) pending.delete(id)
-        }
-        if (pending.size > 0) return
-      }
-      activeHookWorkRef.current = false
-      fallbackActiveTurnRef.current = false
-      lastAgentActivityAtRef.current = 0
-      hasSubmittedToAgentRef.current = false
       if (!hadActiveTurn || wasWaitingForInput) {
+        activeHookWorkRef.current = false
+        fallbackActiveTurnRef.current = false
+        lastAgentActivityAtRef.current = 0
+        hasSubmittedToAgentRef.current = false
         emitAgentStatus({
           ...current,
           working: false,
@@ -2705,26 +2767,20 @@ export function TerminalView({
         })
         return
       }
-      emitAgentStatus({
-        running: current.running,
-        working: false,
-        agentName: mergeRuntimeAgentName(
-          current.agentName,
-          event.agentName,
-          current.running
-        ),
-        workStartedAt: current.workStartedAt,
-        completedAt: Date.now(),
-        completed: true,
-        needsAttention: false,
-      })
-      gitActionSuppressedRef.current = false
-      // Turn finished — AI titles (Claude/OpenCode) are finalized by now.
-      void refreshAgentSessionTitle()
-      scheduleRecap("completed")
-      // Offer to commit if the finished turn left uncommitted changes.
-      maybeShowCommit()
+      // Defer the completion instead of emitting it now. A plain stop settles
+      // briefly so a blocked stop (Claude keeps going) can cancel it; a stop
+      // that left background shells running waits for Claude to re-wake.
+      pendingCompletionTimerRef.current = window.setTimeout(
+        () => finishTurn(event.agentName),
+        event.event === "background_wait"
+          ? BACKGROUND_WAIT_MAX_MS
+          : STOP_SETTLE_MS
+      )
     })
+    return () => {
+      off()
+      cancelPendingCompletion()
+    }
   }, [
     sessionId,
     emitAgentStatus,
@@ -2732,6 +2788,7 @@ export function TerminalView({
     dismissRecap,
     refreshAgentSessionTitle,
     maybeShowCommit,
+    cancelPendingCompletion,
   ])
 
   // Keep WebGL enabled for crisp terminal rendering, but only while the pane

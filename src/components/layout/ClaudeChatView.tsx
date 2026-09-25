@@ -1388,13 +1388,20 @@ export function ClaudeChatView({
     // Ignore scroll events while hidden or being revealed: layout is skipped
     // or stale then, and they'd wrongly turn following off.
     if (!visibleRef.current) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     // Only moving up stops following. Being short of the bottom isn't enough:
     // the scroll event from our own jump to the bottom can land after the
     // reply has grown again (fast replies do this), which would wrongly read
     // as the user having scrolled away.
-    const follow =
-      atBottom || (followRef.current && el.scrollTop >= previousTop)
+    // Moving up never resumes following, even within the bottom zone: the
+    // first few pixels of a scroll-up would otherwise turn it back on, and
+    // the next streamed chunk would snap the view down again (stutter). The
+    // one exception is the browser clamping scrollTop when content shrinks,
+    // which leaves the view exactly at the bottom.
+    const movedUp = el.scrollTop < previousTop
+    const follow = movedUp
+      ? followRef.current && fromBottom <= 1
+      : followRef.current || fromBottom < 48
     followRef.current = follow
     setFollowing(follow)
   }

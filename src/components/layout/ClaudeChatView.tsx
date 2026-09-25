@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { FileIcon } from "@/components/icons/FileIcon"
+import { getPathDragData, hasPathDragData } from "@/lib/pathDrag"
 import { store } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import type {
@@ -844,6 +845,20 @@ function loadProjectFiles(cwd: string): Promise<string[]> {
   return files
 }
 
+// A dragged-in path as an "@" file reference, like one picked from the "@"
+// menu: relative to the project when it's inside it, absolute otherwise.
+// Paths with spaces are quoted so they stay one reference.
+function pathReference(path: string, cwd: string): string {
+  const root = cwd.replace(/\/+$/, "")
+  const ref =
+    root && path.startsWith(`${root}/`)
+      ? path.slice(root.length + 1)
+      : root && path === root
+        ? "."
+        : path
+  return /\s/.test(ref) ? `@"${ref}"` : `@${ref}`
+}
+
 // The "@partial" being typed at the caret, if any.
 function mentionAt(draft: string, caret: number) {
   const match = /(^|\s)@([^\s@]*)$/.exec(draft.slice(0, caret))
@@ -1300,7 +1315,9 @@ export function ClaudeChatView({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
   // Images pasted or dropped into the composer, sent with the next message.
   const [attachments, setAttachments] = useState<Attachment[]>([])
-  const [dropActive, setDropActive] = useState(false)
+  // What's being dragged over the chat: OS files (images attach, other files
+  // become references) or paths from GearShift's file tree and diffs.
+  const [dropActive, setDropActive] = useState<false | "files" | "paths">(false)
   const addImages = async (files: File[]) => {
     const images = (await Promise.all(files.map(readImage))).filter(
       (image): image is Attachment => image !== null
@@ -2006,6 +2023,28 @@ export function ClaudeChatView({
     })
   }
 
+  // Dropped paths go in at the caret as "@" references, spaced from the
+  // surrounding text.
+  const insertPaths = (paths: string[]) => {
+    if (paths.length === 0) return
+    const at = Math.min(caret, draft.length)
+    const before = draft.slice(0, at)
+    const after = draft.slice(at)
+    const refs = paths.map((path) => pathReference(path, cwd)).join(" ")
+    const inserted = `${before && !/\s$/.test(before) ? " " : ""}${refs}${
+      after.startsWith(" ") ? "" : " "
+    }`
+    const end = at + inserted.length
+    setDraft(before + inserted + after)
+    setCaret(end)
+    setSuggestion(null)
+    setHistoryIndex(null)
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(end, end)
+    })
+  }
+
   const changeDraft = (value: string) => {
     setMentionIndex(0)
     setMentionDismissed(false)
@@ -2123,30 +2162,46 @@ export function ClaudeChatView({
     // --chat-bg lets a host (the split-pane frame) set the chat's background;
     // the sticky message headers use it too so they stay opaque.
     <div
-      // Images can be dropped anywhere on the chat.
+      // Files and paths can be dropped anywhere on the chat.
       onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes("Files")) return
+        const paths = hasPathDragData(event.dataTransfer)
+        if (!paths && !event.dataTransfer.types.includes("Files")) return
         event.preventDefault()
         event.dataTransfer.dropEffect = "copy"
-        setDropActive(true)
+        setDropActive(paths ? "paths" : "files")
       }}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node))
           setDropActive(false)
       }}
       onDrop={(event) => {
-        if (!event.dataTransfer.types.includes("Files")) return
+        const dragged = getPathDragData(event.dataTransfer)
+        if (dragged.length === 0 && !event.dataTransfer.types.includes("Files"))
+          return
         event.preventDefault()
         event.stopPropagation()
         setDropActive(false)
+        // From the file tree or a diff: reference the paths.
+        if (dragged.length > 0) {
+          insertPaths(dragged)
+          return
+        }
+        // From Finder: attach images, reference everything else.
         const images = imageFiles(event.dataTransfer)
         if (images.length > 0) void addImages(images)
+        const others = Array.from(event.dataTransfer.files)
+          .filter((file) => !images.includes(file))
+          .map((file) => window.electronUtils.getPathForFile(file))
+          .filter(Boolean)
+        insertPaths(others)
       }}
       className="relative flex h-full min-h-0 flex-col bg-[var(--chat-bg,var(--card))]"
     >
       {dropActive && (
         <div className="pointer-events-none absolute inset-2 z-40 grid place-items-center rounded-lg border-2 border-dashed border-ring bg-background/80 text-[13px] text-muted-foreground">
-          Drop images to attach
+          {dropActive === "paths"
+            ? "Drop to add file references"
+            : "Drop images to attach, or files to reference"}
         </div>
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">

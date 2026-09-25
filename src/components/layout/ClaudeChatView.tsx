@@ -288,6 +288,58 @@ function CodeBlock({ children }: { children: ReactNode }) {
   )
 }
 
+const linkClass =
+  "font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+
+// Where a bare URL in plain text ends: trailing sentence punctuation, and a
+// closing bracket with no opening one inside the URL, belong to the text.
+function trimUrl(url: string): string {
+  let end = url.length
+  for (;;) {
+    const last = url[end - 1]
+    if (/[.,;:!?'"]/.test(last)) {
+      end -= 1
+      continue
+    }
+    const open = { ")": "(", "]": "[", "}": "{" }[last]
+    if (open) {
+      const body = url.slice(0, end)
+      if (body.split(open).length <= body.split(last).length - 1) {
+        end -= 1
+        continue
+      }
+    }
+    return url.slice(0, end)
+  }
+}
+
+// Plain text with its http(s) URLs as links, which open in the browser.
+function LinkifiedText({ text }: { text: string }) {
+  const parts: ReactNode[] = []
+  let index = 0
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"'`]+/g)) {
+    const url = trimUrl(match[0])
+    if (url.length <= "https://".length) continue
+    const start = match.index
+    if (start > index) parts.push(text.slice(index, start))
+    parts.push(
+      <a
+        key={start}
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className={linkClass}
+      >
+        {url}
+      </a>
+    )
+    index = start + url.length
+  }
+  if (parts.length === 0) return <>{text}</>
+  if (index < text.length) parts.push(text.slice(index))
+  return <>{parts}</>
+}
+
 const markdownComponents: Components = {
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   h1: ({ children }) => (
@@ -319,12 +371,7 @@ const markdownComponents: Components = {
     <li className="pl-0.5 [&>ol]:my-0.5 [&>ul]:my-0.5">{children}</li>
   ),
   a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
-    >
+    <a href={href} target="_blank" rel="noreferrer" className={linkClass}>
       {children}
     </a>
   ),
@@ -339,7 +386,12 @@ const markdownComponents: Components = {
   hr: () => <hr className="my-4 border-border" />,
   code: ({ children }) => (
     <code className="rounded bg-foreground/10 px-1 py-px font-mono text-[0.85em]">
-      {children}
+      {/* Claude often writes URLs as code, e.g. `http://localhost:3000`. */}
+      {typeof children === "string" ? (
+        <LinkifiedText text={children} />
+      ) : (
+        children
+      )}
     </code>
   ),
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
@@ -527,11 +579,11 @@ const secondaryButtonClass =
 function UserMessageText({ text }: { text: string }) {
   // Command-shaped only, so a leading path like "/Users/me" isn't bolded.
   const match = /^(\/[\w:.-]+)(\s[\s\S]*)?$/.exec(text)
-  if (!match) return <>{text}</>
+  if (!match) return <LinkifiedText text={text} />
   return (
     <>
       <span className="font-semibold">{match[1]}</span>
-      {match[2] ?? ""}
+      <LinkifiedText text={match[2] ?? ""} />
     </>
   )
 }
